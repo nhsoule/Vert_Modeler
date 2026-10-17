@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="pofa-modeler-version" content="v8-gizmo-only">
+<meta name="pofa-modeler-version" content="v9-split-select">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -292,7 +292,7 @@
 <script>
 "use strict";
 // =====================================================================================
-//  Vert Modeler v8 (the pofa modeler)
+//  Vert Modeler v9 (the pofa modeler)
 //  A tiny touch-first low-poly modeler. Every model starts as a cube; you can move
 //  vertices (with an X/Y/Z axis gizmo), split edges, and paint faces, with optional live
 //  mirror symmetry, then export a C++ array in exactly the format the pofa renderer
@@ -1546,7 +1546,8 @@ canvas.addEventListener("pointercancel", endPointer);
 //  Overlay on:
 //    Move : tap on empty space -> deselect AND hide the overlay (clean preview);
 //           tap on the model (not a dot) -> just deselect.
-//    Split: tap an edge -> split it; tap empty space -> clean preview.
+//    Split: tap an edge -> split it, then switch to Move with the new vertex selected;
+//           tap empty space -> clean preview.
 //    Paint: tap a face -> paint it; tap empty space -> clean preview.
 //  Clean preview (overlay off): only the shaded model (+ grid, + rock if on) is drawn.
 //    Tap on the model, a dot or an edge spot -> overlay back; that tap does nothing else
@@ -1584,7 +1585,16 @@ function handleTap(x, y) {
     else setOverlay(false);
   } else if (mode === "split") {
     const edge = pickEdge(x, y);
-    if (edge) { pushUndo(); selected = splitEdgeMirrored(edge[0], edge[1]); meshChanged(); }
+    if (edge) {
+      // Split, then jump straight to Move with the new vertex selected so its gizmo is
+      // ready to drag. splitEdgeMirrored returns the vertex on the edge you tapped (its
+      // mirror twin, if one was made, is the orange dot).
+      pushUndo();
+      selected = splitEdgeMirrored(edge[0], edge[1]);
+      mode = "move";
+      overlayOn = true;
+      meshChanged();
+    }
     else if (pickFace(x, y) < 0) setOverlay(false);
   } else if (mode === "paint") {
     if (!paintAt(x, y)) setOverlay(false);
