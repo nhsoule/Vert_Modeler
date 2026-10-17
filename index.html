@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="pofa-modeler-version" content="v13-scale-flip">
+<meta name="pofa-modeler-version" content="v14-paint-rotate-select-views">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -164,6 +164,21 @@
              border-right: 1px solid #fff3; opacity: 0.45; touch-action: manipulation; }
   #roScale.on { opacity: 1; color: #e0b43a; }
   #roScale.hide { display: none; }
+  #roRotate { background: none; border: 0; color: #e8e8ee; font-size: 17px; padding: 4px 6px 4px 2px;
+              border-right: 1px solid #fff3; opacity: 0.45; touch-action: manipulation; }
+  #roRotate.on { opacity: 1; color: #e0b43a; }
+  #roRotate.hide { display: none; }
+  /* ----- View Buttons -----|| small, see-through, top-right, under the stats line's row */
+  #views { position: absolute; right: 6px; top: calc(env(safe-area-inset-top) + 26px);
+           display: flex; flex-direction: column; gap: 4px; }
+  #views.hide { display: none; }
+  #views button { width: 34px; height: 24px; padding: 0; border: 1px solid #fff2; border-radius: 6px;
+                  background: #1f2029a0; color: #e8e8eecc; font: 600 11px ui-monospace, Menlo, Consolas, monospace;
+                  touch-action: manipulation; }
+  #views button:active { background: #e0b43a; color: #16171d; }
+  /* Select mode: the box being dragged */
+  #boxSel { position: absolute; display: none; pointer-events: none;
+            border: 1px dashed #e0b43a; background: #e0b43a22; }
   /* Each number is a finger-sized button: tap it to type an exact value. */
   #readout .ro {
     opacity: 0.85; padding: 8px 6px; min-height: 24px; border-radius: 8px;
@@ -202,8 +217,19 @@
     <canvas id="gl"></canvas>
     <div id="info"></div>
     <div id="stats"></div>
+    <div id="views" aria-label="View">
+      <button data-view="front"  title="Front: from −Y, looking +Y">F</button>
+      <button data-view="back"   title="Back: from +Y, looking −Y">Bk</button>
+      <button data-view="left"   title="Left: from −X, looking +X">L</button>
+      <button data-view="right"  title="Right: from +X, looking −X">R</button>
+      <button data-view="top"    title="Top: from +Z, looking down">T</button>
+      <button data-view="bottom" title="Bottom: from −Z, looking up">Bo</button>
+      <button data-view="iso"    title="Iso: front-right, from above">Iso</button>
+    </div>
+    <div id="boxSel"></div>
     <div id="readout">
       <button id="roScale" type="button" aria-label="Move / Scale" title="Switch the gizmo between Move and Scale (2+ verts)"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v2H6.4l4.3 4.3-1.4 1.4L5 6.4V10H3zm11 0h7v7h-2V6.4l-4.3 4.3-1.4-1.4L17.6 5H14zM9.3 13.3l1.4 1.4L6.4 19H10v2H3v-7h2v3.6zm5.4 0l4.3 4.3V14h2v7h-7v-2h3.6l-4.3-4.3z"/></svg></button>
+      <button id="roRotate" type="button" aria-label="Rotate" title="Rotate the selection about its centre (2+ verts)"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a8 8 0 1 0 7.7 10.1l-1.9-.6A6 6 0 1 1 12 6c1.7 0 3.2.7 4.3 1.8L13.5 10.5H21V3l-3.3 3.3A8 8 0 0 0 12 4z"/></svg></button>
       <span class="ro x" id="roX" data-axis="0"></span><span class="ro y" id="roY" data-axis="1"></span><span class="ro z" id="roZ" data-axis="2"></span>
       <button id="roMerge" type="button" aria-label="Auto-merge on drag" title="Auto-merge: a vertex dragged flat onto its face (or straight onto its edge) dissolves on release"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h4.5l4.5 6 4.5-6H21v2h-3.5L13.3 12l4.2 5H21v2h-4.5L12 13l-4.5 6H3v-2h3.5l4.2-5-4.2-5H3z"/></svg></button>
       <span id="roEdit">
@@ -234,7 +260,7 @@
     <div class="row small">
       <button id="bMirror"><span class="ic">⇋︎</span><span id="mirrorLabel">Mirror X</span></button>
       <button id="bSym"><span class="ic">⧓</span>Symm</button>
-      <button id="bSnap"><span class="ic">#</span>Snap</button>
+      <button id="bSelect" data-mode="select"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h4v2H5v2H3zm6 0h6v2H9zm8 0h4v4h-2V5h-2zM3 9h2v6H3zm16 0h2v6h-2zM3 17h2v2h2v2H3zm16 0h2v4h-4v-2h2zM9 19h6v2H9z"/></svg></span>Select</button>
       <button id="bBake"><span class="ic">☀︎</span>Shade</button>
       <button id="bImport"><span class="ic">⇩</span>Import</button>
       <button id="bExport"><span class="ic">⇪</span>Export</button>
@@ -304,7 +330,7 @@
 <script>
 "use strict";
 // =====================================================================================
-//  Vert Modeler v13 (the pofa modeler)
+//  Vert Modeler v14 (the pofa modeler)
 //  A tiny touch-first low-poly modeler. Every model starts as a cube; you can move
 //  vertices (with an X/Y/Z axis gizmo), split edges, and paint faces, with optional live
 //  mirror symmetry, then export a C++ array in exactly the format the pofa renderer
@@ -1172,7 +1198,7 @@ function extrudeSelection() {
 }
 
 function doExtrude() {
-  if (mode !== "move" || selection().length < 3) return;
+  if (!editMode() || selection().length < 3) return;
   const before = snapshot(), v0 = vertCount(), t0 = triCount();
   const r = extrudeSelection();
   if (typeof r === "string") { mesh = JSON.parse(before); toast("Can't extrude: " + r); return; }
@@ -1258,7 +1284,10 @@ let selExtra     = new Set(); // the other selected vertices (multi-select); emp
 let undoStack    = [];      // array of JSON snapshots of `mesh`
 let mergeOn      = true;    // auto-merge on drag release (stored under MERGE_KEY)
 try { mergeOn = localStorage.getItem("pofa-modeler-merge") !== "0"; } catch (e) { /* storage blocked */ }
-let gizmoMode    = "move";  // "move" or "scale" (scale handles need 2+ selected verts)
+let gizmoMode    = "move";  // "move", "scale" or "rotate" (scale/rotate need 2+ selected verts)
+// Move and Select both edit the selection with the gizmo; they differ in what a
+// one-finger drag on empty space does (Move: orbit; Select: box select).
+const editMode = () => mode === "move" || mode === "select";
 let mergeVerts   = new Set(); // verts that will merge if the drag ends now (drawn as rings)
 let showRock     = true;    // reference rock visible? (stored under ROCK_KEY, not in the model save)
 try { showRock = localStorage.getItem(ROCK_KEY) !== "0"; } catch (e) { /* storage blocked */ }
@@ -1329,7 +1358,7 @@ function load() {
     }
     if (Number.isInteger(d.currentColor)) currentColor = DEFAULT_PALETTE[d.currentColor & 15].slice();
     else if (Array.isArray(d.currentColor) && d.currentColor.length === 3) currentColor = d.currentColor;
-    snapOn = !!d.snapOn;
+    snapOn = false;                                // Snap has no button any more (v14): always off
     if (typeof d.bakeOn === "boolean") bakeOn = d.bakeOn;
     if (typeof d.modelName === "string") modelName = cIdent(d.modelName);
   } catch (e) { /* corrupt save: start fresh */ }
@@ -1476,7 +1505,7 @@ function rebuildBuffers() {
   const twinsOfSel = new Set(selection().map(i => mesh.partner[i]));
   const vis = vertVisibility();
   const hiddenDots = [], shownDots = [], rings = [];
-  for (let i = 0; i < vertCount(); i++) {
+  for (let i = 0; i < (mode === "paint" ? 0 : vertCount()); i++) {
     if (mergeVerts.has(i)) { rings.push(...getVert(i), 0.3, 0.9, 1.0); continue; }
     let c = [0.95, 0.95, 1.0];
     if (ax >= 0 && mesh.partner[i] < 0) c = [1.0, 0.35, 0.3];
@@ -1520,7 +1549,9 @@ function camEye() {
 }
 
 function updateCamera() {
-  const proj = mat4Perspective(FOV_Y, viewW / viewH, 0.05, 100);
+  // Near plane follows the zoom so close-ups aren't clipped (1% of the orbit distance).
+  const near = Math.max(0.0005, Math.min(0.05, cam.dist * 0.01));
+  const proj = mat4Perspective(FOV_Y, viewW / viewH, near, 200);
   const view = mat4LookAt(camEye(), cam.target, UP);
   viewProj = mat4Multiply(proj, view);
 }
@@ -1570,10 +1601,10 @@ function grabDepth(sx, sy) {
     const hit = rayTriangle(r.origin, r.dir, getVert(mesh.tris[t*3]), getVert(mesh.tris[t*3+1]), getVert(mesh.tris[t*3+2]));
     if (hit !== null && hit < best) best = hit;
   }
-  return best < Infinity ? Math.max(0.05, best * v3.dot(r.dir, r.fwd)) : cam.dist;
+  return best < Infinity ? Math.max(0.0005, best * v3.dot(r.dir, r.fwd)) : cam.dist;
 }
 // The grabbed depth changes as a pinch zooms: the eye moves along the view direction.
-const panDepth = (g) => Math.max(0.05, g.depth - (g.dist0 - cam.dist));
+const panDepth = (g) => Math.max(0.0005, g.depth - (g.dist0 - cam.dist));
 
 // Recenter: put the orbit target back on the centre of the model's bounding box.
 // Touch: double tap with two fingers. Desktop: double middle-click, or the F key.
@@ -1790,10 +1821,11 @@ function scaleCentroid() {
   for (const i of set) { const q = getVert(i); c[0] += q[0]; c[1] += q[1]; c[2] += q[2]; }
   return set.size ? c.map(v => v / set.size) : null;
 }
-const gizmoPivot = () => gesture && gesture.kind === "axis" && gesture.scale ? gesture.p0 : scaleActive() ? scaleCentroid() : selCentroid();
+const gizmoPivot = () => gesture && gesture.kind === "axis" && (gesture.scale || gesture.rotate) ? gesture.p0
+                       : scaleActive() || gizmoMode === "rotate" && selection().length >= 2 ? scaleCentroid() : selCentroid();
 
 function gizmoHandles() {
-  if (!overlayOn || mode !== "move" || !selection().length) return [];
+  if (!overlayOn || !editMode() || !selection().length) return [];
   const p = gizmoPivot(), s0 = project(p);
   if (!s0) return [];
   updateGizmoSigns(p);
@@ -1813,6 +1845,7 @@ function gizmoHandles() {
 // only), or -1. Tips win over the ring, the ring over shafts.
 const RING_PX = 46, RING_GRAB_PX = 11;
 function pickHandle(sx, sy) {
+  if (rotateActive()) return -1;                   // Rotate uses rings (pickRing)
   let best = -1, bestD = Infinity;
   const hs = gizmoHandles();
   if (scaleActive() && hs.length) {
@@ -1929,15 +1962,30 @@ canvas.addEventListener("pointerdown", (e) => {
   // to be toggled is forgotten, so two fingers never change the selection).
   if (pointers.size === 2) {
     if (gesture && gesture.kind === "axis" && gesture.moved) { mergeVerts = new Set(); meshChanged(); }
+    if (gesture && gesture.kind === "paint" && gesture.changed) {
+      // The second finger came right after the first (a two-finger orbit that started a
+      // hair early): take back the dab. Otherwise keep the stroke painted so far.
+      if (!gesture.far && performance.now() - gesture.t0 < PAINT_GRACE_MS) {
+        mesh = JSON.parse(gesture.before); undoStack.pop(); meshDirty = true; updateUI();
+      } else meshChanged();
+    }
+    $("boxSel").style.display = "none";
     const [a, b] = [...pointers.values()];
     const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
     gesture = { kind: "pinch", lastDist: d, lastMid: [mx, my], startDist: d, startMid: [mx, my],
-                t0: performance.now(), moved: false, depth: grabDepth(mx, my), dist0: cam.dist };
+                t0: performance.now(), moved: false, depth: grabDepth(mx, my), dist0: cam.dist,
+                orbit: mode === "paint" };                // Paint: midpoint orbits instead of panning
     lastEmptyTap = null;
     return;
   }
   if (pointers.size > 2) { if (gesture && gesture.kind === "pinch") gesture.moved = true; return; }
 
+  camAnim = null;                                   // any touch stops a view animation
+  // Paint mode on desktop: right-drag orbits (left-drag paints).
+  if (mode === "paint" && e.pointerType === "mouse" && e.button === 2) {
+    gesture = { kind: "orbit", startX: p.x, startY: p.y, lastX: p.x, lastY: p.y };
+    return;
+  }
   // Desktop pan: right button, middle button, or shift + left button.
   if (e.pointerType === "mouse" && (e.button === 1 || e.button === 2 || (e.button === 0 && e.shiftKey))) {
     if (e.button === 1) {
@@ -1950,11 +1998,30 @@ canvas.addEventListener("pointerdown", (e) => {
     return;
   }
 
+  // Paint: one finger paints every face it passes over (a stroke = one undo step).
+  if (mode === "paint") {
+    gesture = { kind: "paint", startX: p.x, startY: p.y, lastX: p.x, lastY: p.y,
+                before: snapshot(), changed: false, any: false, far: false, t0: performance.now() };
+    paintStroke(p.x, p.y);
+    return;
+  }
+
   gesture = { kind: "pending", startX: p.x, startY: p.y, lastX: p.x, lastY: p.y };
 
   // In clean preview nothing is grabbed on touch-down: the tap (on release) restores the
   // overlay, and a drag just orbits.
-  if (mode === "move" && overlayOn) {
+  if (editMode() && overlayOn) {
+    // 0) Rotate rings (Rotate gizmo): checked first, like any handle.
+    const ra = rotateActive() ? pickRing(p.x, p.y) : -1;
+    if (ra >= 0) {
+      const c = scaleCentroid();
+      gesture = { kind: "axis", rotate: true, axis: ra, p0: c, starts: selStarts(), angle: 0,
+                  before: snapshot(), moved: false, startX: p.x, startY: p.y, merge: -1, solo: -1 };
+      gesture.useScreen = Math.abs(v3.dot(screenRay(p.x, p.y).dir, unitAxis(ra))) < 0.15;
+      gesture.lastRaw = ringAngle(gesture, p.x, p.y);
+      updateUI();
+      return;
+    }
     // 1) An axis handle of the selected vertex? (Checked first: handles are the big targets.)
     const h = pickHandle(p.x, p.y);
     if (h >= 0 && scaleActive()) {
@@ -2006,7 +2073,8 @@ canvas.addEventListener("pointermove", (e) => {
     const [a, b] = [...pointers.values()];
     const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
     if (d > 0 && gesture.lastDist > 0) zoomBy(gesture.lastDist / d);   // spread -> zoom
-    panBy(mx - gesture.lastMid[0], my - gesture.lastMid[1], panDepth(gesture));   // midpoint -> pan
+    if (gesture.orbit) orbitBy(mx - gesture.lastMid[0], my - gesture.lastMid[1]);    // Paint: midpoint -> orbit
+    else panBy(mx - gesture.lastMid[0], my - gesture.lastMid[1], panDepth(gesture));   // midpoint -> pan
     gesture.lastDist = d; gesture.lastMid = [mx, my];
     if (Math.abs(d - gesture.startDist) > TAP_SLOP ||
         Math.hypot(mx - gesture.startMid[0], my - gesture.startMid[1]) > TAP_SLOP) gesture.moved = true;
@@ -2020,14 +2088,45 @@ canvas.addEventListener("pointermove", (e) => {
 
   if (gesture.kind === "pending" &&
       Math.hypot(p.x - gesture.startX, p.y - gesture.startY) > TAP_SLOP) {
-    gesture.kind = "orbit";
+    // Select mode: a drag draws a selection box (no orbit). Everywhere else: orbit.
+    gesture.kind = mode === "select" && overlayOn ? "box" : "orbit";
   }
 
   if (gesture.kind === "orbit") {
-    cam.yaw   -= (p.x - gesture.lastX) * 0.01;
-    cam.pitch += (p.y - gesture.lastY) * 0.01;
-    cam.pitch  = Math.max(-1.55, Math.min(1.55, cam.pitch)); // stop just short of straight up/down
+    orbitBy(p.x - gesture.lastX, p.y - gesture.lastY);
     gesture.lastX = p.x; gesture.lastY = p.y;
+  }
+
+  if (gesture.kind === "box") {
+    const b = $("boxSel"), x0 = Math.min(p.x, gesture.startX), y0 = Math.min(p.y, gesture.startY);
+    Object.assign(b.style, { display: "block", left: x0 + "px", top: y0 + "px",
+      width: Math.abs(p.x - gesture.startX) + "px", height: Math.abs(p.y - gesture.startY) + "px" });
+    gesture.lastX = p.x; gesture.lastY = p.y;
+    return;
+  }
+
+  if (gesture.kind === "paint") {
+    if (Math.hypot(p.x - gesture.startX, p.y - gesture.startY) > TAP_SLOP) gesture.far = true;
+    // Sample the finger's path every 4 px so fast strokes don't skip faces.
+    const n = Math.max(1, Math.ceil(Math.hypot(p.x - gesture.lastX, p.y - gesture.lastY) / 4));
+    for (let k = 1; k <= n; k++) paintStroke(gesture.lastX + (p.x - gesture.lastX) * k / n, gesture.lastY + (p.y - gesture.lastY) * k / n);
+    gesture.lastX = p.x; gesture.lastY = p.y;
+    return;
+  }
+
+  if (gesture.kind === "axis" && gesture.rotate) {
+    if (!gesture.moved && Math.hypot(p.x - gesture.startX, p.y - gesture.startY) < 3) return;
+    const raw = ringAngle(gesture, p.x, p.y);
+    let d = raw - gesture.lastRaw;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    gesture.lastRaw = raw;
+    gesture.angle += d;
+    if (!gesture.moved) { pushUndo(gesture.before); gesture.moved = true; }   // one undo per drag
+    rotateSelection(gesture.starts, gesture.p0, gesture.axis, gesture.angle);
+    meshDirty = true;                              // no auto-merge while rotating
+    updateUI();
+    return;
   }
 
   if (gesture.kind === "axis" && gesture.scale) {
@@ -2093,8 +2192,22 @@ function endPointer(e) {
   if (pointers.size) return;
   if (gesture.kind === "idle") { endTwoFinger(); return; }
 
+  if (gesture.kind === "paint") {
+    const g = gesture;
+    gesture = null;
+    if (g.changed) meshChanged();                  // one undo step for the whole stroke
+    else if (!g.any && !g.far && e.type === "pointerup") handleTap(g.startX, g.startY);   // empty tap
+    return;
+  }
+  if (gesture.kind === "box") {
+    $("boxSel").style.display = "none";
+    const g = gesture;
+    gesture = null;
+    if (e.type === "pointerup") boxSelect(g.startX, g.startY, g.lastX, g.lastY);
+    return;
+  }
   if (gesture.kind === "pending" && e.type === "pointerup") {
-    if (gesture.picked !== undefined && overlayOn && mode === "move") {
+    if (gesture.picked !== undefined && overlayOn && editMode()) {
       toggleSelect(gesture.picked); lastEmptyTap = null; meshDirty = true; updateUI();
     } else handleTap(gesture.startX, gesture.startY);
   }
@@ -2123,6 +2236,168 @@ function endTwoFinger() {
 }
 canvas.addEventListener("pointerup", endPointer);
 canvas.addEventListener("pointercancel", endPointer);
+
+//----- Orbit -----||
+function orbitBy(dx, dy) {
+  cam.yaw   -= dx * 0.01;
+  cam.pitch += dy * 0.01;
+  cam.pitch  = Math.max(-1.55, Math.min(1.55, cam.pitch)); // stop just short of straight up/down
+}
+
+
+//----- Paint Strokes -----||
+// One finger paints: every face under the finger's path gets the current colour (and its
+// mirror twin faces). A face is painted once per stroke. The undo snapshot is taken at
+// the first real change, so a stroke = one undo step; nothing painted = no undo entry.
+// A second finger landing within PAINT_GRACE_MS (before the first moved) undoes that first
+// dab, so starting a two-finger orbit never leaves a stray painted face.
+// Two fingers in Paint: midpoint motion orbits, spread zooms (no pan; desktop
+// middle/shift-drag still pans, right-drag orbits).
+const PAINT_GRACE_MS = 250;   // a 2nd finger within this (before moving) cancels the dab
+function paintStroke(x, y) {
+  const g = gesture, t = pickFace(x, y);
+  if (t < 0) return;
+  g.any = true;
+  if (!g.done) g.done = new Set();
+  if (g.done.has(t)) return;
+  g.done.add(t);
+  for (const u of [t, ...mirroredTris(t)]) {
+    g.done.add(u);
+    if (colorEq(mesh.colors[u], currentColor)) continue;
+    if (!g.changed) { pushUndo(g.before); g.changed = true; }
+    mesh.colors[u] = currentColor.slice();
+    meshDirty = true;
+  }
+}
+
+
+//----- Box Select (Select mode) -----||
+// Select mode: a one-finger drag on empty space (or starting on a dot) draws a box; on
+// release every vertex whose screen position is inside it is added to the selection,
+// INCLUDING verts hidden behind the model or on the back side (as long as they're in
+// front of the camera), so one box can grab both sides. Single taps still ignore hidden
+// verts. Tapping still toggles single dots, a tap on empty space
+// still clears, a double tap still goes to clean preview. The gizmo works here too:
+// handles are checked first, so a drag that starts on a handle moves / scales / rotates
+// and anything else draws a box. Two fingers pan and zoom; there is no orbit by drag.
+function boxSelect(x0, y0, x1, y1) {
+  const lx = Math.min(x0, x1), hx = Math.max(x0, x1), ly = Math.min(y0, y1), hy = Math.max(y0, y1);
+  let added = 0;
+  for (let i = 0; i < vertCount(); i++) {
+    if (isSelected(i)) continue;
+    const s = project(getVert(i));               // null = behind the camera
+    if (s && s.x >= lx && s.x <= hx && s.y >= ly && s.y <= hy) { toggleSelect(i); added++; }
+  }
+  lastEmptyTap = null;
+  meshDirty = true;
+  updateUI();
+  toast(added ? `Box: +${added} vert${added === 1 ? "" : "s"} (${selection().length} selected)` : "Box: no verts inside");
+}
+
+
+//----- Rotate -----||
+// With 2+ verts selected, the chip's Rotate toggle shows three rings around the pivot,
+// one per world axis (in the axis colours, like the arrows): the red ring turns about X,
+// green about Y, blue about Z. Drag along a ring to turn the selection; the angle is
+// measured where the finger meets the ring's plane (or around the pivot on screen when
+// the ring is seen edge-on), so the ring follows the finger. The chip shows the live
+// angle; tap an angle to type degrees. Pivot = centroid of the selection + twins.
+// Mirror (say Mirror X): turning about X (the mirror axis) is the same rotation on both
+// sides, so a symmetric selection simply turns. Turning about Y or Z is applied to one
+// side and mirrored onto the other (the two halves turn in opposite senses), which is
+// the only way to stay symmetric. On-plane verts are kept on the plane: if they're all
+// on the plane, the Y and Z rings are locked (they could only push them off it); mixed
+// with off-plane verts, an on-plane vert's X is held at 0 while it turns.
+// One undo per drag; no auto-merge; re-triangulation runs on release.
+const ROT_PX = 62, ROT_GRAB_PX = 14;
+const rotateActive = () => gizmoMode === "rotate" && selection().length >= 2;
+const unitAxis = (a) => { const e = [0, 0, 0]; e[a] = 1; return e; };
+function ringLocked(a) {
+  const ax = axisIndex(mesh.mirror);
+  return ax >= 0 && a !== ax && selection().every(i => mesh.partner[i] === i);
+}
+// World-space points of ring a (48 segments), or [] if hidden.
+function ringPoints(a) {
+  const p = gizmoPivot(), s0 = p && project(p);
+  if (!s0) return [];
+  const R = ROT_PX * worldPerPx(s0.depth), u = unitAxis((a + 1) % 3), w = unitAxis((a + 2) % 3), out = [];
+  for (let i = 0; i <= 48; i++) {
+    const t = i / 48 * 2 * Math.PI;
+    out.push(v3.add(p, v3.add(v3.scale(u, Math.cos(t) * R), v3.scale(w, Math.sin(t) * R))));
+  }
+  return out;
+}
+function pickRing(sx, sy) {
+  if (!overlayOn || !editMode() || !rotateActive()) return -1;
+  let best = -1, bestD = ROT_GRAB_PX;
+  for (let a = 0; a < 3; a++) {
+    if (ringLocked(a)) continue;
+    const P = ringPoints(a).map(project);
+    for (let i = 0; i + 1 < P.length; i++) {
+      if (!P[i] || !P[i+1]) continue;
+      const d = distToSegment(sx, sy, P[i], P[i+1]);
+      if (d < bestD) { bestD = d; best = a; }
+    }
+  }
+  return best;
+}
+// Finger angle about the gesture's axis (radians, right-handed about +axis).
+function ringAngle(g, x, y) {
+  const a = g.axis, e = unitAxis(a), u = unitAxis((a + 1) % 3), w = unitAxis((a + 2) % 3);
+  if (!g.useScreen) {
+    const r = screenRay(x, y), dn = v3.dot(r.dir, e);
+    if (Math.abs(dn) > 1e-6) {
+      const h = v3.add(r.origin, v3.scale(r.dir, v3.dot(v3.sub(g.p0, r.origin), e) / dn));
+      const v = v3.sub(h, g.p0);
+      return Math.atan2(v3.dot(v, w), v3.dot(v, u));
+    }
+  }
+  const sc = project(g.p0), sgn = Math.sign(v3.dot(e, v3.sub(camEye(), g.p0))) || 1;
+  return -Math.atan2(y - sc.y, x - sc.x) * sgn;     // screen y is down: CCW on screen = +
+}
+function rotateSelection(starts, c, a, ang) {
+  const i1 = (a + 1) % 3, i2 = (a + 2) % 3, cs = Math.cos(ang), sn = Math.sin(ang);
+  for (const [i, p0] of starts) {
+    const np = p0.slice(), ru = p0[i1] - c[i1], rw = p0[i2] - c[i2];
+    np[i1] = c[i1] + ru * cs - rw * sn;
+    np[i2] = c[i2] + ru * sn + rw * cs;
+    moveVertex(i, np);                             // twin mirrored, on-plane stays on plane
+  }
+}
+
+
+//----- View Buttons -----||
+// Small see-through chips at the top right (under the stats line's row, so they never
+// cover it). Tapping one swings the orbit (yaw/pitch) to that view around the current
+// target over VIEW_MS; distance and target stay. They're buttons, not canvas: tapping
+// them never selects, deselects, or counts toward a double tap. Convention (Z up):
+//   Front  = camera at −Y looking toward +Y (X to the right)   Back  = from +Y
+//   Right  = camera at +X looking toward −X                     Left  = from −X
+//   Top    = camera above looking down (X right, +Y up the screen)  Bottom = from below
+//   Iso    = front-right from above (camera at +X, −Y, +Z; 35.3° down)
+const VIEW_MS = 280, VIEW_POLE = Math.PI / 2 - 0.002;   // just short of straight up/down
+const VIEWS = {
+  front: [0, 0], back: [Math.PI, 0], right: [Math.PI / 2, 0], left: [-Math.PI / 2, 0],
+  top: [0, VIEW_POLE], bottom: [0, -VIEW_POLE], iso: [Math.PI / 4, Math.atan(1 / Math.SQRT2)],
+};
+let camAnim = null;
+function setView(name) {
+  const v = VIEWS[name];
+  if (!v) return;
+  let dy = v[0] - cam.yaw;
+  dy = Math.atan2(Math.sin(dy), Math.cos(dy));     // shortest way round
+  camAnim = { y0: cam.yaw, y1: cam.yaw + dy, p0: cam.pitch, p1: v[1], t0: performance.now() };
+}
+function stepCamAnim() {
+  if (!camAnim) return;
+  const t = Math.min(1, (performance.now() - camAnim.t0) / VIEW_MS), k = t * t * (3 - 2 * t);
+  cam.yaw = camAnim.y0 + (camAnim.y1 - camAnim.y0) * k;
+  cam.pitch = camAnim.p0 + (camAnim.p1 - camAnim.p0) * k;
+  if (t >= 1) camAnim = null;
+}
+for (const b of document.querySelectorAll("#views button"))
+  b.addEventListener("click", (e) => { e.stopPropagation(); setView(b.dataset.view); });
+
 
 //----- Taps + Clean Preview -----||
 // A tap = finger down and up without moving past TAP_SLOP (drags orbit, two fingers
@@ -2181,7 +2456,7 @@ function handleTap(x, y) {
     setOverlay(true);                       // model, dot, edge, or empty: show it again
     return;
   }
-  if (mode === "move") {
+  if (editMode()) {
     emptyTap(x, y, pickFace(x, y) < 0);
   } else if (mode === "split") {
     const edge = pickEdge(x, y);
@@ -2202,8 +2477,9 @@ function handleTap(x, y) {
   }
 }
 
+const MIN_DIST = 0.05;      // closest zoom (orbit distance, model units)
 function zoomBy(factor) {
-  cam.dist = Math.max(0.6, Math.min(30, cam.dist * factor));
+  cam.dist = Math.max(MIN_DIST, Math.min(30, cam.dist * factor));
 }
 canvas.addEventListener("wheel", (e) => { e.preventDefault(); zoomBy(Math.exp(e.deltaY * 0.001)); }, { passive: false });
 
@@ -2411,7 +2687,6 @@ let lastWarn = { nv: 0, nt: 0 };
 
 function updateUI() {
   for (const b of document.querySelectorAll("[data-mode]")) b.classList.toggle("on", b.dataset.mode === mode);
-  $("bSnap").classList.toggle("on", snapOn);
   $("bRock").classList.toggle("on", showRock);
   $("bBake").classList.toggle("on", bakeOn);
   $("bMirror").classList.toggle("on", !!mesh.mirror);
@@ -2419,10 +2694,11 @@ function updateUI() {
   $("bSym").disabled = !mesh.mirror;
   $("bUndo").disabled = undoStack.length === 0;
   // Dissolve works on exactly one vertex (with several selected it's disabled).
-  $("bDissolve").disabled = !(mode === "move" && selection().length === 1);
+  $("bDissolve").disabled = !(editMode() && selection().length === 1);
   $("roMerge").classList.toggle("off", !mergeOn);
   // Extrude needs 3+ selected verts (if they cover no face, pressing it says why).
-  $("bExtrude").disabled = !(mode === "move" && selection().length >= 3);
+  $("bExtrude").disabled = !(editMode() && selection().length >= 3);
+  $("views").classList.toggle("hide", !overlayOn);
   $("palette").classList.toggle("show", mode === "paint");
   renderPalette();
 
@@ -2462,7 +2738,7 @@ function mirrorWarnings() {
 // Live X / Y / Z chip at the bottom of the view while a vertex is selected in Move mode.
 // The axis being dragged is underlined.
 function updateReadout() {
-  const show = overlayOn && mode === "move" && selection().length > 0;
+  const show = overlayOn && editMode() && selection().length > 0;
   $("readout").classList.toggle("show", show);
   if (!show) { if (roEditing) closeCoordEdit(false); return; }
   if (roEditing && roEditing.key !== selection().join(",")) closeCoordEdit(false);
@@ -2471,6 +2747,19 @@ function updateReadout() {
   const p = selCentroid(), act = gesture && gesture.kind === "axis" ? gesture.axis : -1;
   $("roScale").classList.toggle("hide", !multi);
   $("roScale").classList.toggle("on", scaleActive());
+  $("roRotate").classList.toggle("hide", !multi);
+  $("roRotate").classList.toggle("on", rotateActive());
+  if (rotateActive()) {                            // Rotate: live angle per axis, degrees
+    const g = gesture && gesture.kind === "axis" && gesture.rotate ? gesture : null;
+    ["roX", "roY", "roZ"].forEach((id, a) => {
+      const el = $(id), deg = g && g.axis === a ? g.angle * 180 / Math.PI : 0;
+      el.textContent = "∠" + "XYZ"[a] + " " + deg.toFixed(1) + "°";
+      el.classList.toggle("act", !!g && g.axis === a);
+      el.classList.toggle("locked", ringLocked(a));
+      el.style.display = roEditing ? "none" : "";
+    });
+    return;
+  }
   const sc = scaleActive(), g = gesture && gesture.kind === "axis" && gesture.scale ? gesture : null;
   ["roX", "roY", "roZ"].forEach((id, a) => {
     const el = $(id);
@@ -2508,7 +2797,19 @@ function axisLocked(v, a) {
 
 function openCoordEdit(a) {
   if (!selection().length) return;
-  if (selAxisLocked(a)) { toast(`${"XYZ"[a]} is locked to the mirror plane (0)`); return; }
+  if (!rotateActive() && selAxisLocked(a)) { toast(`${"XYZ"[a]} is locked to the mirror plane (0)`); return; }
+  if (rotateActive()) {                            // type an angle in degrees
+    if (ringLocked(a)) { toast(`Can't rotate about ${"XYZ"[a]}: every selected vert is on the mirror plane`); return; }
+    roEditing = { key: selection().join(","), axis: a, rotate: true };
+    $("roEditLbl").textContent = "∠" + "XYZ"[a] + "°";
+    $("roEditLbl").className = "xyz"[a];
+    $("roInput").value = "0";
+    $("roEdit").classList.add("show");
+    updateReadout();
+    $("roInput").focus();
+    $("roInput").select();
+    return;
+  }
   roEditing = { key: selection().join(","), axis: a, scale: scaleActive() };
   if (roEditing.scale) {                           // type a scale factor for this axis
     $("roEditLbl").textContent = "×" + "XYZ"[a];
@@ -2540,10 +2841,21 @@ function parseCoord(text) {
 
 function closeCoordEdit(apply) {
   if (!roEditing) return;
-  const { key, axis, scale } = roEditing;
+  const { key, axis, scale, rotate } = roEditing;
   roEditing = null;                                // first, so blur can't run this twice
   $("roEdit").classList.remove("show");
   if (document.activeElement === $("roInput")) $("roInput").blur();
+  if (apply && rotate && key === selection().join(",") && selection().length >= 2) {
+    const n = parseCoord($("roInput").value);
+    if (n === null) toast("Not a number");
+    else if (Math.abs(n) > 1e-9) {
+      pushUndo();
+      rotateSelection(selStarts(), scaleCentroid(), axis, n * Math.PI / 180);
+      meshChanged();
+    }
+    updateUI();
+    return;
+  }
   if (apply && scale && key === selection().join(",") && selection().length >= 2) {
     const n = parseCoord($("roInput").value);
     if (n === null) toast("Not a number");
@@ -2590,19 +2902,6 @@ $("roOk").addEventListener("click", () => closeCoordEdit(true));
 
 for (const b of document.querySelectorAll("[data-mode]"))
   b.addEventListener("click", () => { mode = b.dataset.mode; overlayOn = true; meshDirty = true; updateUI(); });
-
-$("bSnap").addEventListener("click", () => {
-  snapOn = !snapOn;
-  // Turning snap on also snaps the selected vertex, so it lands on the grid straight away.
-  if (snapOn && selection().length) {
-    const drivers = selDrivers();
-    if (drivers.some(i => v3.len(v3.sub(snap(getVert(i)), getVert(i))) > 1e-9)) {
-      pushUndo();
-      for (const i of drivers) moveVertex(i, snap(getVert(i)));
-    }
-  }
-  meshChanged();
-});
 
 $("bBake").addEventListener("click", () => { bakeOn = !bakeOn; meshChanged(); });
 
@@ -2681,6 +2980,12 @@ $("roScale").addEventListener("click", () => {
   if (roEditing) closeCoordEdit(false);
   gizmoMode = gizmoMode === "scale" ? "move" : "scale";
   toast(gizmoMode === "scale" ? "Scale: drag X/Y/Z boxes to scale along an axis, the ring to scale evenly" : "Move");
+  meshDirty = true; updateUI();
+});
+$("roRotate").addEventListener("click", () => {
+  if (roEditing) closeCoordEdit(false);
+  gizmoMode = gizmoMode === "rotate" ? "move" : "rotate";
+  toast(gizmoMode === "rotate" ? "Rotate: drag a ring (red X, green Y, blue Z) to turn the selection" : "Move");
   meshDirty = true; updateUI();
 });
 $("bDissolve").addEventListener("click", () => {
@@ -3037,6 +3342,7 @@ new ResizeObserver(resize).observe(canvas);
 //----- Draw Loop -----||
 function frame() {
   resize();
+  stepCamAnim();
   updateCamera();
   // The dots' grey/white look depends on the camera too, so rebuild when the view moved.
   if (!meshDirty && visCache.key.split("|")[0] !== [cam.yaw, cam.pitch, cam.dist, ...cam.target, viewW, viewH].join(",")) meshDirty = true;
@@ -3071,9 +3377,14 @@ function frame() {
   // Clean preview: stop here, so only the model (+ grid and rock) shows.
   if (!overlayOn) { gl.bindVertexArray(null); requestAnimationFrame(frame); return; }
 
-  // 3) Edges (depth tested, so hidden edges stay hidden)
+  // 3) Edges (depth tested, so hidden edges stay hidden). Paint: a faint wireframe.
+  if (mode === "paint") {
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniform1f(U.alpha, 0.22);
+  }
   gl.bindVertexArray(edgeBatch.vao);
   gl.drawArrays(gl.LINES, 0, edgeBatch.count);
+  if (mode === "paint") { gl.uniform1f(U.alpha, 1); gl.disable(gl.BLEND); }
 
   // 4) Mirror plane: translucent, blended over what's behind, and it doesn't write
   //    depth so it never hides anything.
@@ -3090,7 +3401,9 @@ function frame() {
   }
 
   // 5) Vertex dots, drawn on top of everything so back vertices can still be grabbed.
+  //    Paint mode: no dots and no gizmo, just the faces and the faint wireframe.
   gl.disable(gl.DEPTH_TEST);
+  if (mode === "paint") { gl.bindVertexArray(null); requestAnimationFrame(frame); return; }
   gl.uniform1i(U.round, 1);
   gl.uniform1f(U.size, 10 * dpr);
   gl.bindVertexArray(dotBatch.vao);
@@ -3116,7 +3429,37 @@ function frame() {
 // Shafts are thick quads (WebGL lines are only 1 px wide), turned to face the camera;
 // tips are big round points. The handle being dragged turns yellow and shows a thin guide
 // line through the vertex's start position along its axis.
+function drawRotateRings() {
+  const p = gizmoPivot(), s0 = p && project(p);
+  if (!s0) return;
+  const viewDir = v3.norm(v3.sub(p, camEye())), halfW = 2.5 * worldPerPx(s0.depth);
+  const act = gesture && gesture.kind === "axis" && gesture.rotate ? gesture.axis : -1;
+  const quads = [];
+  for (let a = 0; a < 3; a++) {
+    let col = AXIS_COLORS[a];
+    if (ringLocked(a)) col = [0.4, 0.4, 0.45];
+    if (a === act) col = [1.0, 0.85, 0.1];
+    const P = ringPoints(a);
+    for (let i = 0; i + 1 < P.length; i++) {
+      const d = v3.sub(P[i+1], P[i]), side = v3.scale(v3.norm(v3.cross(d, viewDir)), halfW);
+      const c = [v3.add(P[i], side), v3.sub(P[i], side), v3.sub(P[i+1], side), v3.add(P[i+1], side)];
+      for (const k of [0, 1, 2, 0, 2, 3]) quads.push(...c[k], ...col);
+    }
+  }
+  uploadBatch(gizmoBatch, quads);
+  uploadBatch(gizmoTips, [...p, 0.92, 0.92, 0.96]);   // small pivot marker
+  gl.disable(gl.DEPTH_TEST);
+  gl.uniform1i(U.round, 0);
+  gl.bindVertexArray(gizmoBatch.vao);
+  gl.drawArrays(gl.TRIANGLES, 0, gizmoBatch.count);
+  gl.uniform1i(U.round, 1);
+  gl.uniform1f(U.size, 8 * dpr);
+  gl.bindVertexArray(gizmoTips.vao);
+  gl.drawArrays(gl.POINTS, 0, gizmoTips.count);
+}
+
 function drawGizmo() {
+  if (overlayOn && editMode() && rotateActive()) { drawRotateRings(); return; }
   const hs = gizmoHandles();
   if (!hs.length) return;
   const p = gizmoPivot(), scaling = scaleActive();
