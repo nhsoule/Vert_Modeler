@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="pofa-modeler-version" content="v5-occluded-verts">
+<meta name="pofa-modeler-version" content="v6-clean-ui">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -31,14 +31,18 @@
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 
   /* ----- Info Overlay -----|| */
+  /* No persistent text on top of the view any more: this box only shows the one fatal
+     message ("WebGL 2 is not available") and is empty (and hidden) otherwise. */
   #info {
     position: absolute; left: 0; right: 0; top: 0;
     padding: calc(env(safe-area-inset-top) + 8px) 12px 8px;
     pointer-events: none; font-size: 13px; color: #b9bccb;
     text-shadow: 0 1px 2px #000;
   }
-  #info b { color: #fff; }
-  #info .warn { color: #ff8a7a; }
+  #info:empty { display: none; }
+
+  /* Monochrome inline icons (SVG with currentColor), so nothing renders as colour emoji. */
+  .svgic { width: 1em; height: 1em; display: inline-block; vertical-align: -0.125em; fill: currentColor; }
 
   /* ----- Palette Bar (Paint mode) -----|| */
   #palette { display: none; padding: 6px 10px 8px; background: #1f2029; border-top: 1px solid #2c2e3a; }
@@ -185,34 +189,34 @@
         <span id="roEditLbl"></span>
         <input id="roInput" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <button id="roNeg" type="button" aria-label="Flip sign">±</button>
-        <button id="roOk" type="button" class="ok" aria-label="Apply">✓</button>
+        <button id="roOk" type="button" class="ok" aria-label="Apply">✓︎</button>
       </span>
     </div>
   </div>
   <div id="palette">
     <div class="palHead">
-      <button id="palName">🎨 <span id="palNameText"></span> ▾</button>
-      <button id="palEdit">✎ Edit</button>
+      <button id="palName" aria-label="Palettes"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5C6.8 2.5 2.5 6.6 2.5 11.8c0 5 4.1 9.7 9 9.7 1.4 0 2.3-1 2.3-2.2 0-.6-.2-1.1-.6-1.5-.3-.4-.5-.8-.5-1.3 0-1 .8-1.8 1.8-1.8h2.1c3 0 4.9-2.2 4.9-5C21.5 5.9 17.2 2.5 12 2.5zM6.8 12.6a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3-4.2a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm4.4 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3 4.2a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg> <span id="palNameText"></span> ▾</button>
+      <button id="palEdit">✎︎ Edit</button>
     </div>
     <div id="swatches"></div>
   </div>
   <div id="toolbar">
     <div class="row">
       <button id="bMove"  data-mode="move"><span class="ic">✥</span>Move</button>
-      <button id="bSplit" data-mode="split"><span class="ic">✂</span>Split</button>
-      <button id="bPaint" data-mode="paint"><span class="ic">🖌</span>Paint</button>
-      <button id="bUndo"><span class="ic">↶</span>Undo</button>
-      <button id="bDissolve"><span class="ic">⌫</span>Dissolve</button>
-      <button id="bRock"><span class="ic">◆</span>Rock</button>
+      <button id="bSplit" data-mode="split"><span class="ic">✂︎</span>Split</button>
+      <button id="bPaint" data-mode="paint"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.7 3.3a1 1 0 0 0-1.4 0L10 12.6l1.4 1.4 9.3-9.3a1 1 0 0 0 0-1.4zM8.6 13.4c-1.9 0-3.4 1.5-3.4 3.4 0 1.1-.9 2-2 2.2.8 1.1 2.2 1.8 3.7 1.8 2.6 0 4.6-2 4.6-4.6 0-.4-.1-.8-.2-1.2z"/></svg></span>Paint</button>
+      <button id="bUndo"><span class="ic">↶︎</span>Undo</button>
+      <button id="bDissolve"><span class="ic">⌫︎</span>Dissolve</button>
+      <button id="bRock"><span class="ic">◆︎</span>Rock</button>
     </div>
     <div class="row small">
-      <button id="bMirror"><span class="ic">⇋</span><span id="mirrorLabel">Mirror X</span></button>
+      <button id="bMirror"><span class="ic">⇋︎</span><span id="mirrorLabel">Mirror X</span></button>
       <button id="bSym"><span class="ic">⧓</span>Symm</button>
       <button id="bSnap"><span class="ic">#</span>Snap</button>
-      <button id="bBake"><span class="ic">☀</span>Shade</button>
+      <button id="bBake"><span class="ic">☀︎</span>Shade</button>
       <button id="bImport"><span class="ic">⇩</span>Import</button>
       <button id="bExport"><span class="ic">⇪</span>Export</button>
-      <button id="bNew"><span class="ic">□</span>New</button>
+      <button id="bNew"><span class="ic">□︎</span>New</button>
     </div>
   </div>
 </div>
@@ -278,7 +282,7 @@
 <script>
 "use strict";
 // =====================================================================================
-//  Vert Modeler v5 (the pofa modeler)
+//  Vert Modeler v6 (the pofa modeler)
 //  A tiny touch-first low-poly modeler. Every model starts as a cube; you can move
 //  vertices (with an X/Y/Z axis gizmo), split edges, and paint faces, with optional live
 //  mirror symmetry, then export a C++ array in exactly the format the pofa renderer
@@ -1799,16 +1803,9 @@ function doImport(text) {
 //----- UI Wiring -----||
 function $(id) { return document.getElementById(id); }
 
-const HINTS = {
-  move:  "<b>Move</b>: tap a dot, then drag a coloured handle (X red, Y green, Z blue) to slide it on that axis. Drag the dot itself to move freely. Grey dots are hidden behind the model. Tap X/Y/Z below to type a value.",
-  split: "<b>Split</b>: tap an edge to add a vertex at its midpoint (an edge crossing the mirror gets it on the plane).",
-  paint: "<b>Paint</b>: pick a colour, tap a face to paint it. 🎨 switches palettes; ✎ Edit (or long-press a swatch) edits colours.",
-};
-const PREVIEW_HINT = {
-  move:  "<b>Preview</b>: how it looks in game. Tap the model (or anywhere) to edit again.",
-  split: "<b>Preview</b>: how it looks in game. Tap the model (or anywhere) to edit again.",
-  paint: "<b>Preview</b>: tap faces to paint, tap empty space to show edges again.",
-};
+// (v6: the hint line and the "verts · tris · mirror" info bar at the top are gone, per
+// Nathan's request. Mirror problems now show up as a one-off toast when they appear.)
+let lastWarn = { nv: 0, nt: 0 };
 
 function updateUI() {
   for (const b of document.querySelectorAll("[data-mode]")) b.classList.toggle("on", b.dataset.mode === mode);
@@ -1823,18 +1820,21 @@ function updateUI() {
   $("palette").classList.toggle("show", mode === "paint");
   renderPalette();
 
-  const parts = [vertCount() + " verts", triCount() + " tris"];
-  if (mesh.mirror) {
-    const nv = unpairedCount(), nt = foldedTriCount();
-    const warn = [nv ? nv + " unpaired verts: Symm" : "", nt ? nt + " folded tris: split a centre edge" : ""].filter(Boolean).join("; ");
-    parts.push("mirror " + mesh.mirror.toUpperCase() + (warn ? ` <span class="warn">(${warn})</span>` : ""));
-  }
-  if (snapOn) parts.push("snap " + SNAP_STEP);
-  let line2 = parts.join(" &middot; ");
   if (selected >= vertCount()) selected = -1;       // e.g. after a test or tool shrank the mesh
-  if (selected >= 0) line2 += "<br>vertex " + selected + ": " + getVert(selected).map(c => c.toFixed(3)).join(", ");
-  $("info").innerHTML = (overlayOn ? HINTS[mode] : PREVIEW_HINT[mode]) + "<br>" + line2;
+  mirrorWarnings();
   updateReadout();
+}
+
+// Mirror warnings as a short toast, only when a count goes from 0 to something, so a
+// drag doesn't re-toast every frame. They show straight away (even mid-drag), which is
+// when it's most useful to know.
+function mirrorWarnings() {
+  const nv = mesh.mirror ? unpairedCount() : 0, nt = mesh.mirror ? foldedTriCount() : 0;
+  const msgs = [];
+  if (nv && !lastWarn.nv) msgs.push(`${nv} unpaired vert${nv > 1 ? "s" : ""} (Symm fixes it)`);
+  if (nt && !lastWarn.nt) msgs.push(`${nt} folded tri${nt > 1 ? "s" : ""} (split a centre edge)`);
+  lastWarn = { nv, nt };
+  if (msgs.length) toast("Mirror " + mesh.mirror.toUpperCase() + ": " + msgs.join(", "));
 }
 
 // Live X / Y / Z chip at the bottom of the view while a vertex is selected in Move mode.
@@ -1950,6 +1950,7 @@ $("bMirror").addEventListener("click", () => {
   pushUndo();
   mesh.mirror = mesh.mirror === "x" ? "y" : mesh.mirror === "y" ? null : "x";
   const nv = pairMirror(mesh), nt = foldedTriCount();
+  lastWarn = { nv, nt };                           // this toast already reports them
   if (mesh.mirror) toast(nv || nt ? `Mirror ${mesh.mirror.toUpperCase()}: ${nv} verts have no twin, ${nt} tris are folded. Symm rebuilds the − side from the + side.`
                                   : `Mirror ${mesh.mirror.toUpperCase()}: symmetric`);
   else toast("Mirror off");
@@ -2133,7 +2134,7 @@ function parsePalette(text) {
 
 //----- Palettes: UI -----||
 // Where it lives: Paint mode shows the palette bar above the toolbar.
-//   🎨 <name> ▾ : opens the Palettes manager (switch, New, Duplicate, Rename, Delete,
+//   [palette icon] <name> ▾ : opens the Palettes manager (switch, New, Duplicate, Rename, Delete,
 //                 Export C++ with Copy, Import).
 //   ✎ Edit      : edit mode: tap a swatch to change/delete it, "+" adds one.
 //                 Long-press a swatch does the same without edit mode.
@@ -2190,7 +2191,7 @@ function attachSwatchPress(b, i) {
 let swEditing = -1;   // swatch index being edited, -1 = adding a new one
 function openSwatchEditor(i) {
   const p = activePalette();
-  if (p.builtin) { toast("The built-in palette is read-only: Duplicate it (🎨 ▾) to edit"); return; }
+  if (p.builtin) { toast("The built-in palette is read-only: Duplicate it (palette name ▾) to edit"); return; }
   swEditing = i;
   const c = i >= 0 ? p.colors[i] : currentColor;
   $("swTitle").textContent = i >= 0 ? "Edit colour " + (i + 1) : "Add colour";
@@ -2221,7 +2222,7 @@ $("swDelete").addEventListener("click", () => {
 });
 
 $("palEdit").addEventListener("click", () => {
-  if (activePalette().builtin) { toast("The built-in palette is read-only: Duplicate it (🎨 ▾) to edit"); palEditMode = false; }
+  if (activePalette().builtin) { toast("The built-in palette is read-only: Duplicate it (palette name ▾) to edit"); palEditMode = false; }
   else palEditMode = !palEditMode;
   updateUI();
 });
