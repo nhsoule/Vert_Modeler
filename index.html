@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="pofa-modeler-version" content="v11-pan-extrude">
+<meta name="pofa-modeler-version" content="v12-auto-simplify">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -155,6 +155,10 @@
     font: 14px ui-monospace, Menlo, Consolas, monospace;
   }
   #readout.show { display: flex; }
+  /* Auto-merge toggle: small, monochrome; dim = off. */
+  #roMerge { background: none; border: 0; color: #e8e8ee; font-size: 17px; padding: 4px 2px 4px 6px;
+             border-left: 1px solid #fff3; opacity: 1; touch-action: manipulation; }
+  #roMerge.off { opacity: 0.3; }
   /* Each number is a finger-sized button: tap it to type an exact value. */
   #readout .ro {
     opacity: 0.85; padding: 8px 6px; min-height: 24px; border-radius: 8px;
@@ -195,6 +199,7 @@
     <div id="stats"></div>
     <div id="readout">
       <span class="ro x" id="roX" data-axis="0"></span><span class="ro y" id="roY" data-axis="1"></span><span class="ro z" id="roZ" data-axis="2"></span>
+      <button id="roMerge" type="button" aria-label="Auto-merge on drag" title="Auto-merge: a vertex dragged flat onto its face (or straight onto its edge) dissolves on release"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h4.5l4.5 6 4.5-6H21v2h-3.5L13.3 12l4.2 5H21v2h-4.5L12 13l-4.5 6H3v-2h3.5l4.2-5-4.2-5H3z"/></svg></button>
       <span id="roEdit">
         <span id="roEditLbl"></span>
         <input id="roInput" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
@@ -293,7 +298,7 @@
 <script>
 "use strict";
 // =====================================================================================
-//  Vert Modeler v11 + Extrude (the pofa modeler)
+//  Vert Modeler v12 (the pofa modeler)
 //  A tiny touch-first low-poly modeler. Every model starts as a cube; you can move
 //  vertices (with an X/Y/Z axis gizmo), split edges, and paint faces, with optional live
 //  mirror symmetry, then export a C++ array in exactly the format the pofa renderer
@@ -853,6 +858,20 @@ function dissolveVertex(v) {
   if (typeof plan === "string") return plan;
   const ax = axisIndex(mesh.mirror), q = mesh.partner[v];
   let twin = null;
+  // v and its twin share a face (e.g. both on one front face that crosses the plane):
+  // their fans overlap, so dissolve one, then the other in the result (by position).
+  if (ax >= 0 && q >= 0 && q !== v && plan.remove.some(t => mesh.tris.slice(t*3, t*3 + 3).includes(q))) {
+    const saved = mesh, qPos = getVert(q);
+    mesh.partner[q] = -1; mesh.partner[v] = -1;          // dissolve v alone first
+    const r1 = dissolveVertex(v);
+    if (r1 !== true) { mesh = saved; mesh.partner[q] = v; mesh.partner[v] = q; return r1; }
+    let q2 = -1;
+    for (let i = 0; i < vertCount(); i++) if (v3.len(v3.sub(getVert(i), qPos)) < 1e-9) q2 = i;
+    const r2 = q2 >= 0 ? dissolveVertex(q2) : "its mirror twin is gone";
+    if (r2 !== true) { mesh = saved; mesh.partner[q] = v; mesh.partner[v] = q; return "its mirror twin can't go: " + r2; }
+    pairMirror(mesh);
+    return true;
+  }
   if (ax >= 0 && q >= 0 && q !== v) {
     const mirroredRemove = plan.remove.map(topoMirror);
     let qFan = 0;
@@ -885,6 +904,169 @@ function dissolveVertex(v) {
     if (used.has(i)) { const p = mesh.partner[i]; partner.push(p >= 0 && remap.has(p) ? remap.get(p) : -1); }
   mesh = { positions, tris: tris.map(i => remap.get(i)), colors, partner, mirror: mesh.mirror };
   return true;
+}
+
+
+//----- Auto Re-triangulation (always on) -----||
+// After every edit (drag release, split, extrude, dissolve, import, symm, undo, load) each
+// flat same-colour area is re-triangulated with well-shaped triangles by edge flips:
+// two triangles that share an edge, have the same colour, and lie in one plane form a
+// flat quad; if the quad is convex and the other diagonal gives fatter triangles (the
+// Delaunay test: the two angles facing the shared edge add up to more than 180 degrees),
+// the diagonal is flipped. Repeating until nothing flips gives the constrained Delaunay
+// triangulation of every flat region: the same minimum count (a flat polygon with n
+// corners = n - 2 triangles), no slivers where they can be avoided, CCW kept. A flip
+// never moves a vertex or changes the shape, colours, or silhouette: it only redraws
+// diagonals inside flat faces, so the fresh cube (square faces, a tie) is untouched.
+// With mirror on, an edge and its twin edge flip together so the mesh stays symmetric.
+const FLAT_COS  = Math.cos(0.5 * Math.PI / 180);  // two tris within 0.5 degrees = one flat face
+const FLIP_EPS  = 1e-6;                           // radians: ties (squares) never flip
+
+function retriangulate() {
+  const ax = axisIndex(mesh.mirror);
+  const T = mesh.tris, E = new Map();             // "a>b" -> triangle holding that directed edge
+  const key = (a, b) => a + ">" + b;
+  const index = (t, on) => { for (let k = 0; k < 3; k++) { const kk = key(T[t*3 + k], T[t*3 + (k+1) % 3]); if (on) E.set(kk, t); else E.delete(kk); } };
+  for (let t = 0; t < triCount(); t++) index(t, true);
+  const third = (t, a, b) => { for (let k = 0; k < 3; k++) { const v = T[t*3 + k]; if (v !== a && v !== b) return v; } return -1; };
+  const nrm = (a, b, c) => v3.cross(v3.sub(getVert(b), getVert(a)), v3.sub(getVert(c), getVert(a)));
+  const angle = (o, a, b) => { const u = v3.sub(getVert(a), getVert(o)), w = v3.sub(getVert(b), getVert(o));
+                                return Math.atan2(v3.len(v3.cross(u, w)), v3.dot(u, w)); };
+  // Can edge a>b (triangle t = a,b,c; its neighbour u = b,a,d) be flipped, and should it?
+  const plan = (a, b) => {
+    const t = E.get(key(a, b)), u = E.get(key(b, a));
+    if (t === undefined || u === undefined || t === u) return null;
+    if (!colorEq(mesh.colors[t], mesh.colors[u])) return null;
+    const c = third(t, a, b), d = third(u, b, a);
+    if (c < 0 || d < 0 || c === d || E.has(key(c, d)) || E.has(key(d, c))) return null;
+    const n1 = nrm(a, b, c), n2 = nrm(b, a, d), l1 = v3.len(n1), l2 = v3.len(n2);
+    if (l1 < 1e-12 || l2 < 1e-12 || v3.dot(n1, n2) < FLAT_COS * l1 * l2) return null;   // not flat
+    const m1 = nrm(c, a, d), m2 = nrm(d, b, c), k1 = v3.len(m1), k2 = v3.len(m2);
+    const L = Math.max(l1, l2);
+    if (k1 < 1e-6 * L || k2 < 1e-6 * L) return null;                                   // would be a sliver/degenerate
+    if (v3.dot(m1, n1) <= 0 || v3.dot(m2, n1) <= 0) return null;                       // quad not convex
+    if (angle(c, a, b) + angle(d, b, a) <= Math.PI + FLIP_EPS) return null;            // already Delaunay
+    return { t, u, a, b, c, d };
+  };
+  const apply = (f) => {
+    index(f.t, false); index(f.u, false);
+    T.splice(f.t*3, 3, f.c, f.a, f.d);
+    T.splice(f.u*3, 3, f.d, f.b, f.c);
+    index(f.t, true); index(f.u, true);
+  };
+  let flips = 0;
+  for (let pass = 0; pass < 50; pass++) {
+    let any = false;
+    for (const [kk] of [...E]) {
+      const [a, b] = kk.split(">").map(Number);
+      if (a > b) continue;                          // each undirected edge once
+      const f = plan(a, b);
+      if (!f) continue;
+      if (ax >= 0) {
+        const pa = mesh.partner[a], pb = mesh.partner[b];
+        const twinEdge = pa >= 0 && pb >= 0 && (E.has(key(pb, pa)) || E.has(key(pa, pb)));
+        const self = twinEdge && ((pa === b && pb === a) || (pa === a && pb === b));
+        if (twinEdge && !self) {
+          // The twin edge has reversed winding: twin of a>b is pb>pa.
+          const g = E.has(key(pb, pa)) ? plan(pb, pa) : null;
+          if (!g) continue;                         // keep symmetry: both flip or neither
+          apply(f);
+          const g2 = plan(pb, pa);                  // re-check after the first flip
+          if (g2) apply(g2); else { // undo f
+            index(f.t, false); index(f.u, false);
+            T.splice(f.t*3, 3, f.a, f.b, f.c); T.splice(f.u*3, 3, f.b, f.a, f.d);
+            index(f.t, true); index(f.u, true);
+            continue;
+          }
+          flips += 2; any = true; continue;
+        }
+        if (self && mesh.partner[f.c] !== f.d && !(mesh.partner[f.c] === f.c && mesh.partner[f.d] === f.d)) continue;
+      }
+      apply(f); flips++; any = true;
+    }
+    if (!any) break;
+  }
+  return flips;
+}
+
+
+//----- Auto-Merge (snap-to-flat while dragging) -----||
+// Dragging ONE vertex (or a vertex and its mirror twin) with the gizmo: when it comes
+// within MERGE_PX on screen of a spot where it would be redundant, it snaps there and
+// turns into a hollow cyan ring ("will merge"). Redundant = Dissolve could remove it
+// without changing the shape: all faces around it flat in one plane (same colour), or
+// it sits on a straight edge between two flat areas. Release there and it's dissolved
+// (its twin too), exactly like the Dissolve button; it's in the same undo step as the
+// drag, so one Undo brings the vertex back. Drag back out before releasing and nothing
+// happens: it's still a real vertex.
+//  - Screen-space tolerance, so it feels the same at any zoom; but never more than a
+//    quarter of the vertex's shortest edge, so zooming far out can't swallow corners.
+//  - Corners (3+ flat areas) never qualify: Dissolve refuses them.
+//  - It only arms after the vertex has been OUT of range during this drag. A split vertex
+//    starts exactly on its edge (redundant); sliding it along the edge never merges it.
+//    Split and Extrude themselves never dissolve anything.
+//  - Off with the merge toggle in the coordinate chip (it's remembered).
+const MERGE_PX = 10, MERGE_MAX_EDGE = 0.25;
+
+function mergeTol(v, link) {
+  const p = getVert(v), s = project(p);
+  let tol = s ? MERGE_PX * 2 * s.depth * Math.tan(FOV_Y / 2) / viewH : 0;
+  for (const x of link) tol = Math.min(tol, MERGE_MAX_EDGE * v3.len(v3.sub(getVert(x), p)));
+  return tol;
+}
+
+// Would vertex v (moved to q, twin mirrored) dissolve cleanly? Trial on a copy.
+function trialMerge(v, q) {
+  const saved = mesh;
+  mesh = JSON.parse(JSON.stringify(saved));
+  moveVertex(v, q.slice());
+  const ok = dissolveVertex(v) === true;
+  mesh = saved;
+  return ok;
+}
+
+// Where v (now at p, dragged along axis a) would snap to merge, or null.
+function mergeTarget(v, a) {
+  const p = getVert(v), fan = [];
+  for (let t = 0; t < triCount(); t++) {
+    const k = [0, 1, 2].find(k => mesh.tris[t*3 + k] === v);
+    if (k !== undefined) fan.push([mesh.tris[t*3 + (k+1) % 3], mesh.tris[t*3 + (k+2) % 3]]);
+  }
+  if (fan.length < 2) return null;
+  const link = [...new Set(fan.flat())];
+  const tol = mergeTol(v, link);
+  if (!(tol > 0)) return null;
+  const cands = [];
+  // a) Flat: the ring around v lies in one plane -> slide v onto it (along the drag axis).
+  const L = link.map(getVert), c = v3.scale(L.reduce((s, x) => v3.add(s, x), [0, 0, 0]), 1 / L.length);
+  let n = [0, 0, 0];
+  for (const [x, y] of fan) n = v3.add(n, v3.cross(v3.sub(getVert(x), c), v3.sub(getVert(y), c)));
+  if (v3.len(n) > 1e-12) {
+    n = v3.norm(n);
+    const size = Math.max(...L.map(x => v3.len(v3.sub(x, c))));
+    if (L.every(x => Math.abs(v3.dot(n, v3.sub(x, c))) <= 1e-4 * Math.max(size, 1e-3))) {
+      const dist = v3.dot(n, v3.sub(c, p));
+      if (Math.abs(n[a]) > 0.3) { const q = p.slice(); q[a] += dist / n[a]; cands.push(q); }
+      cands.push(v3.add(p, v3.scale(n, dist)));
+    }
+  }
+  // b) Straight edge: v lies between two of its neighbours -> put it on that line.
+  for (let i = 0; i < link.length; i++) for (let j = i + 1; j < link.length; j++) {
+    const A = L[i], B = L[j], d = v3.sub(B, A), dd = v3.dot(d, d);
+    if (dd < 1e-12) continue;
+    const t = v3.dot(v3.sub(p, A), d) / dd;
+    if (t > 0.02 && t < 0.98) cands.push(v3.add(A, v3.scale(d, t)));
+  }
+  const near = cands.map(q => ({ q, d: v3.len(v3.sub(q, p)) })).filter(o => o.d <= tol).sort((x, y) => x.d - y.d);
+  for (const o of near) if (trialMerge(v, o.q)) return o.q;
+  return null;
+}
+
+function setMergeOn(on) {
+  mergeOn = on;
+  try { localStorage.setItem("pofa-modeler-merge", on ? "1" : "0"); } catch (e) { /* ignore */ }
+  toast(on ? "Auto-merge on: drag a vertex flat onto its face or edge to dissolve it" : "Auto-merge off");
+  updateUI();
 }
 
 
@@ -1068,6 +1250,9 @@ let modelName    = "model"; // C identifier used in the export
 let selected     = -1;      // primary selected vertex (the last one tapped), -1 = none
 let selExtra     = new Set(); // the other selected vertices (multi-select); empty if selected < 0
 let undoStack    = [];      // array of JSON snapshots of `mesh`
+let mergeOn      = true;    // auto-merge on drag release (stored under MERGE_KEY)
+try { mergeOn = localStorage.getItem("pofa-modeler-merge") !== "0"; } catch (e) { /* storage blocked */ }
+let mergeVerts   = new Set(); // verts that will merge if the drag ends now (drawn as rings)
 let showRock     = true;    // reference rock visible? (stored under ROCK_KEY, not in the model save)
 try { showRock = localStorage.getItem(ROCK_KEY) !== "0"; } catch (e) { /* storage blocked */ }
 
@@ -1145,6 +1330,7 @@ function load() {
 
 // Call after any edit: rebuild GPU buffers, save, refresh labels.
 function meshChanged() {
+  retriangulate();                                 // flat faces: best-shaped triangles
   meshDirty = true;
   save();
   updateUI();
@@ -1196,11 +1382,13 @@ void main() {
 precision mediump float;
 in vec3 vColor;
 uniform bool uRoundPoints;
+uniform bool uRing;
 uniform float uAlpha;
 out vec4 fragColor;
 void main() {
   // Points are squares by default; throw away the corners to get round dots.
   if (uRoundPoints && length(gl_PointCoord - 0.5) > 0.5) discard;
+  if (uRing && length(gl_PointCoord - 0.5) < 0.3) discard;    // hollow ring ("will merge")
   fragColor = vec4(vColor, uAlpha);
 }`);
 
@@ -1208,6 +1396,7 @@ const U = {
   mvp:   gl.getUniformLocation(prog, "uMVP"),
   size:  gl.getUniformLocation(prog, "uPointSize"),
   round: gl.getUniformLocation(prog, "uRoundPoints"),
+  ring:  gl.getUniformLocation(prog, "uRing"),
   alpha: gl.getUniformLocation(prog, "uAlpha"),
 };
 
@@ -1234,6 +1423,7 @@ function uploadBatch(batch, data) {
 const faceBatch  = makeBatch();
 const edgeBatch  = makeBatch();
 const dotBatch   = makeBatch();
+const ringBatch  = makeBatch();   // "will merge" rings
 const gridBatch  = makeBatch();
 const planeBatch = makeBatch();
 const rockBatch  = makeBatch();   // reference rock: uploaded once, never rebuilt
@@ -1278,8 +1468,9 @@ function rebuildBuffers() {
   const ax = axisIndex(mesh.mirror);
   const twinsOfSel = new Set(selection().map(i => mesh.partner[i]));
   const vis = vertVisibility();
-  const hiddenDots = [], shownDots = [];
+  const hiddenDots = [], shownDots = [], rings = [];
   for (let i = 0; i < vertCount(); i++) {
+    if (mergeVerts.has(i)) { rings.push(...getVert(i), 0.3, 0.9, 1.0); continue; }
     let c = [0.95, 0.95, 1.0];
     if (ax >= 0 && mesh.partner[i] < 0) c = [1.0, 0.35, 0.3];
     if (twinsOfSel.has(i) && !isSelected(i)) c = [1.0, 0.55, 0.15];   // twin of a selected vert
@@ -1288,6 +1479,7 @@ function rebuildBuffers() {
     else hiddenDots.push(...getVert(i), ...c.map(k => 0.18 + k * 0.25));   // dim grey-ish
   }
   uploadBatch(dotBatch, hiddenDots.concat(shownDots));
+  uploadBatch(ringBatch, rings);
 
   // Mirror plane: a quad on axis = 0, a bit bigger than the model on the other two axes.
   const plane = [];
@@ -1661,7 +1853,7 @@ canvas.addEventListener("pointerdown", (e) => {
   // Second finger: switch to pinch/pan, whatever was happening (a dot that was about
   // to be toggled is forgotten, so two fingers never change the selection).
   if (pointers.size === 2) {
-    if (gesture && gesture.kind === "axis" && gesture.moved) meshChanged();
+    if (gesture && gesture.kind === "axis" && gesture.moved) { mergeVerts = new Set(); meshChanged(); }
     const [a, b] = [...pointers.values()];
     const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
     gesture = { kind: "pinch", lastDist: d, lastMid: [mx, my], startDist: d, startMid: [mx, my],
@@ -1695,7 +1887,12 @@ canvas.addEventListener("pointerdown", (e) => {
       dir[h] = 1;
       const s = axisParam(screenRay(p.x, p.y), p0, dir);
       gesture = { kind: "axis", starts: selStarts(), axis: h, p0, dir, sGrab: s === null ? 0 : s,
-                  before: snapshot(), moved: false, startX: p.x, startY: p.y };
+                  before: snapshot(), moved: false, startX: p.x, startY: p.y, merge: -1 };
+      // Auto-merge only for a single vertex (+ twin), and only once it has left the
+      // redundant range (so a split vertex isn't merged just by touching it).
+      const solo = gesture.starts.size === 1 ? [...gesture.starts.keys()][0] : -1;
+      gesture.solo = solo;
+      gesture.armed = solo >= 0 && !mergeTarget(solo, h);
       updateUI();
       return;
     }
@@ -1752,6 +1949,16 @@ canvas.addEventListener("pointermove", (e) => {
     if (snapOn) delta = Math.round((c0 + delta) / SNAP_STEP) * SNAP_STEP - c0;
     if (!gesture.moved) { pushUndo(gesture.before); gesture.moved = true; }   // one undo per drag
     moveSelection(gesture.starts, a, delta);       // twins follow mirrored
+    if (mergeOn && gesture.solo >= 0) {
+      const v = gesture.solo, q = mergeTarget(v, a);
+      if (!q) gesture.armed = true;
+      if (q && gesture.armed) {
+        moveVertex(v, q.slice());                   // snap onto the plane / line
+        if (gesture.merge < 0) toast("Will merge: release to simplify (drag away to keep it)");
+        gesture.merge = v;
+        mergeVerts = new Set([v, mesh.partner[v]].filter(i => i >= 0));
+      } else if (gesture.merge >= 0) { gesture.merge = -1; mergeVerts = new Set(); toast("Kept"); }
+    }
     meshDirty = true;
     updateUI();
   }
@@ -1780,6 +1987,14 @@ function endPointer(e) {
     } else handleTap(gesture.startX, gesture.startY);
   }
   const wasAxis = gesture.kind === "axis";
+  if (wasAxis && gesture.merge >= 0 && mergeOn) {
+    // Released in range: dissolve it (and its twin). Same undo step as the drag.
+    mergeVerts = new Set();
+    const r = dissolveVertex(gesture.merge);
+    if (r === true) { clearSelection(); toast("Merged: vertex dissolved, face simplified"); }
+    else toast("Couldn't merge: " + r);
+  }
+  mergeVerts = new Set();
   if (wasAxis && gesture.moved) meshChanged();
   gesture = null;
   if (wasAxis) updateUI();                         // clear the "active axis" highlight
@@ -2093,6 +2308,7 @@ function updateUI() {
   $("bUndo").disabled = undoStack.length === 0;
   // Dissolve works on exactly one vertex (with several selected it's disabled).
   $("bDissolve").disabled = !(mode === "move" && selection().length === 1);
+  $("roMerge").classList.toggle("off", !mergeOn);
   // Extrude needs 3+ selected verts (if they cover no face, pressing it says why).
   $("bExtrude").disabled = !(mode === "move" && selection().length >= 3);
   $("palette").classList.toggle("show", mode === "paint");
@@ -2315,6 +2531,7 @@ $("bSym").addEventListener("click", doSymm);
 
 $("bUndo").addEventListener("click", undo);
 $("bExtrude").addEventListener("click", doExtrude);
+$("roMerge").addEventListener("click", () => setMergeOn(!mergeOn));
 $("bDissolve").addEventListener("click", () => {
   if (selection().length !== 1) return;
   const before = snapshot();
@@ -2727,6 +2944,13 @@ function frame() {
   gl.uniform1f(U.size, 10 * dpr);
   gl.bindVertexArray(dotBatch.vao);
   gl.drawArrays(gl.POINTS, 0, dotBatch.count);
+  if (ringBatch.count) {
+    gl.uniform1i(U.ring, 1);
+    gl.uniform1f(U.size, 22 * dpr);
+    gl.bindVertexArray(ringBatch.vao);
+    gl.drawArrays(gl.POINTS, 0, ringBatch.count);
+    gl.uniform1i(U.ring, 0);
+  }
 
   // 6) Move gizmo on the selected vertex (on top of everything, like the dots).
   drawGizmo();
