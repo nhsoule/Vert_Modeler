@@ -9,10 +9,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="pofa modeler">
+<meta name="apple-mobile-web-app-title" content="Vert Modeler">
+<meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="pofa-modeler-version" content="v4-seamless-mirror-dissolve">
-<title>pofa modeler</title>
+<meta name="pofa-modeler-version" content="v5-occluded-verts">
+<title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
   html, body {
@@ -39,14 +40,24 @@
   #info b { color: #fff; }
   #info .warn { color: #ff8a7a; }
 
-  /* ----- Palette Bar -----|| */
-  #palette {
-    display: none; grid-template-columns: repeat(8, 1fr); gap: 6px;
-    padding: 8px 10px; background: #1f2029; border-top: 1px solid #2c2e3a;
+  /* ----- Palette Bar (Paint mode) -----|| */
+  #palette { display: none; padding: 6px 10px 8px; background: #1f2029; border-top: 1px solid #2c2e3a; }
+  #palette.show { display: block; }
+  .palHead { display: flex; gap: 6px; margin-bottom: 6px; }
+  .palHead button {
+    min-height: 38px; border: 0; border-radius: 9px; background: #2a2c38; color: #e8e8ee;
+    font: inherit; font-size: 13px; padding: 0 12px; touch-action: manipulation;
   }
-  #palette.show { display: grid; }
-  .swatch { height: 34px; border-radius: 8px; border: 2px solid #0000; padding: 0; }
+  .palHead #palName { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .palHead button.on { background: #e0b43a; color: #16171d; }
+  #swatches {
+    display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px;
+    max-height: 82px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
+  .swatch { height: 36px; border-radius: 8px; border: 2px solid #0000; padding: 0; touch-action: manipulation; }
   .swatch.on { border-color: #fff; box-shadow: 0 0 0 2px #000 inset; }
+  .swatch.add { background: #2a2c38; color: #e8e8ee; font-size: 22px; line-height: 1; }
+  #palette.editing .swatch:not(.add) { border-style: dashed; border-color: #e0b43a; }
 
   /* ----- Toolbar (two rows: tools on top, toggles/actions below) -----|| */
   #toolbar {
@@ -94,16 +105,64 @@
 
   #importText { color: #e8e8ee; }
 
+  /* ----- Palette Manager + Swatch Editor -----|| */
+  .btnrow { display: flex; gap: 6px; }
+  .btnrow button { flex: 1; }
+  #palList { display: flex; flex-direction: column; gap: 6px; max-height: 32vh; overflow-y: auto; }
+  .palItem {
+    display: flex; flex-direction: column; align-items: stretch; gap: 4px; text-align: left;
+    min-height: 48px; padding: 6px 10px !important; background: #2a2c38 !important; color: #e8e8ee !important;
+    border: 2px solid #0000 !important; font-weight: 500 !important;
+  }
+  .palItem.on { border-color: #e0b43a !important; }
+  .palItem .strip { display: flex; height: 10px; border-radius: 3px; overflow: hidden; }
+  .palItem .strip i { flex: 1; }
+  #palText {
+    flex: 1; min-height: 120px; width: 100%; box-sizing: border-box; resize: none;
+    background: #0d0e12; color: #cfe3c0; border: 1px solid #2c2e3a; border-radius: 8px;
+    font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; padding: 8px;
+    -webkit-user-select: text; user-select: text; white-space: pre; overflow: auto;
+  }
+  #palIO { display: none; flex-direction: column; gap: 6px; flex: 1; min-height: 0; }
+  #palIO.show { display: flex; }
+  #swModal { justify-content: center; }
+  #swModal .card { background: #1f2029; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  #swColor { width: 100%; height: 64px; border: 0; border-radius: 10px; padding: 0; background: none; }
+  #swHex {
+    min-height: 44px; box-sizing: border-box; padding: 0 10px; background: #0d0e12; color: #fff;
+    border: 1px solid #2c2e3a; border-radius: 8px; font: 17px ui-monospace, Menlo, Consolas, monospace;
+    -webkit-user-select: text; user-select: text;
+  }
+
   /* ----- Gizmo Coordinate Readout -----|| */
   #readout {
     position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
     display: none; gap: 10px; padding: 6px 12px; border-radius: 16px;
-    background: #000b; pointer-events: none; white-space: nowrap;
-    font: 13px ui-monospace, Menlo, Consolas, monospace;
+    background: #000b; white-space: nowrap; align-items: center;
+    font: 14px ui-monospace, Menlo, Consolas, monospace;
   }
   #readout.show { display: flex; }
-  #readout span { opacity: 0.75; }
-  #readout span.act { opacity: 1; font-weight: 700; text-decoration: underline; }
+  /* Each number is a finger-sized button: tap it to type an exact value. */
+  #readout .ro {
+    opacity: 0.85; padding: 8px 6px; min-height: 24px; border-radius: 8px;
+    touch-action: manipulation; cursor: pointer;
+  }
+  #readout .ro.act { opacity: 1; font-weight: 700; text-decoration: underline; }
+  #readout .ro.locked { opacity: 0.4; }
+  #readout .ro:active { background: #fff2; }
+  #roEdit { display: none; align-items: center; gap: 6px; }
+  #roEdit.show { display: flex; }
+  #roEdit input {
+    width: 7.5em; min-height: 40px; box-sizing: border-box; padding: 0 8px;
+    background: #0d0e12; color: #fff; border: 1px solid #e0b43a; border-radius: 8px;
+    font: 17px ui-monospace, Menlo, Consolas, monospace;   /* >= 16px: iOS won't zoom in */
+    -webkit-user-select: text; user-select: text;
+  }
+  #roEdit button {
+    min-width: 40px; min-height: 40px; border: 0; border-radius: 8px;
+    background: #2a2c38; color: #e8e8ee; font: 17px system-ui, sans-serif; touch-action: manipulation;
+  }
+  #roEdit button.ok { background: #e0b43a; color: #16171d; }
   #readout .x { color: #ff7a7a; } #readout .y { color: #7ee08a; } #readout .z { color: #7fa6ff; }
 
   /* Small transient message ("Copied!") */
@@ -120,9 +179,23 @@
   <div id="view">
     <canvas id="gl"></canvas>
     <div id="info"></div>
-    <div id="readout"><span class="x" id="roX"></span><span class="y" id="roY"></span><span class="z" id="roZ"></span></div>
+    <div id="readout">
+      <span class="ro x" id="roX" data-axis="0"></span><span class="ro y" id="roY" data-axis="1"></span><span class="ro z" id="roZ" data-axis="2"></span>
+      <span id="roEdit">
+        <span id="roEditLbl"></span>
+        <input id="roInput" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <button id="roNeg" type="button" aria-label="Flip sign">±</button>
+        <button id="roOk" type="button" class="ok" aria-label="Apply">✓</button>
+      </span>
+    </div>
   </div>
-  <div id="palette"></div>
+  <div id="palette">
+    <div class="palHead">
+      <button id="palName">🎨 <span id="palNameText"></span> ▾</button>
+      <button id="palEdit">✎ Edit</button>
+    </div>
+    <div id="swatches"></div>
+  </div>
   <div id="toolbar">
     <div class="row">
       <button id="bMove"  data-mode="move"><span class="ic">✥</span>Move</button>
@@ -162,12 +235,50 @@
   <div class="note">Paste a previous export (the whole snippet, or just the numbers). Undo brings the old model back.</div>
   <textarea id="importText" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="static const float model_verts[] = { ... };"></textarea>
 </div>
+<div id="palModal" class="modal">
+  <div class="head">
+    <span>Palettes</span>
+    <button id="pmClose" class="alt">Close</button>
+  </div>
+  <div class="note">Tap a palette to use it. The built-in one can't be changed or deleted: Duplicate it to make your own.</div>
+  <div id="palList"></div>
+  <div class="btnrow">
+    <button id="pmNew" class="alt">New</button>
+    <button id="pmDup" class="alt">Duplicate</button>
+    <button id="pmRename" class="alt">Rename</button>
+    <button id="pmDelete" class="alt">Delete</button>
+  </div>
+  <div class="btnrow">
+    <button id="pmExport" class="alt">Export C++</button>
+    <button id="pmImport" class="alt">Import</button>
+  </div>
+  <div id="palIO">
+    <div class="head">
+      <span id="palIOTitle"></span>
+      <button id="pioCopy">Copy</button>
+      <button id="pioGo">Import</button>
+    </div>
+    <textarea id="palText" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+  </div>
+</div>
+<div id="swModal" class="modal">
+  <div class="card">
+    <div class="head"><span id="swTitle">Swatch</span></div>
+    <input id="swColor" type="color" value="#ff004d">
+    <input id="swHex" type="text" maxlength="7" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="#rrggbb">
+    <div class="btnrow">
+      <button id="swSave">Save</button>
+      <button id="swDelete" class="alt">Delete</button>
+      <button id="swCancel" class="alt">Cancel</button>
+    </div>
+  </div>
+</div>
 <div id="toast"></div>
 
 <script>
 "use strict";
 // =====================================================================================
-//  pofa modeler v4
+//  Vert Modeler v5 (the pofa modeler)
 //  A tiny touch-first low-poly modeler. Every model starts as a cube; you can move
 //  vertices (with an X/Y/Z axis gizmo), split edges, and paint faces, with optional live
 //  mirror symmetry, then export a C++ array in exactly the format the pofa renderer
@@ -175,6 +286,10 @@
 //  as a size reference (display only). Mirror never adds seam vertices on its own: the
 //  centre cut only appears where you split an edge that crosses the plane. Dissolve
 //  removes a vertex that sits on a flat area or straight edge (handy for old seams).
+//  Vertices hidden behind the model (or off screen) are greyed out and can't be grabbed.
+//  Tap a number in the X / Y / Z chip to type an exact coordinate. A quick tap on empty
+//  space hides the editing overlay for a clean in-game preview. Colours come from named
+//  palettes you can create, edit, export to C++, and import (Paint mode).
 //
 //  Coordinates match the game: Z is up, X is left/right, Y is forward/back, and models
 //  sit with their base on z = 0. Rendering uses raw WebGL 2 (= OpenGL ES 3.0), so the
@@ -205,13 +320,19 @@ const AXIS_COLORS   = [[0.95, 0.30, 0.30], [0.35, 0.85, 0.40], [0.35, 0.55, 1.00
 const BAKE_LIGHT    = normalize3([0.3, 0.5, 0.8]);
 const bakeFactor    = (n) => 0.55 + 0.45 * Math.max(0, n[0]*BAKE_LIGHT[0] + n[1]*BAKE_LIGHT[1] + n[2]*BAKE_LIGHT[2]);
 
-// 16-colour palette (PICO-8 colours). Index 0..15 is what gets stored per triangle.
+// Built-in palette (PICO-8 colours, 0..255). Faces store their own RGB (0..1 floats), so a
+// palette is just a set of colours to paint with; changing palettes never recolours a model.
 const PALETTE = [
   [  0,  0,  0], [ 29, 43, 83], [126, 37, 83], [  0,135, 81],
   [171, 82, 54], [ 95, 87, 79], [194,195,199], [255,241,232],
   [255,  0, 77], [255,163,  0], [255,236, 39], [  0,228, 54],
   [ 41,173,255], [131,118,156], [255,119,168], [255,204,170],
 ];
+// Palette colours are kept at 3 decimals, the same precision the C++ export prints, so a
+// palette exported and imported again comes back identical.
+const round3 = (x) => Math.round(x * 1000) / 1000;
+const DEFAULT_PALETTE = PALETTE.map(c => c.map(v => round3(v / 255)));
+const colorEq = (a, b, eps = 1e-6) => Math.abs(a[0]-b[0]) <= eps && Math.abs(a[1]-b[1]) <= eps && Math.abs(a[2]-b[2]) <= eps;
 
 
 //----- Small Vector Math -----||
@@ -273,7 +394,7 @@ function mat4LookAt(eye, target, up) {
 // Struct-of-arrays, just like the game's data:
 //   positions : flat [x0,y0,z0, x1,y1,z1, ...]  (3 floats per vertex, Z-up)
 //   tris      : flat [a0,b0,c0, a1,b1,c1, ...]  (3 vertex indices per triangle, CCW from outside)
-//   colors    : [c0, c1, ...]                     (one palette index 0..15 per triangle)
+//   colors    : [[r,g,b], ...]                    (one colour per triangle, floats 0..1, unlit)
 //   partner   : [p0, p1, ...]                     (mirror partner per vertex: other index,
 //                                                  itself if it lies on the plane, -1 if none)
 //   mirror    : "x" | "y" | null                  (mirror axis; the plane is axis = 0)
@@ -305,7 +426,7 @@ function makeCube(mirror = null) {
   ];
   const tris = [];
   for (const q of quads) tris.push(q[0], q[1], q[2],  q[0], q[2], q[3]);
-  const m = { positions, tris, colors: new Array(12).fill(6), partner: new Array(8).fill(-1), mirror };
+  const m = { positions, tris, colors: Array.from({ length: 12 }, () => DEFAULT_PALETTE[6].slice()), partner: new Array(8).fill(-1), mirror };
   pairMirror(m);
   return m;
 }
@@ -324,7 +445,7 @@ function triNormal(t) {
 // Colour of triangle t as 0..1 floats, with baked light if "Shade" is on.
 function triColor(t) {
   const k = bakeOn ? bakeFactor(triNormal(t)) : 1;
-  return PALETTE[mesh.colors[t]].map(c => Math.min(1, c / 255 * k));
+  return mesh.colors[t].map(c => Math.min(1, c * k));
 }
 
 // Unique edges as [a, b] pairs (a < b). Each edge is shared by up to 2 triangles.
@@ -656,7 +777,7 @@ function dissolvePlan(v) {
   if (f !== fan[0]) return "the faces around it aren't one fan";
   // Group consecutive triangles by plane + colour.
   const nrm = (r) => triNormal(r.t), same = (r, q) =>
-    mesh.colors[r.t] === mesh.colors[q.t] && v3.dot(nrm(r), nrm(q)) > 1 - 1e-6;
+    colorEq(mesh.colors[r.t], mesh.colors[q.t]) && v3.dot(nrm(r), nrm(q)) > 1 - 1e-6;
   const cuts = [];                                 // ring index where a new group starts
   for (let i = 0; i < ring.length; i++) if (!same(ring[(i + ring.length - 1) % ring.length], ring[i])) cuts.push(i);
   const P = getVert(v);
@@ -818,7 +939,8 @@ const ROCK_BOUNDS = (() => {
 let mode         = "move";  // "move" | "split" | "paint"
 let snapOn       = false;
 let bakeOn       = true;    // bake light into face colours (preview + export)
-let currentColor = 8;       // palette index used by Paint
+let currentColor = DEFAULT_PALETTE[8].slice();   // RGB (0..1) that Paint uses
+let overlayOn    = true;    // false = clean preview: no dots, edges, gizmo, or mirror plane
 let modelName    = "model"; // C identifier used in the export
 let selected     = -1;      // selected vertex index, -1 = none
 let undoStack    = [];      // array of JSON snapshots of `mesh`
@@ -851,10 +973,16 @@ function save() {
   } catch (e) { /* storage full or blocked (private mode): ignore */ }
 }
 
+// Old saves stored a palette index (0..15) per face: turn those into RGB.
+function upgradeColors(m) {
+  m.colors = m.colors.map(c => Number.isInteger(c) ? DEFAULT_PALETTE[c & 15].slice() : c);
+}
+
 function validMesh(m) {
   return m && Array.isArray(m.positions) && Array.isArray(m.tris) && Array.isArray(m.colors)
     && m.positions.length % 3 === 0 && m.tris.length % 3 === 0
     && m.colors.length === m.tris.length / 3
+    && m.colors.every(c => Number.isInteger(c) || (Array.isArray(c) && c.length === 3 && c.every(isFinite)))
     && m.tris.every(i => Number.isInteger(i) && i >= 0 && i < m.positions.length / 3);
 }
 
@@ -870,16 +998,19 @@ function load() {
         for (let i = 0; i < P.length; i += 3) out.push(P[i], -P[i+2], P[i+1] + 0.5);
         old.mesh.positions = out;
         old.mesh.mirror = null;
+        upgradeColors(old.mesh);
         d = { v: 2, mesh: old.mesh, currentColor: old.currentColor, snapOn: old.snapOn };
       }
     }
     if (!d || d.v !== 2) return;
     if (validMesh(d.mesh)) {
+      upgradeColors(d.mesh);
       mesh = d.mesh;
       if (mesh.mirror !== "x" && mesh.mirror !== "y") mesh.mirror = null;
       if (!Array.isArray(mesh.partner) || mesh.partner.length !== vertCount()) pairMirror(mesh);
     }
-    if (Number.isInteger(d.currentColor)) currentColor = d.currentColor & 15;
+    if (Number.isInteger(d.currentColor)) currentColor = DEFAULT_PALETTE[d.currentColor & 15].slice();
+    else if (Array.isArray(d.currentColor) && d.currentColor.length === 3) currentColor = d.currentColor;
     snapOn = !!d.snapOn;
     if (typeof d.bakeOn === "boolean") bakeOn = d.bakeOn;
     if (typeof d.modelName === "string") modelName = cIdent(d.modelName);
@@ -1016,17 +1147,21 @@ function rebuildBuffers() {
 
   // Dot colours: selected = yellow, its mirror partner = orange,
   // unpaired (mirror on but no twin) = red, everything else = white.
+  // Hidden (behind the model or off screen) = a dim version, and they go in the buffer
+  // first so visible dots draw on top of them where they overlap.
   const ax = axisIndex(mesh.mirror);
   const partnerOfSel = selected >= 0 ? mesh.partner[selected] : -1;
-  const dots = [];
+  const vis = vertVisibility();
+  const hiddenDots = [], shownDots = [];
   for (let i = 0; i < vertCount(); i++) {
     let c = [0.95, 0.95, 1.0];
     if (ax >= 0 && mesh.partner[i] < 0) c = [1.0, 0.35, 0.3];
     if (i === partnerOfSel && i !== selected) c = [1.0, 0.55, 0.15];
     if (i === selected) c = [1.0, 0.85, 0.1];
-    dots.push(...getVert(i), ...c);
+    if (vis[i]) shownDots.push(...getVert(i), ...c);
+    else hiddenDots.push(...getVert(i), ...c.map(k => 0.18 + k * 0.25));   // dim grey-ish
   }
-  uploadBatch(dotBatch, dots);
+  uploadBatch(dotBatch, hiddenDots.concat(shownDots));
 
   // Mirror plane: a quad on axis = 0, a bit bigger than the model on the other two axes.
   const plane = [];
@@ -1088,11 +1223,72 @@ function screenRay(sx, sy) {
 }
 
 
+//----- Occlusion (which vertices can you actually see?) -----||
+// A vertex is hidden if it's off screen / behind the camera, or if the straight line
+// from the eye to it passes through one of the model's triangles first. Triangles that
+// use the vertex itself are skipped (the ray always "hits" them right at the vertex).
+// The rock is display only, so it never hides anything. Done on the CPU: for low-poly
+// meshes that's (verts x tris) ray tests, a few tens of thousands at most.
+// The result is cached and only recomputed when the camera, the canvas size, or the
+// mesh changes (the key below), so a still view costs nothing.
+const OCCLUDE_EPS = 1e-4;   // relative slack so a hit right at the target doesn't count
+let visCache = { key: "", vis: [] };
+
+// Is screen point s (from project()) inside the canvas? project() already rejects
+// points behind the camera.
+const onScreen = (s) => !!s && s.x >= 0 && s.x <= viewW && s.y >= 0 && s.y <= viewH;
+
+// Does any triangle (except those in `skip`) sit between the eye and point p?
+function occluded(eye, p, skip) {
+  const toP = v3.sub(p, eye), L = v3.len(toP);
+  if (L < 1e-9) return false;
+  const dir = v3.scale(toP, 1 / L), limit = L * (1 - OCCLUDE_EPS) - OCCLUDE_EPS;
+  for (let t = 0; t < triCount(); t++) {
+    if (skip(t)) continue;
+    const hit = rayTriangle(eye, dir, getVert(mesh.tris[t*3]), getVert(mesh.tris[t*3+1]), getVert(mesh.tris[t*3+2]));
+    if (hit !== null && hit < limit) return true;
+  }
+  return false;
+}
+
+// true/false per vertex, from the cache when nothing changed.
+function vertVisibility() {
+  const key = [cam.yaw, cam.pitch, cam.dist, ...cam.target, viewW, viewH].join(",") + "|" +
+              mesh.positions.join(",") + "|" + mesh.tris.join(",");
+  if (visCache.key === key) return visCache.vis;
+  updateCamera();                                  // project() must use this exact camera
+  const eye = camEye(), vis = [];
+  for (let i = 0; i < vertCount(); i++) {
+    const p = getVert(i);
+    vis.push(onScreen(project(p)) && !occluded(eye, p, (t) =>
+      mesh.tris[t*3] === i || mesh.tris[t*3+1] === i || mesh.tris[t*3+2] === i));
+  }
+  visCache = { key, vis };
+  return vis;
+}
+
+const vertVisible = (i) => !!vertVisibility()[i];
+
+// An edge counts as visible if its midpoint is: on screen and not behind a triangle
+// (skipping the triangles that contain the edge itself).
+function edgeVisible(a, b) {
+  const m = v3.scale(v3.add(getVert(a), getVert(b)), 0.5);
+  if (!onScreen(project(m))) return false;
+  return !occluded(camEye(), m, (t) => {
+    const tri = mesh.tris.slice(t*3, t*3 + 3);
+    return tri.includes(a) && tri.includes(b);
+  });
+}
+
+
 //----- Picking -----||
-// Nearest vertex whose projected dot is within TOUCH_RADIUS of the tap.
+// Nearest VISIBLE vertex whose projected dot is within TOUCH_RADIUS of the tap.
+// Hidden (greyed) vertices can't be picked, so you never grab one through the model.
 function pickVertex(sx, sy) {
   let best = -1, bestD = TOUCH_RADIUS, bestDepth = Infinity;
+  const vis = vertVisibility();
   for (let i = 0; i < vertCount(); i++) {
+    if (!vis[i]) continue;
     const s = project(getVert(i));
     if (!s) continue;
     const d = Math.hypot(s.x - sx, s.y - sy);
@@ -1110,7 +1306,7 @@ const worldPerPx = (w) => 2 * w * Math.tan(FOV_Y / 2) / viewH;
 // A handle pointing (almost) straight at the camera is too short to grab, so it's hidden.
 // With mirror on, a vertex sitting on the plane can't leave it: that handle is "locked".
 function gizmoHandles() {
-  if (mode !== "move" || selected < 0 || selected >= vertCount()) return [];
+  if (!overlayOn || mode !== "move" || selected < 0 || selected >= vertCount()) return [];
   const p = getVert(selected), s0 = project(p);
   if (!s0) return [];
   const L = GIZMO_PX * worldPerPx(s0.depth);
@@ -1162,16 +1358,20 @@ function distToSegment(px, py, a, b) {
   return Math.hypot(px - (a.x + t*dx), py - (a.y + t*dy));
 }
 
-// Nearest edge on screen within TOUCH_RADIUS.
+// Nearest visible edge on screen within TOUCH_RADIUS. Close candidates are sorted first
+// and the occlusion test (the expensive part) only runs on those, nearest first.
 function pickEdge(sx, sy) {
-  let best = null, bestD = TOUCH_RADIUS;
+  updateCamera();
+  const near = [];
   for (const [a, b] of uniqueEdges()) {
     const pa = project(getVert(a)), pb = project(getVert(b));
     if (!pa || !pb) continue;
     const d = distToSegment(sx, sy, pa, pb);
-    if (d < bestD) { best = [a, b]; bestD = d; }
+    if (d < TOUCH_RADIUS) near.push({ e: [a, b], d });
   }
-  return best;
+  near.sort((u, w) => u.d - w.d);
+  for (const n of near) if (edgeVisible(n.e[0], n.e[1])) return n.e;
+  return null;
 }
 
 // Möller–Trumbore ray/triangle test. Returns distance t along the ray, or null.
@@ -1243,7 +1443,9 @@ canvas.addEventListener("pointerdown", (e) => {
 
   gesture = { kind: "pending", startX: p.x, startY: p.y, lastX: p.x, lastY: p.y };
 
-  if (mode === "move") {
+  // In clean preview nothing is grabbed on touch-down: the tap (on release) restores the
+  // overlay, and a drag just orbits.
+  if (mode === "move" && overlayOn) {
     // 1) An axis handle of the selected vertex? (Checked first: handles are the big targets.)
     const h = pickHandle(p.x, p.y);
     if (h >= 0) {
@@ -1348,21 +1550,54 @@ function endPointer(e) {
 canvas.addEventListener("pointerup", endPointer);
 canvas.addEventListener("pointercancel", endPointer);
 
-// A tap on empty space (or anywhere, in Split/Paint mode).
+//----- Taps + Clean Preview -----||
+// A tap = finger down and up without moving past TAP_SLOP (drags orbit, two fingers
+// pinch; neither ever counts as a tap). Rules:
+//  Overlay on:
+//    Move : tap on empty space -> deselect AND hide the overlay (clean preview);
+//           tap on the model (not a dot) -> just deselect.
+//    Split: tap an edge -> split it; tap empty space -> clean preview.
+//    Paint: tap a face -> paint it; tap empty space -> clean preview.
+//  Clean preview (overlay off): only the shaded model (+ grid, + rock if on) is drawn.
+//    Tap on the model, a dot or an edge spot -> overlay back; that tap does nothing else
+//    (no select, no split). Tap empty space -> overlay back too.
+//    Exception, Paint mode: tapping a face still paints it (you see the real result
+//    without wireframe), and tapping empty space brings the overlay back.
+function setOverlay(on) {
+  if (overlayOn === on) return;
+  overlayOn = on;
+  if (!on) { selected = -1; if (roEditing) closeCoordEdit(false); }
+  meshDirty = true;
+  updateUI();
+}
+
+function paintAt(x, y) {
+  const t = pickFace(x, y);
+  if (t < 0) return false;
+  const targets = [t, ...mirroredTris(t)];   // just [t] when mirror is off
+  if (targets.every(u => colorEq(mesh.colors[u], currentColor))) return true;
+  pushUndo();
+  for (const u of targets) mesh.colors[u] = currentColor.slice();
+  meshChanged();
+  return true;
+}
+
 function handleTap(x, y) {
-  if (mode === "move") {            // tap on nothing = deselect
-    selected = -1; meshDirty = true; updateUI();
+  if (!overlayOn) {
+    if (mode === "paint" && paintAt(x, y)) return;
+    setOverlay(true);                       // model, dot, edge, or empty: show it again
+    return;
+  }
+  if (mode === "move") {
+    const onModel = pickFace(x, y) >= 0 || pickEdge(x, y);
+    if (onModel) { selected = -1; meshDirty = true; updateUI(); }
+    else setOverlay(false);
   } else if (mode === "split") {
     const edge = pickEdge(x, y);
     if (edge) { pushUndo(); selected = splitEdgeMirrored(edge[0], edge[1]); meshChanged(); }
+    else if (pickFace(x, y) < 0) setOverlay(false);
   } else if (mode === "paint") {
-    const t = pickFace(x, y);
-    if (t < 0) return;
-    const targets = [t, ...mirroredTris(t)];   // just [t] when mirror is off
-    if (targets.every(u => mesh.colors[u] === currentColor)) return;
-    pushUndo();
-    for (const u of targets) mesh.colors[u] = currentColor;
-    meshChanged();
+    if (!paintAt(x, y)) setOverlay(false);
   }
 }
 
@@ -1396,7 +1631,7 @@ function buildExport() {
   const name = cIdent(modelName);
   const nVerts = triCount() * 3;
   const L = [];
-  L.push(`// ${name}: ${triCount()} triangles, ${nVerts} verts (exported from pofa modeler)`);
+  L.push(`// ${name}: ${triCount()} triangles, ${nVerts} verts (exported from Vert Modeler)`);
   L.push(`// layout per vertex: pos3 (x, y, z in Z-up world units) + color3 (r, g, b in 0..1)`);
   L.push(`//   6 floats, stride 6*sizeof(float); 3 verts per triangle, CCW seen from outside`);
   L.push(`//   base sits on z = 0; lighting ${bakeOn ? "baked into colors (0.55 + 0.45*max(0, n.(0.3,0.5,0.8)))" : "not baked (flat palette colors)"}`);
@@ -1412,9 +1647,6 @@ function buildExport() {
   L.push(`};`);
   L.push(`static const int ${name}_vert_count = ${nVerts};`);
   L.push(``);
-  L.push(`// palette used (index: r, g, b):`);
-  for (let i = 0; i < 16; i += 4)
-    L.push("//  " + PALETTE.slice(i, i + 4).map((c, j) => `${String(i + j).padStart(2)}: ${c.join(",")}`).join("   "));
   return L.join("\n") + "\n";
 }
 
@@ -1461,10 +1693,12 @@ async function doExport() {
 //  3. Every 6 numbers = one vertex (x, y, z, r, g, b); every 3 vertices = one triangle.
 //  4. Weld: vertices whose positions are within WELD_EPS share one index, so moving a
 //     corner moves every triangle that touches it (like the cube you started with).
-//  5. Colours: the editor stores a palette index per triangle, so each triangle's colour
-//     is matched to the nearest palette entry. If the export had Shade on, the light was
-//     multiplied in; we try both "baked" and "flat", keep whichever fits better overall,
-//     and set the Shade button to match so re-exporting gives the same numbers.
+//  5. Colours are kept EXACTLY. If the export had Shade on, the light was multiplied in,
+//     so we divide it back out (and turn Shade on) so re-exporting prints the same
+//     numbers. Which one? The export's own comment says "baked into colors" or "not
+//     baked"; for bare numbers we guess by which reading matches palette colours more
+//     (tie = flat, which is always exact). Colours that aren't in the active palette
+//     are added to a palette called "Imported" so you can paint with them again.
 // The editor's faces are triangles, so no quad merging is needed.
 function parseExport(text) {
   const nameMatch = text.match(/([A-Za-z_][A-Za-z0-9_]*)_verts\s*\[/);
@@ -1479,10 +1713,11 @@ function parseExport(text) {
   if (nums.length < 18) throw new Error("Need at least one triangle (18 numbers), found " + nums.length + ".");
   if (nums.length % 18) throw new Error(nums.length + " numbers isn't a whole number of triangles (6 per vertex, 3 vertices each).");
   if (nums.some(n => !isFinite(n))) throw new Error("Found a number that isn't finite.");
-  return { name: nameMatch ? nameMatch[1] : null, nums };
+  const lighting = /baked into colors/.test(text) ? "baked" : /not baked/.test(text) ? "flat" : null;
+  return { name: nameMatch ? nameMatch[1] : null, nums, lighting };
 }
 
-function importMesh(nums, mirror) {
+function importMesh(nums, mirror, lighting = null) {
   // Weld through a hash grid: each position goes in a cell of size WELD_EPS; we check the
   // 27 neighbouring cells so two points either side of a cell border still merge.
   const positions = [], cells = new Map(), corner = [];
@@ -1514,32 +1749,23 @@ function importMesh(nums, mirror) {
   if (!tris.length) throw new Error("Every triangle was degenerate (zero area).");
   const m = { positions, tris, colors: [], partner: [], mirror };
 
-  // Palette match under both hypotheses (baked light vs flat), then keep the better one.
   const normal = (t) => {
     const P = (i) => positions.slice(i*3, i*3 + 3);
     const a = P(tris[t*3]), b = P(tris[t*3+1]), c = P(tris[t*3+2]);
     return v3.norm(v3.cross(v3.sub(b, a), v3.sub(c, a)));
   };
-  function match(t, k) {
-    let best = 0, bestE = Infinity;
-    PALETTE.forEach((pc, i) => {
-      const e = pc.reduce((s, c, j) => s + (Math.min(1, c / 255 * k) - rgb[t][j]) ** 2, 0);
-      if (e < bestE) { bestE = e; best = i; }
-    });
-    return { i: best, e: bestE };
+  const nT = tris.length / 3;
+  const unbaked = rgb.map((c, t) => { const k = bakeFactor(normal(t)); return c.map(v => v / k); });
+  let useBaked = lighting === "baked";
+  if (lighting === null) {
+    // Guess: count faces whose colour is a palette colour under each reading.
+    const known = allPalettes().flatMap(p => p.colors);
+    const hits = (list) => list.filter(c => known.some(k => colorEq(k, c, 0.0026))).length;
+    useBaked = hits(unbaked) > hits(rgb);
   }
-  const nT = tris.length / 3, baked = [], flat = [];
-  let eBaked = 0, eFlat = 0;
-  for (let t = 0; t < nT; t++) {
-    const b = match(t, bakeFactor(normal(t))), f = match(t, 1);
-    baked.push(b); flat.push(f); eBaked += b.e; eFlat += f.e;
-  }
-  const useBaked = eBaked <= eFlat;
-  const chosen = useBaked ? baked : flat;
-  m.colors = chosen.map(c => c.i);
-  const approx = chosen.filter(c => c.e > 3 * (1.5 / 255) ** 2).length;   // off by > ~1.5/255 per channel
+  m.colors = (useBaked ? unbaked : rgb).map(c => c.slice());
   pairMirror(m);
-  return { mesh: m, baked: useBaked, approx, dropped: nums.length / 18 - nT };
+  return { mesh: m, baked: useBaked, dropped: nums.length / 18 - nT };
 }
 
 function openImport() {
@@ -1552,7 +1778,7 @@ function doImport(text) {
   let parsed, res;
   try {
     parsed = parseExport(text);
-    res = importMesh(parsed.nums, mesh.mirror);
+    res = importMesh(parsed.nums, mesh.mirror, parsed.lighting);
   } catch (e) { toast("Import failed: " + e.message); return false; }
   pushUndo();                                      // the old model, so Undo brings it back
   mesh = res.mesh;
@@ -1561,7 +1787,8 @@ function doImport(text) {
   selected = -1;
   meshChanged();
   const notes = [`${vertCount()} verts, ${triCount()} tris`];
-  if (res.approx) notes.push(`${res.approx} faces matched to nearest palette colour`);
+  const added = addToImportedPalette(mesh.colors);
+  if (added) notes.push(`${added} new colour${added > 1 ? "s" : ""} added to the "Imported" palette`);
   if (res.dropped) notes.push(`${res.dropped} zero-area tris dropped`);
   if (mesh.mirror && unpairedCount()) notes.push(`${unpairedCount()} verts have no mirror twin`);
   toast(`Imported ${modelName}: ` + notes.join(", "));
@@ -1573,9 +1800,14 @@ function doImport(text) {
 function $(id) { return document.getElementById(id); }
 
 const HINTS = {
-  move:  "<b>Move</b>: tap a dot, then drag a coloured handle (X red, Y green, Z blue) to slide it on that axis. Drag the dot itself to move freely. Dissolve removes it if it's on a flat spot.",
+  move:  "<b>Move</b>: tap a dot, then drag a coloured handle (X red, Y green, Z blue) to slide it on that axis. Drag the dot itself to move freely. Grey dots are hidden behind the model. Tap X/Y/Z below to type a value.",
   split: "<b>Split</b>: tap an edge to add a vertex at its midpoint (an edge crossing the mirror gets it on the plane).",
-  paint: "<b>Paint</b>: pick a colour, tap a face to paint it.",
+  paint: "<b>Paint</b>: pick a colour, tap a face to paint it. 🎨 switches palettes; ✎ Edit (or long-press a swatch) edits colours.",
+};
+const PREVIEW_HINT = {
+  move:  "<b>Preview</b>: how it looks in game. Tap the model (or anywhere) to edit again.",
+  split: "<b>Preview</b>: how it looks in game. Tap the model (or anywhere) to edit again.",
+  paint: "<b>Preview</b>: tap faces to paint, tap empty space to show edges again.",
 };
 
 function updateUI() {
@@ -1589,7 +1821,7 @@ function updateUI() {
   $("bUndo").disabled = undoStack.length === 0;
   $("bDissolve").disabled = !(mode === "move" && selected >= 0 && selected < vertCount());
   $("palette").classList.toggle("show", mode === "paint");
-  for (const s of document.querySelectorAll(".swatch")) s.classList.toggle("on", +s.dataset.i === currentColor);
+  renderPalette();
 
   const parts = [vertCount() + " verts", triCount() + " tris"];
   if (mesh.mirror) {
@@ -1601,35 +1833,105 @@ function updateUI() {
   let line2 = parts.join(" &middot; ");
   if (selected >= vertCount()) selected = -1;       // e.g. after a test or tool shrank the mesh
   if (selected >= 0) line2 += "<br>vertex " + selected + ": " + getVert(selected).map(c => c.toFixed(3)).join(", ");
-  $("info").innerHTML = HINTS[mode] + "<br>" + line2;
+  $("info").innerHTML = (overlayOn ? HINTS[mode] : PREVIEW_HINT[mode]) + "<br>" + line2;
   updateReadout();
 }
 
 // Live X / Y / Z chip at the bottom of the view while a vertex is selected in Move mode.
 // The axis being dragged is underlined.
 function updateReadout() {
-  const show = mode === "move" && selected >= 0 && selected < vertCount();
+  const show = overlayOn && mode === "move" && selected >= 0 && selected < vertCount();
   $("readout").classList.toggle("show", show);
-  if (!show) return;
+  if (!show) { if (roEditing) closeCoordEdit(false); return; }
+  if (roEditing && roEditing.vert !== selected) closeCoordEdit(false);
   const p = getVert(selected), act = gesture && gesture.kind === "axis" ? gesture.axis : -1;
   ["roX", "roY", "roZ"].forEach((id, a) => {
     const el = $(id);
     el.textContent = "XYZ"[a] + " " + (Math.abs(p[a]) < 5e-5 ? 0 : p[a]).toFixed(3);
     el.classList.toggle("act", a === act);
+    el.classList.toggle("locked", axisLocked(selected, a));
+    el.style.display = roEditing ? "none" : "";
   });
 }
 
-// Palette swatches
-PALETTE.forEach((c, i) => {
-  const b = document.createElement("button");
-  b.className = "swatch"; b.dataset.i = i;
-  b.style.background = `rgb(${c[0]},${c[1]},${c[2]})`;
-  b.addEventListener("click", () => { currentColor = i; save(); updateUI(); });
-  $("palette").appendChild(b);
+
+//----- Typed Coordinates -----||
+// Tap X, Y or Z in the chip to type an exact value. Enter (or tapping ✓, or tapping
+// elsewhere) applies it, Escape cancels. "±" flips the sign, because phone decimal
+// keypads often have no minus key. Typed values are NOT snapped. Mirror rules still
+// apply: the twin moves mirrored, and an on-plane vertex's mirror axis is locked at 0.
+// The chip sits over the canvas but isn't the canvas, so tapping it never picks,
+// orbits, or deselects.
+let roEditing = null;   // { vert, axis } while the input is open
+
+// With mirror on, a vertex on the plane can't leave it along the mirror axis.
+function axisLocked(v, a) {
+  return axisIndex(mesh.mirror) === a && mesh.partner[v] === v;
+}
+
+function openCoordEdit(a) {
+  if (selected < 0) return;
+  if (axisLocked(selected, a)) { toast(`${"XYZ"[a]} is locked to the mirror plane (0)`); return; }
+  roEditing = { vert: selected, axis: a };
+  const v = getVert(selected)[a];
+  $("roEditLbl").textContent = "XYZ"[a];
+  $("roEditLbl").className = "xyz"[a];
+  $("roInput").value = String(+(Math.abs(v) < 5e-5 ? 0 : v).toFixed(4));
+  $("roEdit").classList.add("show");
+  updateReadout();
+  $("roInput").focus();
+  $("roInput").select();
+}
+
+// Read the input: allows "-0.25", ".5", "0,5" (comma decimal), "+1".
+function parseCoord(text) {
+  const t = String(text).trim().replace(",", ".");
+  if (!/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(t)) return null;
+  const n = Number(t);
+  return isFinite(n) ? n : null;
+}
+
+function closeCoordEdit(apply) {
+  if (!roEditing) return;
+  const { vert, axis } = roEditing;
+  roEditing = null;                                // first, so blur can't run this twice
+  $("roEdit").classList.remove("show");
+  if (document.activeElement === $("roInput")) $("roInput").blur();
+  if (apply && vert < vertCount()) {
+    const n = parseCoord($("roInput").value);
+    if (n === null) toast("Not a number");
+    else {
+      const p = getVert(vert);
+      if (Math.abs(p[axis] - n) > 1e-9 && !axisLocked(vert, axis)) {
+        pushUndo();
+        p[axis] = n;
+        moveVertex(vert, p);                       // also moves the mirror twin
+        meshChanged();
+      }
+    }
+  }
+  updateUI();
+}
+
+for (const id of ["roX", "roY", "roZ"])
+  $(id).addEventListener("click", (e) => { e.stopPropagation(); openCoordEdit(+$(id).dataset.axis); });
+$("roInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); closeCoordEdit(true); }
+  else if (e.key === "Escape") { e.preventDefault(); closeCoordEdit(false); }
 });
+$("roInput").addEventListener("blur", () => closeCoordEdit(true));
+// The buttons keep focus in the input (preventDefault on pointerdown), so pressing them
+// doesn't blur-and-apply early.
+for (const id of ["roNeg", "roOk"]) $(id).addEventListener("pointerdown", (e) => e.preventDefault());
+$("roNeg").addEventListener("click", () => {
+  const el = $("roInput"), t = el.value.trim();
+  el.value = t.startsWith("-") ? t.slice(1) : t.startsWith("+") ? "-" + t.slice(1) : "-" + t;
+  el.focus();
+});
+$("roOk").addEventListener("click", () => closeCoordEdit(true));
 
 for (const b of document.querySelectorAll("[data-mode]"))
-  b.addEventListener("click", () => { mode = b.dataset.mode; updateUI(); });
+  b.addEventListener("click", () => { mode = b.dataset.mode; overlayOn = true; meshDirty = true; updateUI(); });
 
 $("bSnap").addEventListener("click", () => {
   snapOn = !snapOn;
@@ -1701,6 +2003,306 @@ $("mCopy").addEventListener("click", async () => {
 });
 
 
+//----- Palettes: Data -----||
+// Palettes live in localStorage under their own key, separate from the model, so they
+// survive New / Import and are shared by every model. The built-in palette ("default")
+// is not stored: it's always there as a fallback, read-only, and can't be deleted.
+//   { v: 1, active: "<id>", list: [ { id, name, colors: [[r,g,b] 0..1, ...] }, ... ] }
+const PAL_KEY = "pofa-modeler-palettes";
+const BUILTIN = { id: "default", name: "PICO-8 (built-in)", colors: DEFAULT_PALETTE, builtin: true };
+let palStore = { v: 1, active: "default", list: [] };
+let palEditMode = false;
+
+function palLoad() {
+  try {
+    const d = JSON.parse(localStorage.getItem(PAL_KEY));
+    if (d && d.v === 1 && Array.isArray(d.list)) {
+      palStore.list = d.list.filter(p => p && typeof p.id === "string" && typeof p.name === "string" && Array.isArray(p.colors))
+        .map(p => ({ id: p.id, name: p.name, colors: p.colors.filter(c => Array.isArray(c) && c.length === 3 && c.every(isFinite)) }));
+      palStore.active = typeof d.active === "string" ? d.active : "default";
+    }
+  } catch (e) { /* corrupt: start with just the built-in */ }
+}
+function palSave() {
+  try { localStorage.setItem(PAL_KEY, JSON.stringify(palStore)); } catch (e) { /* ignore */ }
+}
+const allPalettes = () => [BUILTIN, ...palStore.list];
+const activePalette = () => palStore.list.find(p => p.id === palStore.active) || BUILTIN;
+const newPalId = () => "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+function uniqueName(base) {
+  let name = base, n = 2;
+  while (allPalettes().some(p => p.name === name)) name = base + " " + n++;
+  return name;
+}
+function createPalette(name, colors) {
+  const p = { id: newPalId(), name: uniqueName(name), colors: colors.map(c => c.map(round3)) };
+  palStore.list.push(p);
+  palStore.active = p.id;
+  palSave();
+  return p;
+}
+
+// After a model import: colours not in the active palette go into "Imported" (made if
+// needed). The active palette doesn't change. Returns how many colours were added.
+// Colours closer than IMPORT_EPS (about 2/3 of one 8-bit step) count as the same, so tiny
+// rounding differences from un-baking light don't add near-duplicate swatches.
+const IMPORT_EPS = 0.0026;
+function addToImportedPalette(colors) {
+  const act = activePalette(), fresh = [];
+  for (const c of colors) {
+    const r = c.map(v => round3(Math.min(1, Math.max(0, v))));
+    if (act.colors.some(k => colorEq(k, r, IMPORT_EPS)) || fresh.some(k => colorEq(k, r, IMPORT_EPS))) continue;
+    fresh.push(r);
+  }
+  if (!fresh.length) return 0;
+  let imp = palStore.list.find(p => p.name === "Imported");
+  if (!imp) { imp = { id: newPalId(), name: "Imported", colors: [] }; palStore.list.push(imp); }
+  let added = 0;
+  for (const r of fresh) if (!imp.colors.some(k => colorEq(k, r, IMPORT_EPS))) { imp.colors.push(r); added++; }
+  palSave();
+  return added;
+}
+
+// Hex <-> 0..1 floats.
+const toHex = (c) => "#" + c.map(v => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, "0")).join("");
+function fromHex(h) {
+  let t = String(h).trim().replace(/^#/, "");
+  if (/^[0-9a-fA-F]{3}$/.test(t)) t = t.split("").map(ch => ch + ch).join("");
+  if (!/^[0-9a-fA-F]{6}$/.test(t)) return null;
+  return [0, 2, 4].map(i => round3(parseInt(t.slice(i, i + 2), 16) / 255));
+}
+
+
+//----- Palettes: C++ Export / Import -----||
+// Export matches the vertex export's style and precision (3 decimals + f):
+//   static const float <name>_palette[][3] = { {r, g, b}, ... };
+//   static const int <name>_palette_count = N;
+function buildPaletteExport(p) {
+  const name = cIdent(p.name);
+  const L = [];
+  L.push(`// ${name}: ${p.colors.length} colors (exported from Vert Modeler), r, g, b in 0..1`);
+  L.push(`static const float ${name}_palette[][3] = {`);
+  for (const c of p.colors) L.push(`    {${c.map(f3).join(", ")}},   // ${toHex(c)}`);
+  L.push(`};`);
+  L.push(`static const int ${name}_palette_count = ${p.colors.length};`);
+  return L.join("\n") + "\n";
+}
+
+// Accepts: that C++ snippet (name from "<name>_palette"), or a list of hex codes
+// (#rrggbb / rrggbb / #rgb, separated by commas, spaces, or new lines), or bare float
+// triples in 0..1. Throws an Error with a readable message for anything else.
+function parsePalette(text) {
+  const src = String(text);
+  const noComments = (t) => t.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+  const nameMatch = src.match(/([A-Za-z_][A-Za-z0-9_]*)_palette\s*\[/);
+  let body = noComments(src), name = nameMatch ? nameMatch[1] : null;
+  if (nameMatch) {
+    // The array's outer braces: first "{" after the name, to its matching "}".
+    const clean = noComments(src.slice(nameMatch.index));
+    const open = clean.indexOf("{");
+    if (open < 0) throw new Error("found " + name + "_palette but no { ... } after it");
+    let depth = 0, close = -1;
+    for (let i = open; i < clean.length; i++) {
+      if (clean[i] === "{") depth++;
+      else if (clean[i] === "}" && --depth === 0) { close = i; break; }
+    }
+    if (close < 0) throw new Error("the palette's braces aren't closed");
+    body = clean.slice(open + 1, close);
+  }
+  const tokens = body.split(/[\s,;]+/).filter(Boolean);
+  if (!tokens.length) throw new Error("nothing to import");
+  let colors;
+  if (!nameMatch && tokens.every(t => /^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$/.test(t) && (/^#/.test(t) || /[a-fA-F]/.test(t) || t.length === 6))) {
+    colors = tokens.map(fromHex);
+  } else {
+    const stripped = body.replace(/[{}]/g, " ");
+    if (/#[0-9a-fA-F]/.test(stripped)) throw new Error("mixes hex codes with other text");
+    const bad = stripped.split(/[\s,;]+/).filter(Boolean).find(t => !/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?[fF]?$/.test(t));
+    if (bad) throw new Error(`"${bad.slice(0, 20)}" isn't a number or hex colour`);
+    const nums = (stripped.match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g) || []).map(Number);
+    if (nums.length % 3) throw new Error(nums.length + " numbers isn't a whole number of r, g, b colours");
+    if (nums.some(n => !(n >= 0 && n <= 1))) throw new Error("colour values must be between 0 and 1");
+    colors = [];
+    for (let i = 0; i < nums.length; i += 3) colors.push([nums[i], nums[i+1], nums[i+2]].map(round3));
+  }
+  if (!colors.length) throw new Error("no colours found");
+  if (colors.length > 256) throw new Error("more than 256 colours");
+  return { name, colors };
+}
+
+
+//----- Palettes: UI -----||
+// Where it lives: Paint mode shows the palette bar above the toolbar.
+//   🎨 <name> ▾ : opens the Palettes manager (switch, New, Duplicate, Rename, Delete,
+//                 Export C++ with Copy, Import).
+//   ✎ Edit      : edit mode: tap a swatch to change/delete it, "+" adds one.
+//                 Long-press a swatch does the same without edit mode.
+// The built-in palette is read-only (Edit tells you to Duplicate it).
+let palRenderKey = "";
+function renderPalette() {
+  const p = activePalette();
+  // updateUI runs on every drag step: only rebuild the swatch buttons when something changed.
+  const key = JSON.stringify([p.id, p.name, p.colors, currentColor, palEditMode]);
+  if (key === palRenderKey) return;
+  palRenderKey = key;
+  $("palNameText").textContent = p.name;
+  $("palEdit").classList.toggle("on", palEditMode);
+  $("palette").classList.toggle("editing", palEditMode);
+  const box = $("swatches");
+  box.textContent = "";
+  p.colors.forEach((c, i) => {
+    const b = document.createElement("button");
+    b.className = "swatch" + (colorEq(c, currentColor, 0.0006) ? " on" : "");
+    b.dataset.i = i;
+    b.style.background = toHex(c);
+    b.title = toHex(c);
+    attachSwatchPress(b, i);
+    box.appendChild(b);
+  });
+  if (palEditMode && !p.builtin) {
+    const add = document.createElement("button");
+    add.className = "swatch add"; add.textContent = "+";
+    add.addEventListener("click", () => openSwatchEditor(-1));
+    box.appendChild(add);
+  }
+}
+
+// Tap = pick the colour (or edit, in edit mode). Long-press (450 ms) = edit.
+function attachSwatchPress(b, i) {
+  let timer = 0, longFired = false;
+  b.addEventListener("pointerdown", () => {
+    longFired = false;
+    timer = setTimeout(() => { longFired = true; openSwatchEditor(i); }, 450);
+  });
+  const cancel = () => clearTimeout(timer);
+  b.addEventListener("pointerup", cancel);
+  b.addEventListener("pointerleave", cancel);
+  b.addEventListener("pointercancel", cancel);
+  b.addEventListener("contextmenu", (e) => e.preventDefault());
+  b.addEventListener("click", () => {
+    if (longFired) return;
+    if (palEditMode) { openSwatchEditor(i); return; }
+    currentColor = activePalette().colors[i].slice();
+    save(); updateUI();
+  });
+}
+
+let swEditing = -1;   // swatch index being edited, -1 = adding a new one
+function openSwatchEditor(i) {
+  const p = activePalette();
+  if (p.builtin) { toast("The built-in palette is read-only: Duplicate it (🎨 ▾) to edit"); return; }
+  swEditing = i;
+  const c = i >= 0 ? p.colors[i] : currentColor;
+  $("swTitle").textContent = i >= 0 ? "Edit colour " + (i + 1) : "Add colour";
+  $("swColor").value = toHex(c);
+  $("swHex").value = toHex(c);
+  $("swDelete").style.display = i >= 0 ? "" : "none";
+  $("swModal").classList.add("show");
+}
+$("swColor").addEventListener("input", () => { $("swHex").value = $("swColor").value; });
+$("swHex").addEventListener("input", () => { const c = fromHex($("swHex").value); if (c) $("swColor").value = toHex(c); });
+$("swCancel").addEventListener("click", () => $("swModal").classList.remove("show"));
+$("swSave").addEventListener("click", () => {
+  const c = fromHex($("swHex").value);
+  if (!c) { toast("Use a hex colour like #ff004d"); return; }
+  const p = activePalette();
+  if (swEditing >= 0) p.colors[swEditing] = c; else p.colors.push(c);
+  currentColor = c.slice();
+  palSave(); save();
+  $("swModal").classList.remove("show");
+  updateUI();
+});
+$("swDelete").addEventListener("click", () => {
+  const p = activePalette();
+  if (swEditing >= 0) p.colors.splice(swEditing, 1);
+  palSave();
+  $("swModal").classList.remove("show");
+  updateUI();
+});
+
+$("palEdit").addEventListener("click", () => {
+  if (activePalette().builtin) { toast("The built-in palette is read-only: Duplicate it (🎨 ▾) to edit"); palEditMode = false; }
+  else palEditMode = !palEditMode;
+  updateUI();
+});
+
+// --- Manager modal
+function renderPalList() {
+  const list = $("palList");
+  list.textContent = "";
+  for (const p of allPalettes()) {
+    const b = document.createElement("button");
+    b.className = "palItem" + (p.id === activePalette().id ? " on" : "");
+    const label = document.createElement("span");
+    label.textContent = `${p.name} · ${p.colors.length}`;
+    const strip = document.createElement("span");
+    strip.className = "strip";
+    for (const c of p.colors.slice(0, 32)) { const i = document.createElement("i"); i.style.background = toHex(c); strip.appendChild(i); }
+    b.append(label, strip);
+    b.addEventListener("click", () => { palStore.active = p.id; palEditMode = false; palSave(); renderPalList(); updateUI(); });
+    list.appendChild(b);
+  }
+  $("pmRename").disabled = $("pmDelete").disabled = !!activePalette().builtin;
+}
+function showPalIO(kind) {
+  $("palIO").classList.add("show");
+  $("palIOTitle").textContent = kind === "export" ? activePalette().name + " (C++)" : "Paste C++, hex codes, or r g b floats";
+  $("pioCopy").style.display = kind === "export" ? "" : "none";
+  $("pioGo").style.display = kind === "import" ? "" : "none";
+  $("palText").readOnly = kind === "export";
+  $("palText").value = kind === "export" ? buildPaletteExport(activePalette()) : "";
+  if (kind === "import") setTimeout(() => $("palText").focus(), 50);
+}
+function importPaletteText(text) {
+  let r;
+  try { r = parsePalette(text); } catch (e) { toast("Palette import failed: " + e.message); return null; }
+  const p = createPalette(r.name || "Imported palette", r.colors);
+  toast(`Imported palette "${p.name}" (${p.colors.length} colours)`);
+  return p;
+}
+$("palName").addEventListener("click", () => { $("palIO").classList.remove("show"); renderPalList(); $("palModal").classList.add("show"); });
+$("pmClose").addEventListener("click", () => $("palModal").classList.remove("show"));
+$("pmNew").addEventListener("click", () => {
+  const n = prompt("Name for the new palette:", uniqueName("My palette"));
+  if (n === null) return;
+  createPalette(n.trim() || "My palette", [currentColor.slice()]);
+  palEditMode = true; renderPalList(); updateUI();
+});
+$("pmDup").addEventListener("click", () => {
+  const a = activePalette();
+  createPalette(a.builtin ? "My palette" : a.name + " copy", a.colors);
+  renderPalList(); updateUI();
+});
+$("pmRename").addEventListener("click", () => {
+  const a = activePalette();
+  if (a.builtin) return;
+  const n = prompt("Rename palette:", a.name);
+  if (n === null || !n.trim() || n.trim() === a.name) return;
+  a.name = uniqueName(n.trim()); palSave(); renderPalList(); updateUI();
+});
+$("pmDelete").addEventListener("click", () => {
+  const a = activePalette();
+  if (a.builtin) return;
+  if (!confirm(`Delete palette "${a.name}"? (Models keep their colours.)`)) return;
+  palStore.list = palStore.list.filter(p => p.id !== a.id);
+  palStore.active = "default"; palEditMode = false;
+  palSave(); renderPalList(); updateUI();
+});
+$("pmExport").addEventListener("click", async () => {
+  showPalIO("export");
+  const ok = await copyText($("palText").value);
+  toast(ok ? "Palette copied to clipboard" : "Tap Copy, or select the text");
+});
+$("pmImport").addEventListener("click", () => showPalIO("import"));
+$("pioCopy").addEventListener("click", async () => {
+  const ok = await copyText($("palText").value);
+  toast(ok ? "Copied to clipboard" : "Copy failed: long-press the text to copy");
+});
+$("pioGo").addEventListener("click", () => {
+  if (importPaletteText($("palText").value)) { $("palIO").classList.remove("show"); renderPalList(); updateUI(); }
+});
+
+
 //----- Resize (handles devicePixelRatio) -----||
 // The canvas has a CSS size (layout) and a pixel size (drawing buffer). On a phone
 // with DPR 3, a 390 px wide canvas needs 1170 real pixels to look sharp.
@@ -1718,8 +2320,10 @@ new ResizeObserver(resize).observe(canvas);
 //----- Draw Loop -----||
 function frame() {
   resize();
-  if (meshDirty) rebuildBuffers();
   updateCamera();
+  // The dots' grey/white look depends on the camera too, so rebuild when the view moved.
+  if (!meshDirty && visCache.key.split("|")[0] !== [cam.yaw, cam.pitch, cam.dist, ...cam.target, viewW, viewH].join(",")) meshDirty = true;
+  if (meshDirty) rebuildBuffers();
 
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.clearColor(0.086, 0.09, 0.114, 1);
@@ -1746,6 +2350,9 @@ function frame() {
     gl.drawArrays(gl.TRIANGLES, 0, rockBatch.count);
   }
   gl.disable(gl.POLYGON_OFFSET_FILL);
+
+  // Clean preview: stop here, so only the model (+ grid and rock) shows.
+  if (!overlayOn) { gl.bindVertexArray(null); requestAnimationFrame(frame); return; }
 
   // 3) Edges (depth tested, so hidden edges stay hidden)
   gl.bindVertexArray(edgeBatch.vao);
@@ -1835,6 +2442,7 @@ function drawGizmo() {
 
 //----- Start -----||
 newModel("x");   // default: mirror X on
+palLoad();
 load();
 updateUI();
 requestAnimationFrame(frame);
