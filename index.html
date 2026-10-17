@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="pofa modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="pofa-modeler-version" content="v3-gizmo-rock-import">
+<meta name="pofa-modeler-version" content="v4-seamless-mirror-dissolve">
 <title>pofa modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -129,6 +129,7 @@
       <button id="bSplit" data-mode="split"><span class="ic">✂</span>Split</button>
       <button id="bPaint" data-mode="paint"><span class="ic">🖌</span>Paint</button>
       <button id="bUndo"><span class="ic">↶</span>Undo</button>
+      <button id="bDissolve"><span class="ic">⌫</span>Dissolve</button>
       <button id="bRock"><span class="ic">◆</span>Rock</button>
     </div>
     <div class="row small">
@@ -166,12 +167,14 @@
 <script>
 "use strict";
 // =====================================================================================
-//  pofa modeler v3
+//  pofa modeler v4
 //  A tiny touch-first low-poly modeler. Every model starts as a cube; you can move
 //  vertices (with an X/Y/Z axis gizmo), split edges, and paint faces, with optional live
 //  mirror symmetry, then export a C++ array in exactly the format the pofa renderer
 //  uploads, and paste it back in later with Import. A game rock sits beside the model
-//  as a size reference (display only).
+//  as a size reference (display only). Mirror never adds seam vertices on its own: the
+//  centre cut only appears where you split an edge that crosses the plane. Dissolve
+//  removes a vertex that sits on a flat area or straight edge (handy for old seams).
 //
 //  Coordinates match the game: Z is up, X is left/right, Y is forward/back, and models
 //  sit with their base on z = 0. Rendering uses raw WebGL 2 (= OpenGL ES 3.0), so the
@@ -277,13 +280,11 @@ function mat4LookAt(eye, target, up) {
 // Everything lives in this one object, so undo snapshots and autosave capture it all.
 let mesh = null;   // set by newModel("x") at startup, once everything below is defined
 
-// New model: a plain cube (8 verts, 12 tris). If mirror is on, it's then Symmetrized, which
-// cuts it along the plane (16 verts, 28 tris for X: the diagonals get cut too) so every triangle has an exact mirror twin.
-// A plain cube can't be: a quad crossing the plane has one diagonal, and its mirror image
-// would need the other diagonal.
+// New model: always the plain cube (8 verts, 12 tris), mirror on or off. With mirror on,
+// its corners pair up by position (each corner's reflection is another corner). Nothing
+// is cut along the plane: a centre cut only appears where you split a crossing edge.
 function newModel(mirror) {
   mesh = makeCube(mirror);
-  if (mirror) symmetrize();
 }
 
 function makeCube(mirror = null) {
@@ -351,10 +352,11 @@ function edgeExists(a, b) {
 // Split edge (a,b): add a vertex m at its midpoint, then replace every triangle that
 // uses that edge with two triangles. For triangle (x, y, z) where x->y is the edge,
 // the halves are (x, m, z) and (m, y, z), which keeps the original winding.
-function splitEdge(a, b) {
+// t = where along a->b the new vertex goes (0.5 = midpoint).
+function splitEdge(a, b, t = 0.5) {
   const m = vertCount();
   const pa = getVert(a), pb = getVert(b);
-  mesh.positions.push((pa[0]+pb[0])/2, (pa[1]+pb[1])/2, (pa[2]+pb[2])/2);
+  mesh.positions.push(pa[0] + (pb[0]-pa[0])*t, pa[1] + (pb[1]-pa[1])*t, pa[2] + (pb[2]-pa[2])*t);
   mesh.partner.push(-1);
 
   const newTris = [], newColors = [];
@@ -424,27 +426,34 @@ function moveVertex(i, p) {
   if (ax >= 0 && q >= 0 && q !== i) setVert(q, reflect(p, ax));
 }
 
-// Split edge (a,b), and with mirror on also split its mirrored edge, pairing the two new
-// vertices. An edge that is its own mirror (crosses or lies in the plane) splits once, and
-// its midpoint lands on the plane.
+// Split edge (a,b) with mirror rules:
+//  - Edge crosses the plane (one end on each side): the new vertex goes exactly where the
+//    edge meets the plane, not at the tap or the raw midpoint, so it's its own twin. This
+//    is the only way a centre cut appears, and only on the edge you tapped.
+//  - Edge lies in the plane: midpoint, also on the plane, its own twin.
+//  - Otherwise: split it at the midpoint, and also split its twin edge (the edge between
+//    the two endpoints' partners) if there is one, pairing the two new vertices.
+//  - Unpaired endpoints: just split this edge (nothing to mirror).
 function splitEdgeMirrored(a, b) {
-  const m = splitEdge(a, b);
   const ax = axisIndex(mesh.mirror);
-  if (ax < 0) return m;
-  const pa = mesh.partner[a], pb = mesh.partner[b];
-  if (Math.abs(mesh.positions[m*3 + ax]) < PLANE_TOL) {
-    // Midpoint lands on the plane (e.g. a cube-top diagonal from (-,-) to (+,+)): it is
-    // its own mirror. (The other diagonal doesn't exist, so there's nothing else to split.)
+  if (ax < 0) return splitEdge(a, b);
+  const ca = mesh.positions[a*3 + ax], cb = mesh.positions[b*3 + ax];
+  const crosses = (ca > PLANE_TOL && cb < -PLANE_TOL) || (ca < -PLANE_TOL && cb > PLANE_TOL);
+  if (crosses) {
+    const m = splitEdge(a, b, ca / (ca - cb));
     mesh.positions[m*3 + ax] = 0;
     mesh.partner[m] = m;
     return m;
   }
-  if (pa < 0 || pb < 0) return m;                  // unpaired edge: no mirror to split
-  const selfMirror = (pa === a && pb === b) || (pa === b && pb === a);
-  if (selfMirror) {
+  const m = splitEdge(a, b);
+  if (Math.abs(ca) < PLANE_TOL && Math.abs(cb) < PLANE_TOL) {
     mesh.positions[m*3 + ax] = 0;
     mesh.partner[m] = m;
-  } else if (edgeExists(pa, pb)) {
+    return m;
+  }
+  const pa = mesh.partner[a], pb = mesh.partner[b];
+  if (pa < 0 || pb < 0) return m;                  // unpaired edge: no mirror to split
+  if (edgeExists(pa, pb)) {
     const m2 = splitEdge(pa, pb);
     mesh.partner[m] = m2; mesh.partner[m2] = m;
     setVert(m2, reflect(getVert(m), ax));          // exact mirror, no float drift
@@ -464,11 +473,28 @@ function topoMirror(t) {
   return -1;
 }
 
-// Triangles with no topological mirror (shown in the info bar as a hint to Symmetrize).
-function asymTriCount() {
-  if (axisIndex(mesh.mirror) < 0) return 0;
+// "Folded" triangles: no topological twin AND their reflection doesn't lie on the surface.
+// A flat quad that crosses the plane with one diagonal is fine (its two halves aren't
+// twins, but the reflected shape is the same flat face). Once you pull its corners out of
+// that plane, the single diagonal makes a crease that isn't symmetric: that's a fold, and
+// the fix is to split one of its crossing edges (or Symm). Shown as a hint in the info bar.
+function foldedTriCount() {
+  const ax = axisIndex(mesh.mirror);
+  if (ax < 0) return 0;
   let n = 0;
-  for (let t = 0; t < triCount(); t++) if (topoMirror(t) < 0) n++;
+  for (let t = 0; t < triCount(); t++) {
+    if (topoMirror(t) >= 0) continue;
+    const P = [0, 1, 2].map(k => getVert(mesh.tris[t*3 + k]));
+    const cen = v3.scale(v3.add(P[0], v3.add(P[1], P[2])), 1 / 3);
+    const samples = [cen, ...P.map(p => v3.add(v3.scale(cen, 0.5), v3.scale(p, 0.5)))];
+    const onSurface = samples.every(sp => {
+      const q = reflect(sp, ax);
+      for (let w = 0; w < triCount(); w++)
+        if (pointTriDist(q, getVert(mesh.tris[w*3]), getVert(mesh.tris[w*3+1]), getVert(mesh.tris[w*3+2])) < 1e-3) return true;
+      return false;
+    });
+    if (!onSurface) n++;
+  }
   return n;
 }
 
@@ -593,6 +619,135 @@ function symmetrize() {
     colors.push(colors[t]);
   }
   mesh = { positions, tris, colors, partner, mirror: mesh.mirror };
+  return true;
+}
+
+
+//----- Dissolve -----||
+// Remove vertex v and fill the hole with new triangles, without changing the shape.
+// Allowed only when that's possible:
+//  - Its surrounding triangles form a closed fan (v isn't on an open border).
+//  - Group the fan into runs of triangles that share a plane AND a colour. Then either
+//    1 group  : v sits inside a flat, single-colour area  -> re-fill the whole ring, or
+//    2 groups : v sits on a straight crease/colour border  -> the two border edges v-a and
+//               v-b must be exactly in line (a, v, b collinear); re-fill each side.
+//    3+ groups: v is a real corner -> refuse.
+// Each hole is filled by ear clipping in the face's plane (keeps CCW winding).
+// Returns { tris, colors, ring } of the replacement, or a string saying why not.
+const DISSOLVE_TOL = 1e-4;
+
+function dissolvePlan(v) {
+  const fan = [];
+  for (let t = 0; t < triCount(); t++) {
+    const tri = mesh.tris.slice(t*3, t*3 + 3), k = tri.indexOf(v);
+    if (k >= 0) fan.push({ t, x: tri[(k+1) % 3], y: tri[(k+2) % 3] });   // (v, x, y) CCW
+  }
+  if (fan.length < 2) return "not enough faces around it";
+  // Order the fan: each triangle's y is the next triangle's x.
+  const byX = new Map();
+  for (const f of fan) { if (byX.has(f.x)) return "the faces around it overlap"; byX.set(f.x, f); }
+  const ring = [];
+  let f = fan[0];
+  for (let i = 0; i < fan.length; i++) {
+    ring.push(f);
+    f = byX.get(f.y);
+    if (!f) return "it's on an open edge";
+  }
+  if (f !== fan[0]) return "the faces around it aren't one fan";
+  // Group consecutive triangles by plane + colour.
+  const nrm = (r) => triNormal(r.t), same = (r, q) =>
+    mesh.colors[r.t] === mesh.colors[q.t] && v3.dot(nrm(r), nrm(q)) > 1 - 1e-6;
+  const cuts = [];                                 // ring index where a new group starts
+  for (let i = 0; i < ring.length; i++) if (!same(ring[(i + ring.length - 1) % ring.length], ring[i])) cuts.push(i);
+  const P = getVert(v);
+  let polys = [];                                  // [{ verts:[...], n, color }]
+  if (cuts.length === 0) {
+    polys.push({ verts: ring.map(r => r.x), n: nrm(ring[0]), color: mesh.colors[ring[0].t] });
+  } else if (cuts.length === 2) {
+    const a = ring[cuts[0]].x, b = ring[cuts[1]].x;
+    const da = v3.sub(getVert(a), P), db = v3.sub(getVert(b), P);
+    const straight = v3.len(v3.cross(da, db)) <= DISSOLVE_TOL * v3.len(da) * v3.len(db) && v3.dot(da, db) < 0;
+    if (!straight) return "it's a corner (its edges aren't in a straight line)";
+    for (const [s0, s1] of [[cuts[0], cuts[1]], [cuts[1], cuts[0] + ring.length]]) {
+      const run = [];
+      for (let i = s0; i < s1; i++) run.push(ring[i % ring.length]);
+      polys.push({ verts: [...run.map(r => r.x), run[run.length - 1].y], n: nrm(run[0]), color: mesh.colors[run[0].t] });
+    }
+  } else return "it's a corner (it joins " + Math.max(cuts.length, 3) + " flat areas)";
+  const tris = [], colors = [];
+  for (const poly of polys) {
+    const out = earClip(poly.verts, poly.n);
+    if (!out) return "the hole couldn't be filled cleanly";
+    for (let i = 0; i < out.length; i += 3) { tris.push(out[i], out[i+1], out[i+2]); colors.push(poly.color); }
+  }
+  return { remove: ring.map(r => r.t), tris, colors };
+}
+
+// Ear clipping for a flat polygon (vertex indices, CCW around normal n). Returns flat
+// triangle indices, or null if it gets stuck. Skips zero-area ears when it can, so
+// straight runs of vertices don't produce sliver triangles.
+function earClip(poly, n) {
+  const idx = poly.slice(), out = [];
+  const area = (a, b, c) => v3.dot(n, v3.cross(v3.sub(getVert(b), getVert(a)), v3.sub(getVert(c), getVert(a))));
+  // Inclusive: a vertex lying exactly on the new diagonal also blocks the ear (no T-junctions).
+  const inside = (p, a, b, c) => area(a, b, p) >= -1e-9 && area(b, c, p) >= -1e-9 && area(c, a, p) >= -1e-9;
+  while (idx.length > 3) {
+    let cut = -1;
+    for (let i = 0; i < idx.length && cut < 0; i++) {
+      const a = idx[(i + idx.length - 1) % idx.length], b = idx[i], c = idx[(i + 1) % idx.length];
+      if (area(a, b, c) <= 1e-9) continue;          // reflex or straight: not an ear
+      if (idx.some(p => p !== a && p !== b && p !== c && inside(p, a, b, c))) continue;
+      cut = i;
+    }
+    if (cut < 0) return null;
+    const a = idx[(cut + idx.length - 1) % idx.length], b = idx[cut], c = idx[(cut + 1) % idx.length];
+    out.push(a, b, c);
+    idx.splice(cut, 1);
+  }
+  if (area(idx[0], idx[1], idx[2]) <= 1e-9) return null;
+  out.push(idx[0], idx[1], idx[2]);
+  return out;
+}
+
+// Dissolve v, and with mirror on also its twin (using the mirrored re-fill when the
+// twin's faces are the exact mirror of v's, so the result stays symmetric). Unused
+// vertices are then removed and indices renumbered. Returns true or a reason string.
+function dissolveVertex(v) {
+  const plan = dissolvePlan(v);
+  if (typeof plan === "string") return plan;
+  const ax = axisIndex(mesh.mirror), q = mesh.partner[v];
+  let twin = null;
+  if (ax >= 0 && q >= 0 && q !== v) {
+    const mirroredRemove = plan.remove.map(topoMirror);
+    let qFan = 0;
+    for (let t = 0; t < triCount(); t++) if (mesh.tris.slice(t*3, t*3 + 3).includes(q)) qFan++;
+    const ok = mirroredRemove.every(u => u >= 0) && new Set(mirroredRemove).size === qFan &&
+               plan.tris.every(i => mesh.partner[i] >= 0);
+    if (ok) {
+      const tris = [];
+      for (let i = 0; i < plan.tris.length; i += 3)   // reflected triangle = reversed winding
+        tris.push(mesh.partner[plan.tris[i]], mesh.partner[plan.tris[i+2]], mesh.partner[plan.tris[i+1]]);
+      twin = { remove: mirroredRemove, tris, colors: plan.colors.slice() };
+    } else {
+      twin = dissolvePlan(q);
+      if (typeof twin === "string") return "its mirror twin can't go: " + twin;
+    }
+  }
+  const drop = new Set([...plan.remove, ...(twin ? twin.remove : [])]);
+  const tris = [], colors = [];
+  for (let t = 0; t < triCount(); t++) {
+    if (drop.has(t)) continue;
+    tris.push(...mesh.tris.slice(t*3, t*3 + 3)); colors.push(mesh.colors[t]);
+  }
+  for (const pl of twin ? [plan, twin] : [plan]) { tris.push(...pl.tris); colors.push(...pl.colors); }
+  // Compact: keep only vertices still used, renumber triangles and partners.
+  const used = new Set(tris), remap = new Map(), positions = [];
+  for (let i = 0; i < vertCount(); i++)
+    if (used.has(i)) { remap.set(i, positions.length / 3); positions.push(...getVert(i)); }
+  const partner = [];
+  for (let i = 0; i < vertCount(); i++)
+    if (used.has(i)) { const p = mesh.partner[i]; partner.push(p >= 0 && remap.has(p) ? remap.get(p) : -1); }
+  mesh = { positions, tris: tris.map(i => remap.get(i)), colors, partner, mirror: mesh.mirror };
   return true;
 }
 
@@ -1418,8 +1573,8 @@ function doImport(text) {
 function $(id) { return document.getElementById(id); }
 
 const HINTS = {
-  move:  "<b>Move</b>: tap a dot, then drag a coloured handle (X red, Y green, Z blue) to slide it on that axis. Drag the dot itself to move freely. Drag empty space to orbit.",
-  split: "<b>Split</b>: tap an edge to add a vertex at its midpoint.",
+  move:  "<b>Move</b>: tap a dot, then drag a coloured handle (X red, Y green, Z blue) to slide it on that axis. Drag the dot itself to move freely. Dissolve removes it if it's on a flat spot.",
+  split: "<b>Split</b>: tap an edge to add a vertex at its midpoint (an edge crossing the mirror gets it on the plane).",
   paint: "<b>Paint</b>: pick a colour, tap a face to paint it.",
 };
 
@@ -1432,17 +1587,19 @@ function updateUI() {
   $("mirrorLabel").textContent = mesh.mirror ? "Mirror " + mesh.mirror.toUpperCase() : "Mirror off";
   $("bSym").disabled = !mesh.mirror;
   $("bUndo").disabled = undoStack.length === 0;
+  $("bDissolve").disabled = !(mode === "move" && selected >= 0 && selected < vertCount());
   $("palette").classList.toggle("show", mode === "paint");
   for (const s of document.querySelectorAll(".swatch")) s.classList.toggle("on", +s.dataset.i === currentColor);
 
   const parts = [vertCount() + " verts", triCount() + " tris"];
   if (mesh.mirror) {
-    const nv = unpairedCount(), nt = asymTriCount();
-    const warn = [nv ? nv + " unpaired verts" : "", nt ? nt + " asym tris" : ""].filter(Boolean).join(", ");
-    parts.push("mirror " + mesh.mirror.toUpperCase() + (warn ? ` <span class="warn">(${warn}: Symm)</span>` : ""));
+    const nv = unpairedCount(), nt = foldedTriCount();
+    const warn = [nv ? nv + " unpaired verts: Symm" : "", nt ? nt + " folded tris: split a centre edge" : ""].filter(Boolean).join("; ");
+    parts.push("mirror " + mesh.mirror.toUpperCase() + (warn ? ` <span class="warn">(${warn})</span>` : ""));
   }
   if (snapOn) parts.push("snap " + SNAP_STEP);
   let line2 = parts.join(" &middot; ");
+  if (selected >= vertCount()) selected = -1;       // e.g. after a test or tool shrank the mesh
   if (selected >= 0) line2 += "<br>vertex " + selected + ": " + getVert(selected).map(c => c.toFixed(3)).join(", ");
   $("info").innerHTML = HINTS[mode] + "<br>" + line2;
   updateReadout();
@@ -1490,9 +1647,9 @@ $("bBake").addEventListener("click", () => { bakeOn = !bakeOn; meshChanged(); })
 $("bMirror").addEventListener("click", () => {
   pushUndo();
   mesh.mirror = mesh.mirror === "x" ? "y" : mesh.mirror === "y" ? null : "x";
-  const nv = pairMirror(mesh), nt = asymTriCount();
-  if (mesh.mirror) toast(nv || nt ? `Mirror ${mesh.mirror.toUpperCase()}: ${nv} verts / ${nt} tris have no twin. Tap Symm to rebuild the − side from the + side.`
-                                  : `Mirror ${mesh.mirror.toUpperCase()}: fully symmetric`);
+  const nv = pairMirror(mesh), nt = foldedTriCount();
+  if (mesh.mirror) toast(nv || nt ? `Mirror ${mesh.mirror.toUpperCase()}: ${nv} verts have no twin, ${nt} tris are folded. Symm rebuilds the − side from the + side.`
+                                  : `Mirror ${mesh.mirror.toUpperCase()}: symmetric`);
   else toast("Mirror off");
   meshChanged();
 });
@@ -1507,6 +1664,13 @@ $("bSym").addEventListener("click", () => {
 });
 
 $("bUndo").addEventListener("click", undo);
+$("bDissolve").addEventListener("click", () => {
+  if (selected < 0) return;
+  const before = snapshot();
+  const r = dissolveVertex(selected);
+  if (r === true) { pushUndo(before); selected = -1; meshChanged(); toast("Vertex dissolved"); }
+  else toast("Can't dissolve: " + r);
+});
 $("bRock").addEventListener("click", () => {
   showRock = !showRock;
   try { localStorage.setItem(ROCK_KEY, showRock ? "1" : "0"); } catch (e) { /* ignore */ }
