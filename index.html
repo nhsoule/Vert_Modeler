@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="pofa-modeler-version" content="v10-multi-select">
+<meta name="pofa-modeler-version" content="v11-pan-extrude">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -215,6 +215,7 @@
       <button id="bMove"  data-mode="move"><span class="ic">✥</span>Move</button>
       <button id="bSplit" data-mode="split"><span class="ic">✂︎</span>Split</button>
       <button id="bPaint" data-mode="paint"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.7 3.3a1 1 0 0 0-1.4 0L10 12.6l1.4 1.4 9.3-9.3a1 1 0 0 0 0-1.4zM8.6 13.4c-1.9 0-3.4 1.5-3.4 3.4 0 1.1-.9 2-2 2.2.8 1.1 2.2 1.8 3.7 1.8 2.6 0 4.6-2 4.6-4.6 0-.4-.1-.8-.2-1.2z"/></svg></span>Paint</button>
+      <button id="bExtrude"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5l5 5h-3.2v4.3h-3.6V6.5H7zM3 13.2l4.4-2.4h2.2v1.8H8l-2 1.1 6 3.3 6-3.3-2-1.1h-1.6v-1.8h2.2l4.4 2.4v5.6L12 23.5l-9-4.7zm1.8 2v2.5l6.3 3.3v-2.5zm14.4 0l-6.3 3.3V21l6.3-3.3z"/></svg></span>Extrude</button>
       <button id="bUndo"><span class="ic">↶︎</span>Undo</button>
       <button id="bDissolve"><span class="ic">⌫︎</span>Dissolve</button>
       <button id="bRock"><span class="ic">◆︎</span>Rock</button>
@@ -292,7 +293,7 @@
 <script>
 "use strict";
 // =====================================================================================
-//  Vert Modeler v10 (the pofa modeler)
+//  Vert Modeler v11 + Extrude (the pofa modeler)
 //  A tiny touch-first low-poly modeler. Every model starts as a cube; you can move
 //  vertices (with an X/Y/Z axis gizmo), split edges, and paint faces, with optional live
 //  mirror symmetry, then export a C++ array in exactly the format the pofa renderer
@@ -887,6 +888,114 @@ function dissolveVertex(v) {
 }
 
 
+//----- Extrude -----||
+// Works on the vertex selection (Move mode). The Extrude button is enabled with 3 or more
+// vertices selected. Pressing it extrudes every triangle whose 3 corners are ALL selected
+// (a quad = its 2 triangles, so select its 4 corners):
+//  1. duplicates the boundary vertices of that region (interior vertices ride along),
+//  2. moves the region's own triangles (the cap) onto the copies, so no hidden face is
+//     left inside the model,
+//  3. builds one wall quad (2 CCW triangles, facing outward, in the colour of the cap
+//     triangle on that edge) along every boundary edge, old ring to new ring,
+//  4. pre-offsets each connected cap by EXTRUDE_STEP (one snap step) along its average
+//     normal, so the block shows at once and no wall is ever zero-area, then
+//  5. selects the cap vertices, so the gizmo drags it straight out.
+// A quad adds 4 verts and 8 tris. Several separate regions are each extruded. One undo.
+// Mirror: the twin of every covered triangle is extruded in the same step (selecting
+// one side is enough). A region that crosses the plane is one symmetric region; a
+// region touching the plane joins its twin along the on-plane edge, which is then an
+// inner edge: no wall is built on the mirror plane, and on-plane cap verts stay on it.
+const EXTRUDE_STEP = SNAP_STEP;
+
+// Triangles whose three corners are all selected.
+function coveredTris() {
+  const out = [];
+  for (let t = 0; t < triCount(); t++)
+    if (isSelected(mesh.tris[t*3]) && isSelected(mesh.tris[t*3+1]) && isSelected(mesh.tris[t*3+2])) out.push(t);
+  return out;
+}
+
+// Extrude the covered triangles (plus mirror twins). Returns { cap, regions } or a string
+// saying why nothing happened. Caller handles undo + selection.
+function extrudeSelection() {
+  const ax = axisIndex(mesh.mirror);
+  const R = coveredTris();
+  if (!R.length) return "no face has all its corners selected (select the 3 corners of a triangle, or 4 of a quad)";
+  const S = new Set(R);
+  if (ax >= 0) {
+    // Twin triangles, but only ones built from selected verts or their twins (so the
+    // paint-style nearest-triangle fallback can never grab an unrelated neighbour).
+    const ok = new Set();
+    for (const v of selection()) { ok.add(v); if (mesh.partner[v] >= 0) ok.add(mesh.partner[v]); }
+    for (const t of R) for (const u of mirroredTris(t))
+      if ([0, 1, 2].every(k => ok.has(mesh.tris[u*3 + k]))) S.add(u);
+  }
+  // Directed edges of the region; boundary = edge whose reverse isn't in it.
+  const dir = new Set();
+  for (const u of S) for (let k = 0; k < 3; k++) dir.add(mesh.tris[u*3 + k] + ">" + mesh.tris[u*3 + (k+1) % 3]);
+  const boundary = [];                              // [a, b, tri]: a->b runs CCW around the cap
+  for (const u of S) for (let k = 0; k < 3; k++) {
+    const a = mesh.tris[u*3 + k], b = mesh.tris[u*3 + (k+1) % 3];
+    if (!dir.has(b + ">" + a)) boundary.push([a, b, u]);
+  }
+  if (!boundary.length) return "the selection covers a closed shape (no open edge to pull out)";
+  // Connected caps (triangles sharing a vertex), via union-find on vertices.
+  const root = new Map();
+  const find = (v) => { while (root.get(v) !== v) { root.set(v, root.get(root.get(v))); v = root.get(v); } return v; };
+  for (const u of S) for (let k = 0; k < 3; k++) { const v = mesh.tris[u*3 + k]; if (!root.has(v)) root.set(v, v); }
+  for (const u of S) { const a = find(mesh.tris[u*3]); root.set(find(mesh.tris[u*3+1]), a); root.set(find(mesh.tris[u*3+2]), a); }
+  const nrm = new Map();                            // cap root -> area-weighted normal sum
+  for (const u of S) {
+    const [a, b, c] = [0, 1, 2].map(k => getVert(mesh.tris[u*3 + k]));
+    const r = find(mesh.tris[u*3]);
+    nrm.set(r, v3.add(nrm.get(r) || [0, 0, 0], v3.cross(v3.sub(b, a), v3.sub(c, a))));
+  }
+  const capVerts = [...root.keys()];
+  // 1) Duplicate boundary vertices.
+  const dup = new Map();
+  for (const [a, b] of boundary) for (const v of [a, b]) if (!dup.has(v)) {
+    dup.set(v, vertCount());
+    mesh.positions.push(...getVert(v));
+    mesh.partner.push(-1);
+  }
+  // 2) Cap triangles use the copies.
+  for (const u of S) for (let k = 0; k < 3; k++) {
+    const v = mesh.tris[u*3 + k];
+    if (dup.has(v)) mesh.tris[u*3 + k] = dup.get(v);
+  }
+  // 3) Walls: quad (a, b, b', a') = triangles (a, b, b') and (a, b', a'), facing outward.
+  for (const [a, b, u] of boundary) {
+    const a2 = dup.get(a), b2 = dup.get(b), col = mesh.colors[u];
+    mesh.tris.push(a, b, b2, a, b2, a2);
+    mesh.colors.push(col.slice(), col.slice());
+  }
+  // 4) Pre-offset each cap along its average normal (on-plane verts stay on the plane).
+  const cap = [];
+  for (const v of capVerts) {
+    const n = v3.len(nrm.get(find(v))) > 1e-12 ? v3.norm(nrm.get(find(v))) : [0, 0, 0];
+    const c = dup.has(v) ? dup.get(v) : v;
+    const p = v3.add(getVert(c), v3.scale(n, EXTRUDE_STEP));
+    if (ax >= 0 && mesh.partner[v] === v) p[ax] = 0;
+    setVert(c, p);
+    cap.push(c);
+  }
+  pairMirror(mesh);
+  return { cap, regions: nrm.size, tris: S.size };
+}
+
+function doExtrude() {
+  if (mode !== "move" || selection().length < 3) return;
+  const before = snapshot(), v0 = vertCount(), t0 = triCount();
+  const r = extrudeSelection();
+  if (typeof r === "string") { mesh = JSON.parse(before); toast("Can't extrude: " + r); return; }
+  pushUndo(before);
+  clearSelection();
+  for (const v of r.cap) toggleSelect(v);
+  meshChanged();
+  toast(`Extruded ${r.regions} region${r.regions === 1 ? "" : "s"}: +${vertCount() - v0} verts, +${triCount() - t0} tris`);
+}
+
+
 //----- Reference Rock (display only) -----||
 // A straight port of the rock generator in pofa's src/render/render.cpp, render_init()
 // (the P0/M0/T0 tables, jitter(), and the loop `for (uint32_t s = 0; s < ROCK_SHAPES; s++)`),
@@ -1240,6 +1349,49 @@ function screenRay(sx, sy) {
 }
 
 
+//----- Camera Pan + Recenter -----||
+// Panning slides the orbit target in the camera's screen plane (right/up vectors).
+// One screen pixel = the world size of a pixel at the depth of whatever you grabbed
+// (the model surface under the finger, or the target if you grabbed empty space), so
+// the speed scales with zoom distance and the model stays under your finger.
+function panBy(dxPx, dyPx, depth = cam.dist) {
+  const eye = camEye();
+  const fwd = v3.norm(v3.sub(cam.target, eye));
+  const right = v3.norm(v3.cross(fwd, UP));
+  const up = v3.cross(right, fwd);
+  const k = 2 * depth * Math.tan(FOV_Y / 2) / viewH;          // world units per CSS px
+  cam.target = v3.add(cam.target, v3.add(v3.scale(right, -dxPx * k), v3.scale(up, dyPx * k)));
+}
+// Depth (along the view direction) of the model surface under a screen point, or the
+// target's depth if there's no model there.
+function grabDepth(sx, sy) {
+  const r = screenRay(sx, sy);
+  let best = Infinity;
+  for (let t = 0; t < triCount(); t++) {
+    const hit = rayTriangle(r.origin, r.dir, getVert(mesh.tris[t*3]), getVert(mesh.tris[t*3+1]), getVert(mesh.tris[t*3+2]));
+    if (hit !== null && hit < best) best = hit;
+  }
+  return best < Infinity ? Math.max(0.05, best * v3.dot(r.dir, r.fwd)) : cam.dist;
+}
+// The grabbed depth changes as a pinch zooms: the eye moves along the view direction.
+const panDepth = (g) => Math.max(0.05, g.depth - (g.dist0 - cam.dist));
+
+// Recenter: put the orbit target back on the centre of the model's bounding box.
+// Touch: double tap with two fingers. Desktop: double middle-click, or the F key.
+function recenter() {
+  const n = vertCount();
+  if (!n) return;
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) {
+    const v = mesh.positions[i*3 + k];
+    if (v < lo[k]) lo[k] = v;
+    if (v > hi[k]) hi[k] = v;
+  }
+  cam.target = [0, 1, 2].map(k => (lo[k] + hi[k]) / 2);
+  toast("View recentered on the model");
+}
+
+
 //----- Selection -----||
 // Tap a dot to add it to the selection, tap a selected dot to take it out again.
 // `selected` is the primary (last added) vertex; `selExtra` holds the rest. The gizmo
@@ -1488,8 +1640,13 @@ let gesture = null;          // what the current gesture is doing
 //               release must not count as an empty-space tap.
 //   "orbit"   : dragging the camera (also when the drag started on a dot)
 //   "axis"    : dragging an axis handle: the vertex slides along X, Y, or Z only
-//   "pinch"   : two fingers zooming
+//   "pinch"   : two fingers: the midpoint moving pans, the spread changing zooms
+//   "pan"     : desktop pan: right or middle button drag, or shift + left drag
 //   "idle"    : ignore until all fingers lift (e.g. after a pinch)
+// Two-finger gestures never select, deselect, or count toward the empty double tap.
+// A quick two-finger tap that doesn't move is remembered; two of them within
+// DOUBLE_TAP_MS recenter the view.
+let lastTwoTap = 0, lastMiddleClick = 0;
 
 function localPos(e) {
   const r = canvas.getBoundingClientRect();
@@ -1501,14 +1658,30 @@ canvas.addEventListener("pointerdown", (e) => {
   const p = localPos(e);
   pointers.set(e.pointerId, p);
 
-  // Second finger: switch to pinch zoom, whatever was happening.
+  // Second finger: switch to pinch/pan, whatever was happening (a dot that was about
+  // to be toggled is forgotten, so two fingers never change the selection).
   if (pointers.size === 2) {
     if (gesture && gesture.kind === "axis" && gesture.moved) meshChanged();
     const [a, b] = [...pointers.values()];
-    gesture = { kind: "pinch", lastDist: Math.hypot(a.x - b.x, a.y - b.y) };
+    const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    gesture = { kind: "pinch", lastDist: d, lastMid: [mx, my], startDist: d, startMid: [mx, my],
+                t0: performance.now(), moved: false, depth: grabDepth(mx, my), dist0: cam.dist };
+    lastEmptyTap = null;
     return;
   }
-  if (pointers.size > 2) return;
+  if (pointers.size > 2) { if (gesture && gesture.kind === "pinch") gesture.moved = true; return; }
+
+  // Desktop pan: right button, middle button, or shift + left button.
+  if (e.pointerType === "mouse" && (e.button === 1 || e.button === 2 || (e.button === 0 && e.shiftKey))) {
+    if (e.button === 1) {
+      const now = performance.now();
+      if (now - lastMiddleClick <= DOUBLE_TAP_MS) { lastMiddleClick = 0; recenter(); }
+      else lastMiddleClick = now;
+      e.preventDefault();                           // no autoscroll
+    }
+    gesture = { kind: "pan", lastX: p.x, lastY: p.y, depth: grabDepth(p.x, p.y), dist0: cam.dist };
+    return;
+  }
 
   gesture = { kind: "pending", startX: p.x, startY: p.y, lastX: p.x, lastY: p.y };
 
@@ -1542,9 +1715,17 @@ canvas.addEventListener("pointermove", (e) => {
 
   if (gesture.kind === "pinch" && pointers.size >= 2) {
     const [a, b] = [...pointers.values()];
-    const d = Math.hypot(a.x - b.x, a.y - b.y);
-    if (d > 0 && gesture.lastDist > 0) zoomBy(gesture.lastDist / d);
-    gesture.lastDist = d;
+    const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    if (d > 0 && gesture.lastDist > 0) zoomBy(gesture.lastDist / d);   // spread -> zoom
+    panBy(mx - gesture.lastMid[0], my - gesture.lastMid[1], panDepth(gesture));   // midpoint -> pan
+    gesture.lastDist = d; gesture.lastMid = [mx, my];
+    if (Math.abs(d - gesture.startDist) > TAP_SLOP ||
+        Math.hypot(mx - gesture.startMid[0], my - gesture.startMid[1]) > TAP_SLOP) gesture.moved = true;
+    return;
+  }
+  if (gesture.kind === "pan") {
+    panBy(p.x - gesture.lastX, p.y - gesture.lastY, panDepth(gesture));
+    gesture.lastX = p.x; gesture.lastY = p.y;
     return;
   }
 
@@ -1584,10 +1765,14 @@ function endPointer(e) {
 
   if (gesture.kind === "pinch") {
     // Lifting one of two fingers: don't let the remaining finger suddenly orbit.
-    gesture = pointers.size ? { kind: "idle" } : null;
+    // A still, quick two-finger touch counts as a two-finger tap once all fingers lift.
+    const twoTap = !gesture.moved && performance.now() - gesture.t0 < 400;
+    gesture = { kind: "idle", twoTap };
+    if (!pointers.size) endTwoFinger();
     return;
   }
   if (pointers.size) return;
+  if (gesture.kind === "idle") { endTwoFinger(); return; }
 
   if (gesture.kind === "pending" && e.type === "pointerup") {
     if (gesture.picked !== undefined && overlayOn && mode === "move") {
@@ -1598,6 +1783,16 @@ function endPointer(e) {
   if (wasAxis && gesture.moved) meshChanged();
   gesture = null;
   if (wasAxis) updateUI();                         // clear the "active axis" highlight
+}
+// All fingers of a two-finger gesture are up: a second two-finger tap recenters.
+function endTwoFinger() {
+  const g = gesture;
+  gesture = null;
+  lastEmptyTap = null;
+  if (!g || !g.twoTap) { lastTwoTap = 0; return; }
+  const now = performance.now();
+  if (now - lastTwoTap <= DOUBLE_TAP_MS + 100) { lastTwoTap = 0; recenter(); }
+  else lastTwoTap = now;
 }
 canvas.addEventListener("pointerup", endPointer);
 canvas.addEventListener("pointercancel", endPointer);
@@ -1689,7 +1884,12 @@ canvas.addEventListener("wheel", (e) => { e.preventDefault(); zoomBy(Math.exp(e.
 document.addEventListener("gesturestart", (e) => e.preventDefault());
 document.addEventListener("dblclick", (e) => e.preventDefault());
 document.addEventListener("touchmove", (e) => { if (e.target === canvas) e.preventDefault(); }, { passive: false });
-canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());   // right-drag pans
+canvas.addEventListener("auxclick", (e) => e.preventDefault());
+document.addEventListener("keydown", (e) => {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+  if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey && !e.altKey) recenter();
+});
 
 
 //----- Export -----||
@@ -1893,6 +2093,8 @@ function updateUI() {
   $("bUndo").disabled = undoStack.length === 0;
   // Dissolve works on exactly one vertex (with several selected it's disabled).
   $("bDissolve").disabled = !(mode === "move" && selection().length === 1);
+  // Extrude needs 3+ selected verts (if they cover no face, pressing it says why).
+  $("bExtrude").disabled = !(mode === "move" && selection().length >= 3);
   $("palette").classList.toggle("show", mode === "paint");
   renderPalette();
 
@@ -2112,6 +2314,7 @@ function doSymm() {
 $("bSym").addEventListener("click", doSymm);
 
 $("bUndo").addEventListener("click", undo);
+$("bExtrude").addEventListener("click", doExtrude);
 $("bDissolve").addEventListener("click", () => {
   if (selection().length !== 1) return;
   const before = snapshot();
