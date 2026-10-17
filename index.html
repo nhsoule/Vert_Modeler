@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="pofa-modeler-version" content="v12-auto-simplify">
+<meta name="pofa-modeler-version" content="v13-scale-flip">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -159,6 +159,11 @@
   #roMerge { background: none; border: 0; color: #e8e8ee; font-size: 17px; padding: 4px 2px 4px 6px;
              border-left: 1px solid #fff3; opacity: 1; touch-action: manipulation; }
   #roMerge.off { opacity: 0.3; }
+  /* Move/Scale toggle: dim = Move handles, gold = Scale handles. Only with 2+ verts. */
+  #roScale { background: none; border: 0; color: #e8e8ee; font-size: 17px; padding: 4px 6px 4px 2px;
+             border-right: 1px solid #fff3; opacity: 0.45; touch-action: manipulation; }
+  #roScale.on { opacity: 1; color: #e0b43a; }
+  #roScale.hide { display: none; }
   /* Each number is a finger-sized button: tap it to type an exact value. */
   #readout .ro {
     opacity: 0.85; padding: 8px 6px; min-height: 24px; border-radius: 8px;
@@ -198,6 +203,7 @@
     <div id="info"></div>
     <div id="stats"></div>
     <div id="readout">
+      <button id="roScale" type="button" aria-label="Move / Scale" title="Switch the gizmo between Move and Scale (2+ verts)"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v2H6.4l4.3 4.3-1.4 1.4L5 6.4V10H3zm11 0h7v7h-2V6.4l-4.3 4.3-1.4-1.4L17.6 5H14zM9.3 13.3l1.4 1.4L6.4 19H10v2H3v-7h2v3.6zm5.4 0l4.3 4.3V14h2v7h-7v-2h3.6l-4.3-4.3z"/></svg></button>
       <span class="ro x" id="roX" data-axis="0"></span><span class="ro y" id="roY" data-axis="1"></span><span class="ro z" id="roZ" data-axis="2"></span>
       <button id="roMerge" type="button" aria-label="Auto-merge on drag" title="Auto-merge: a vertex dragged flat onto its face (or straight onto its edge) dissolves on release"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h4.5l4.5 6 4.5-6H21v2h-3.5L13.3 12l4.2 5H21v2h-4.5L12 13l-4.5 6H3v-2h3.5l4.2-5-4.2-5H3z"/></svg></button>
       <span id="roEdit">
@@ -298,7 +304,7 @@
 <script>
 "use strict";
 // =====================================================================================
-//  Vert Modeler v12 (the pofa modeler)
+//  Vert Modeler v13 (the pofa modeler)
 //  A tiny touch-first low-poly modeler. Every model starts as a cube; you can move
 //  vertices (with an X/Y/Z axis gizmo), split edges, and paint faces, with optional live
 //  mirror symmetry, then export a C++ array in exactly the format the pofa renderer
@@ -1252,6 +1258,7 @@ let selExtra     = new Set(); // the other selected vertices (multi-select); emp
 let undoStack    = [];      // array of JSON snapshots of `mesh`
 let mergeOn      = true;    // auto-merge on drag release (stored under MERGE_KEY)
 try { mergeOn = localStorage.getItem("pofa-modeler-merge") !== "0"; } catch (e) { /* storage blocked */ }
+let gizmoMode    = "move";  // "move" or "scale" (scale handles need 2+ selected verts)
 let mergeVerts   = new Set(); // verts that will merge if the drag ends now (drawn as rings)
 let showRock     = true;    // reference rock visible? (stored under ROCK_KEY, not in the model save)
 try { showRock = localStorage.getItem(ROCK_KEY) !== "0"; } catch (e) { /* storage blocked */ }
@@ -1643,6 +1650,32 @@ function moveSelection(starts, a, delta) {
 function selStarts() { return new Map(selDrivers().map(i => [i, getVert(i)])); }
 
 
+//----- Scale -----||
+// With 2+ verts selected, the chip's Move/Scale toggle swaps the gizmo for scale
+// handles (box tips + a ring). Drag an axis handle: scale along that axis about the
+// pivot (the factor is how far the finger is along the axis compared with where it
+// grabbed, so the tip follows the finger). Drag the ring: uniform scale (finger distance
+// from the pivot on screen / distance at grab). The chip shows the live factor; tap a
+// factor to type one. Snap on: the factor snaps to 1/8 steps (0.125, 0.25, ... 1, 1.125).
+// Factors are clamped to at least SCALE_MIN (no flipping inside out or collapsing to
+// flat). Mirror: twins scale mirrored and on-plane verts stay on the plane (the pivot
+// includes the twins, see scaleCentroid). One undo per drag; no auto-merge while
+// scaling; re-triangulation runs on release like any edit.
+const SCALE_MIN = 0.05, SCALE_STEP = 0.125;
+function scaleFactor(f) {
+  if (!isFinite(f)) f = 1;
+  if (snapOn) f = Math.round(f / SCALE_STEP) * SCALE_STEP;
+  return Math.max(snapOn ? SCALE_STEP : SCALE_MIN, f);
+}
+function scaleSelection(starts, c, axes, f) {
+  for (const [i, p0] of starts) {
+    const np = p0.slice();
+    for (const a of axes) np[a] = c[a] + (p0[a] - c[a]) * f;
+    moveVertex(i, np);                             // twin mirrored, on-plane stays on plane
+  }
+}
+
+
 //----- Occlusion (which vertices can you actually see?) -----||
 // A vertex is hidden if it's off screen / behind the camera, or if the straight line
 // from the eye to it passes through one of the model's triangles first. Triangles that
@@ -1725,26 +1758,68 @@ const worldPerPx = (w) => 2 * w * Math.tan(FOV_Y / 2) / viewH;
 // Each: { axis, tipW (world), s0/s1 (screen origin/tip), visible, locked }.
 // A handle pointing (almost) straight at the camera is too short to grab, so it's hidden.
 // With mirror on, a vertex sitting on the plane can't leave it: that handle is "locked".
+//----- Gizmo Facing (handles flip toward the camera) -----||
+// The handles stay on the world axes, but each one points to whichever side of the
+// centroid the camera is on: X toward the camera's X side, Y the same, Z up when the
+// camera is above and down when it's below. So they reach toward you instead of
+// covering verts behind. HANDLE_HYST is the hysteresis: a handle only flips once the
+// camera is clearly past the axis (about 3 degrees), so it doesn't flicker near it.
+// Signs are frozen during a drag. Dragging along a handle's on-screen direction always
+// moves (or scales) toward its tip, because the drag follows the world axis line.
+const HANDLE_HYST = 0.05;
+let gizmoSign = [1, 1, 1];
+function updateGizmoSigns(p) {
+  if (gesture && gesture.kind === "axis") return;
+  const eye = camEye(), d = v3.len(v3.sub(eye, p)) || 1;
+  for (let a = 0; a < 3; a++) {
+    const r = (eye[a] - p[a]) / d;
+    if (gizmoSign[a] > 0 && r < -HANDLE_HYST) gizmoSign[a] = -1;
+    else if (gizmoSign[a] < 0 && r > HANDLE_HYST) gizmoSign[a] = 1;
+  }
+}
+
+// Scale handles are used when the toggle is on AND 2+ verts are selected.
+const scaleActive = () => gizmoMode === "scale" && selection().length >= 2;
+// Pivot for scaling (and where the gizmo sits in Scale): the centroid of the selection
+// plus the mirror twins of selected verts, so it's always on the plane for a mirrored
+// model and a scale along the mirror axis stays symmetric.
+function scaleCentroid() {
+  const set = new Set(selection());
+  if (axisIndex(mesh.mirror) >= 0) for (const i of selection()) if (mesh.partner[i] >= 0) set.add(mesh.partner[i]);
+  const c = [0, 0, 0];
+  for (const i of set) { const q = getVert(i); c[0] += q[0]; c[1] += q[1]; c[2] += q[2]; }
+  return set.size ? c.map(v => v / set.size) : null;
+}
+const gizmoPivot = () => gesture && gesture.kind === "axis" && gesture.scale ? gesture.p0 : scaleActive() ? scaleCentroid() : selCentroid();
+
 function gizmoHandles() {
   if (!overlayOn || mode !== "move" || !selection().length) return [];
-  const p = selCentroid(), s0 = project(p);
+  const p = gizmoPivot(), s0 = project(p);
   if (!s0) return [];
+  updateGizmoSigns(p);
   const L = GIZMO_PX * worldPerPx(s0.depth);
   const ax = axisIndex(mesh.mirror);
   const out = [];
   for (let a = 0; a < 3; a++) {
-    const tipW = p.slice(); tipW[a] += L;
+    const tipW = p.slice(); tipW[a] += L * gizmoSign[a];
     const s1 = project(tipW);
     const visible = !!s1 && Math.hypot(s1.x - s0.x, s1.y - s0.y) > 14;
-    out.push({ axis: a, tipW, s0, s1, visible, locked: ax === a && selAxisLocked(a) });
+    out.push({ axis: a, sign: gizmoSign[a], tipW, s0, s1, visible, locked: ax === a && selAxisLocked(a) });
   }
   return out;
 }
 
-// Which axis handle (0, 1, 2) is under the finger, or -1. Tips win over shafts.
+// Which handle is under the finger: 0, 1, 2 = X/Y/Z, 3 = the uniform-scale ring (Scale
+// only), or -1. Tips win over the ring, the ring over shafts.
+const RING_PX = 46, RING_GRAB_PX = 11;
 function pickHandle(sx, sy) {
   let best = -1, bestD = Infinity;
-  for (const h of gizmoHandles()) {
+  const hs = gizmoHandles();
+  if (scaleActive() && hs.length) {
+    const r = Math.hypot(hs[0].s0.x - sx, hs[0].s0.y - sy);
+    if (Math.abs(r - RING_PX) <= RING_GRAB_PX) { best = 3; bestD = GIZMO_TIP_PX - 0.5; }
+  }
+  for (const h of hs) {
     if (!h.visible || h.locked) continue;
     const dTip = Math.hypot(h.s1.x - sx, h.s1.y - sy);
     let d = dTip <= GIZMO_TIP_PX ? dTip : Infinity;
@@ -1882,6 +1957,23 @@ canvas.addEventListener("pointerdown", (e) => {
   if (mode === "move" && overlayOn) {
     // 1) An axis handle of the selected vertex? (Checked first: handles are the big targets.)
     const h = pickHandle(p.x, p.y);
+    if (h >= 0 && scaleActive()) {
+      // Scale: axis handle = scale along that axis; ring = uniform. About the pivot.
+      const c = scaleCentroid(), dir = [0, 0, 0];
+      let sGrab = 0;
+      if (h < 3) {
+        dir[h] = 1;
+        const s = axisParam(screenRay(p.x, p.y), c, dir);
+        sGrab = s === null || Math.abs(s) < 1e-6 ? gizmoSign[h] * GIZMO_PX * worldPerPx(project(c).depth) : s;
+      } else {
+        const sc = project(c);
+        sGrab = Math.max(4, Math.hypot(p.x - sc.x, p.y - sc.y));
+      }
+      gesture = { kind: "axis", scale: true, starts: selStarts(), axis: h, p0: c, dir, sGrab, factor: 1,
+                  before: snapshot(), moved: false, startX: p.x, startY: p.y, merge: -1, solo: -1 };
+      updateUI();
+      return;
+    }
     if (h >= 0) {
       const p0 = selCentroid(), dir = [0, 0, 0];
       dir[h] = 1;
@@ -1936,6 +2028,26 @@ canvas.addEventListener("pointermove", (e) => {
     cam.pitch += (p.y - gesture.lastY) * 0.01;
     cam.pitch  = Math.max(-1.55, Math.min(1.55, cam.pitch)); // stop just short of straight up/down
     gesture.lastX = p.x; gesture.lastY = p.y;
+  }
+
+  if (gesture.kind === "axis" && gesture.scale) {
+    if (!gesture.moved && Math.hypot(p.x - gesture.startX, p.y - gesture.startY) < 3) return;
+    let f;
+    if (gesture.axis < 3) {
+      const s = axisParam(screenRay(p.x, p.y), gesture.p0, gesture.dir);
+      if (s === null) return;
+      f = s / gesture.sGrab;
+    } else {
+      const sc = project(gesture.p0);
+      f = Math.hypot(p.x - sc.x, p.y - sc.y) / gesture.sGrab;
+    }
+    f = scaleFactor(f);
+    if (!gesture.moved) { pushUndo(gesture.before); gesture.moved = true; }   // one undo per drag
+    gesture.factor = f;
+    scaleSelection(gesture.starts, gesture.p0, gesture.axis < 3 ? [gesture.axis] : [0, 1, 2], f);
+    meshDirty = true;                              // no auto-merge while scaling
+    updateUI();
+    return;
   }
 
   if (gesture.kind === "axis") {
@@ -2357,8 +2469,19 @@ function updateReadout() {
   // One vertex: its position. Several: their centroid (shown with a "c" prefix).
   const multi = selection().length > 1;
   const p = selCentroid(), act = gesture && gesture.kind === "axis" ? gesture.axis : -1;
+  $("roScale").classList.toggle("hide", !multi);
+  $("roScale").classList.toggle("on", scaleActive());
+  const sc = scaleActive(), g = gesture && gesture.kind === "axis" && gesture.scale ? gesture : null;
   ["roX", "roY", "roZ"].forEach((id, a) => {
     const el = $(id);
+    if (sc) {                                      // Scale: live factor per axis (1 = unchanged)
+      const f = g && (g.axis === a || g.axis === 3) ? g.factor : 1;
+      el.textContent = "×" + "XYZ"[a] + " " + f.toFixed(3);
+      el.classList.toggle("act", !!g && (g.axis === a || g.axis === 3));
+      el.classList.toggle("locked", selAxisLocked(a));
+      el.style.display = roEditing ? "none" : "";
+      return;
+    }
     el.textContent = (multi ? "c" : "") + "XYZ"[a] + " " + (Math.abs(p[a]) < 5e-5 ? 0 : p[a]).toFixed(3);
     el.classList.toggle("act", a === act);
     el.classList.toggle("locked", selAxisLocked(a));
@@ -2386,7 +2509,17 @@ function axisLocked(v, a) {
 function openCoordEdit(a) {
   if (!selection().length) return;
   if (selAxisLocked(a)) { toast(`${"XYZ"[a]} is locked to the mirror plane (0)`); return; }
-  roEditing = { key: selection().join(","), axis: a };
+  roEditing = { key: selection().join(","), axis: a, scale: scaleActive() };
+  if (roEditing.scale) {                           // type a scale factor for this axis
+    $("roEditLbl").textContent = "×" + "XYZ"[a];
+    $("roEditLbl").className = "xyz"[a];
+    $("roInput").value = "1";
+    $("roEdit").classList.add("show");
+    updateReadout();
+    $("roInput").focus();
+    $("roInput").select();
+    return;
+  }
   const v = selCentroid()[a];
   $("roEditLbl").textContent = (selection().length > 1 ? "c" : "") + "XYZ"[a];
   $("roEditLbl").className = "xyz"[a];
@@ -2407,11 +2540,23 @@ function parseCoord(text) {
 
 function closeCoordEdit(apply) {
   if (!roEditing) return;
-  const { key, axis } = roEditing;
+  const { key, axis, scale } = roEditing;
   roEditing = null;                                // first, so blur can't run this twice
   $("roEdit").classList.remove("show");
   if (document.activeElement === $("roInput")) $("roInput").blur();
-  if (apply && key === selection().join(",") && selection().length) {
+  if (apply && scale && key === selection().join(",") && selection().length >= 2) {
+    const n = parseCoord($("roInput").value);
+    if (n === null) toast("Not a number");
+    else {
+      let f = n;                                   // typed: not snapped, but clamped
+      if (f < SCALE_MIN) { f = SCALE_MIN; toast(`Scale clamped to ${SCALE_MIN} (no zero or negative scale)`); }
+      if (Math.abs(f - 1) > 1e-9 && !selAxisLocked(axis)) {
+        pushUndo();
+        scaleSelection(selStarts(), scaleCentroid(), [axis], f);
+        meshChanged();
+      }
+    }
+  } else if (apply && key === selection().join(",") && selection().length) {
     const n = parseCoord($("roInput").value);
     if (n === null) toast("Not a number");
     else {
@@ -2532,6 +2677,12 @@ $("bSym").addEventListener("click", doSymm);
 $("bUndo").addEventListener("click", undo);
 $("bExtrude").addEventListener("click", doExtrude);
 $("roMerge").addEventListener("click", () => setMergeOn(!mergeOn));
+$("roScale").addEventListener("click", () => {
+  if (roEditing) closeCoordEdit(false);
+  gizmoMode = gizmoMode === "scale" ? "move" : "scale";
+  toast(gizmoMode === "scale" ? "Scale: drag X/Y/Z boxes to scale along an axis, the ring to scale evenly" : "Move");
+  meshDirty = true; updateUI();
+});
 $("bDissolve").addEventListener("click", () => {
   if (selection().length !== 1) return;
   const before = snapshot();
@@ -2968,7 +3119,7 @@ function frame() {
 function drawGizmo() {
   const hs = gizmoHandles();
   if (!hs.length) return;
-  const p = selCentroid();
+  const p = gizmoPivot(), scaling = scaleActive();
   const viewDir = v3.norm(v3.sub(p, camEye()));
   const halfW = 3 * worldPerPx(hs[0].s0.depth);    // shaft half-width: 3 CSS px
   const act = gesture && gesture.kind === "axis" ? gesture.axis : -1;
@@ -2985,7 +3136,20 @@ function drawGizmo() {
     for (const k of [0, 1, 2, 0, 2, 3]) quads.push(...c[k], ...col);
     tips.push(...h.tipW, ...col);
   }
-  if (act >= 0) {
+  if (scaling) {
+    // Uniform-scale ring: a flat band facing the camera, RING_PX on screen.
+    const wpp = worldPerPx(hs[0].s0.depth), R = RING_PX * wpp, w = 1.5 * wpp;
+    const rt = v3.norm(v3.cross(viewDir, UP).some(x => Math.abs(x) > 1e-6) ? v3.cross(viewDir, UP) : [1, 0, 0]);
+    const up = v3.cross(rt, viewDir);
+    const col = act === 3 ? [1.0, 0.85, 0.1] : [0.92, 0.92, 0.96];
+    const at = (ang, r) => v3.add(p, v3.add(v3.scale(rt, Math.cos(ang) * r), v3.scale(up, Math.sin(ang) * r)));
+    for (let i = 0; i < 48; i++) {
+      const a0 = i / 48 * 2 * Math.PI, a1 = (i + 1) / 48 * 2 * Math.PI;
+      const c = [at(a0, R - w), at(a0, R + w), at(a1, R + w), at(a1, R - w)];
+      for (const k of [0, 1, 2, 0, 2, 3]) quads.push(...c[k], ...col);
+    }
+  }
+  if (act >= 0 && act < 3) {
     const g = gesture.p0, far = 50;
     const a = g.slice(), b = g.slice(); a[act] -= far; b[act] += far;
     guide.push(...a, 1.0, 0.85, 0.1, ...b, 1.0, 0.85, 0.1);
@@ -3006,8 +3170,8 @@ function drawGizmo() {
   }
   gl.bindVertexArray(gizmoBatch.vao);
   gl.drawArrays(gl.TRIANGLES, 0, gizmoBatch.count);
-  gl.uniform1i(U.round, 1);
-  gl.uniform1f(U.size, 24 * dpr);                  // 24 CSS px balls (grab radius is 30 px)
+  gl.uniform1i(U.round, scaling ? 0 : 1);         // Scale: square box tips; Move: balls
+  gl.uniform1f(U.size, (scaling ? 20 : 24) * dpr);  // grab radius is 30 px either way
   gl.bindVertexArray(gizmoTips.vao);
   gl.drawArrays(gl.POINTS, 0, gizmoTips.count);
 }
