@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="pofa-modeler-version" content="v9-split-select">
+<meta name="pofa-modeler-version" content="v10-multi-select">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -292,7 +292,7 @@
 <script>
 "use strict";
 // =====================================================================================
-//  Vert Modeler v9 (the pofa modeler)
+//  Vert Modeler v10 (the pofa modeler)
 //  A tiny touch-first low-poly modeler. Every model starts as a cube; you can move
 //  vertices (with an X/Y/Z axis gizmo), split edges, and paint faces, with optional live
 //  mirror symmetry, then export a C++ array in exactly the format the pofa renderer
@@ -956,7 +956,8 @@ let bakeOn       = true;    // bake light into face colours (preview + export)
 let currentColor = DEFAULT_PALETTE[8].slice();   // RGB (0..1) that Paint uses
 let overlayOn    = true;    // false = clean preview: no dots, edges, gizmo, or mirror plane
 let modelName    = "model"; // C identifier used in the export
-let selected     = -1;      // selected vertex index, -1 = none
+let selected     = -1;      // primary selected vertex (the last one tapped), -1 = none
+let selExtra     = new Set(); // the other selected vertices (multi-select); empty if selected < 0
 let undoStack    = [];      // array of JSON snapshots of `mesh`
 let showRock     = true;    // reference rock visible? (stored under ROCK_KEY, not in the model save)
 try { showRock = localStorage.getItem(ROCK_KEY) !== "0"; } catch (e) { /* storage blocked */ }
@@ -977,7 +978,7 @@ function pushUndo(snap = snapshot()) {
 function undo() {
   if (!undoStack.length) return;
   mesh = JSON.parse(undoStack.pop());
-  if (selected >= vertCount()) selected = -1;
+  if (selection().some(i => i >= vertCount())) clearSelection();
   meshChanged();
 }
 
@@ -1021,7 +1022,9 @@ function load() {
       upgradeColors(d.mesh);
       mesh = d.mesh;
       if (mesh.mirror !== "x" && mesh.mirror !== "y") mesh.mirror = null;
-      if (!Array.isArray(mesh.partner) || mesh.partner.length !== vertCount()) pairMirror(mesh);
+      // Always re-pair twins from positions instead of trusting the saved partner list:
+      // an older save can carry a stale or empty list, and then twins silently don't move.
+      pairMirror(mesh);
     }
     if (Number.isInteger(d.currentColor)) currentColor = DEFAULT_PALETTE[d.currentColor & 15].slice();
     else if (Array.isArray(d.currentColor) && d.currentColor.length === 3) currentColor = d.currentColor;
@@ -1164,14 +1167,14 @@ function rebuildBuffers() {
   // Hidden (behind the model or off screen) = a dim version, and they go in the buffer
   // first so visible dots draw on top of them where they overlap.
   const ax = axisIndex(mesh.mirror);
-  const partnerOfSel = selected >= 0 ? mesh.partner[selected] : -1;
+  const twinsOfSel = new Set(selection().map(i => mesh.partner[i]));
   const vis = vertVisibility();
   const hiddenDots = [], shownDots = [];
   for (let i = 0; i < vertCount(); i++) {
     let c = [0.95, 0.95, 1.0];
     if (ax >= 0 && mesh.partner[i] < 0) c = [1.0, 0.35, 0.3];
-    if (i === partnerOfSel && i !== selected) c = [1.0, 0.55, 0.15];
-    if (i === selected) c = [1.0, 0.85, 0.1];
+    if (twinsOfSel.has(i) && !isSelected(i)) c = [1.0, 0.55, 0.15];   // twin of a selected vert
+    if (isSelected(i)) c = [1.0, 0.85, 0.1];                          // selected: yellow
     if (vis[i]) shownDots.push(...getVert(i), ...c);
     else hiddenDots.push(...getVert(i), ...c.map(k => 0.18 + k * 0.25));   // dim grey-ish
   }
@@ -1235,6 +1238,65 @@ function screenRay(sx, sy) {
   const dir = v3.norm(v3.add(fwd, v3.add(v3.scale(right, nx * t * viewW / viewH), v3.scale(up, ny * t))));
   return { origin: eye, dir, fwd };
 }
+
+
+//----- Selection -----||
+// Tap a dot to add it to the selection, tap a selected dot to take it out again.
+// `selected` is the primary (last added) vertex; `selExtra` holds the rest. The gizmo
+// sits at the centroid of the whole selection and moves all of it together.
+// Hidden dots can't be tapped, but if they were selected before they stay selected.
+function selection() {
+  if (selected < 0 || selected >= vertCount()) return [];
+  const out = [selected];
+  for (const i of selExtra) if (i !== selected && i < vertCount()) out.push(i);
+  return out;
+}
+function clearSelection() { selected = -1; selExtra.clear(); }
+function selectOnly(v) { selExtra.clear(); selected = v; }
+function toggleSelect(v) {
+  if (v === selected) {                          // remove the primary: promote another one
+    const rest = [...selExtra];
+    selExtra.clear();
+    selected = rest.length ? rest.pop() : -1;
+    for (const i of rest) selExtra.add(i);
+  } else if (selExtra.has(v)) selExtra.delete(v);
+  else { if (selected >= 0) selExtra.add(selected); selected = v; }
+}
+const isSelected = (i) => i === selected || selExtra.has(i);
+function selCentroid() {
+  const sel = selection();
+  const c = [0, 0, 0];
+  for (const i of sel) { const p = getVert(i); c[0] += p[0]; c[1] += p[1]; c[2] += p[2]; }
+  return sel.length ? c.map(v => v / sel.length) : null;
+}
+// The vertices to move directly. If a vertex and its mirror twin are both selected,
+// only one of them is moved; moveVertex() places the other as its mirror image, so the
+// same delta is never applied twice.
+function selDrivers() {
+  const out = [], seen = new Set();
+  for (const i of selection()) {
+    const q = mesh.partner[i];
+    if (q >= 0 && q !== i && seen.has(q)) continue;
+    seen.add(i); out.push(i);
+  }
+  return out;
+}
+// Axis a is locked for the selection when every selected vertex sits on the mirror
+// plane and a is the mirror axis (then nothing can move along it).
+function selAxisLocked(a) {
+  const sel = selection();
+  return sel.length > 0 && sel.every(i => axisLocked(i, a));
+}
+// Move the whole selection by `delta` along axis a, from the start positions `starts`
+// (Map vertex -> position). Twins follow mirrored; on-plane verts stay on the plane.
+function moveSelection(starts, a, delta) {
+  for (const [i, p0] of starts) {
+    const np = p0.slice();
+    np[a] = p0[a] + delta;
+    moveVertex(i, np);
+  }
+}
+function selStarts() { return new Map(selDrivers().map(i => [i, getVert(i)])); }
 
 
 //----- Occlusion (which vertices can you actually see?) -----||
@@ -1320,8 +1382,8 @@ const worldPerPx = (w) => 2 * w * Math.tan(FOV_Y / 2) / viewH;
 // A handle pointing (almost) straight at the camera is too short to grab, so it's hidden.
 // With mirror on, a vertex sitting on the plane can't leave it: that handle is "locked".
 function gizmoHandles() {
-  if (!overlayOn || mode !== "move" || selected < 0 || selected >= vertCount()) return [];
-  const p = getVert(selected), s0 = project(p);
+  if (!overlayOn || mode !== "move" || !selection().length) return [];
+  const p = selCentroid(), s0 = project(p);
   if (!s0) return [];
   const L = GIZMO_PX * worldPerPx(s0.depth);
   const ax = axisIndex(mesh.mirror);
@@ -1330,7 +1392,7 @@ function gizmoHandles() {
     const tipW = p.slice(); tipW[a] += L;
     const s1 = project(tipW);
     const visible = !!s1 && Math.hypot(s1.x - s0.x, s1.y - s0.y) > 14;
-    out.push({ axis: a, tipW, s0, s1, visible, locked: ax === a && mesh.partner[selected] === selected });
+    out.push({ axis: a, tipW, s0, s1, visible, locked: ax === a && selAxisLocked(a) });
   }
   return out;
 }
@@ -1456,24 +1518,19 @@ canvas.addEventListener("pointerdown", (e) => {
     // 1) An axis handle of the selected vertex? (Checked first: handles are the big targets.)
     const h = pickHandle(p.x, p.y);
     if (h >= 0) {
-      const p0 = getVert(selected), dir = [0, 0, 0];
+      const p0 = selCentroid(), dir = [0, 0, 0];
       dir[h] = 1;
       const s = axisParam(screenRay(p.x, p.y), p0, dir);
-      gesture = { kind: "axis", vert: selected, axis: h, p0, dir, sGrab: s === null ? 0 : s,
+      gesture = { kind: "axis", starts: selStarts(), axis: h, p0, dir, sGrab: s === null ? 0 : s,
                   before: snapshot(), moved: false, startX: p.x, startY: p.y };
       updateUI();
       return;
     }
-    // 2) A vertex? Select it, and that's all: touching a dot NEVER moves it (only the
-    //    gizmo handles and typed coordinates do). A drag that starts on a dot orbits the
-    //    camera like any other drag, and the dot stays selected.
+    // 2) A vertex? Remember it; on release (a tap) it's added to / removed from the
+    //    selection. Touching a dot NEVER moves it (only the gizmo handles and typed
+    //    coordinates do), and a drag that starts on a dot just orbits the camera.
     const v = pickVertex(p.x, p.y);
-    if (v >= 0) {
-      selected = v;
-      meshDirty = true;
-      gesture.picked = v;
-      updateUI();
-    }
+    if (v >= 0) gesture.picked = v;
   }
 });
 
@@ -1507,12 +1564,13 @@ canvas.addEventListener("pointermove", (e) => {
     if (!gesture.moved && Math.hypot(p.x - gesture.startX, p.y - gesture.startY) < 3) return;
     const s = axisParam(screenRay(p.x, p.y), gesture.p0, gesture.dir);
     if (s === null) return;
-    const np = gesture.p0.slice();
-    np[gesture.axis] = gesture.p0[gesture.axis] + (s - gesture.sGrab);
-    // Snap only the axis being dragged, so the other two coordinates never jump.
-    if (snapOn) np[gesture.axis] = Math.round(np[gesture.axis] / SNAP_STEP) * SNAP_STEP;
-    if (!gesture.moved) { pushUndo(gesture.before); gesture.moved = true; }
-    moveVertex(gesture.vert, np);                  // also drags the mirror partner
+    const a = gesture.axis, c0 = gesture.p0[a];
+    let delta = s - gesture.sGrab;
+    // Snap the CENTROID on the dragged axis to the grid (for one vertex that's the vertex
+    // itself); every selected vertex moves by the same delta. Other axes never jump.
+    if (snapOn) delta = Math.round((c0 + delta) / SNAP_STEP) * SNAP_STEP - c0;
+    if (!gesture.moved) { pushUndo(gesture.before); gesture.moved = true; }   // one undo per drag
+    moveSelection(gesture.starts, a, delta);       // twins follow mirrored
     meshDirty = true;
     updateUI();
   }
@@ -1531,7 +1589,11 @@ function endPointer(e) {
   }
   if (pointers.size) return;
 
-  if (gesture.kind === "pending" && e.type === "pointerup" && gesture.picked === undefined) handleTap(gesture.startX, gesture.startY);
+  if (gesture.kind === "pending" && e.type === "pointerup") {
+    if (gesture.picked !== undefined && overlayOn && mode === "move") {
+      toggleSelect(gesture.picked); lastEmptyTap = null; meshDirty = true; updateUI();
+    } else handleTap(gesture.startX, gesture.startY);
+  }
   const wasAxis = gesture.kind === "axis";
   if (wasAxis && gesture.moved) meshChanged();
   gesture = null;
@@ -1544,20 +1606,25 @@ canvas.addEventListener("pointercancel", endPointer);
 // A tap = finger down and up without moving past TAP_SLOP (drags orbit, two fingers
 // pinch; neither ever counts as a tap). Rules:
 //  Overlay on:
-//    Move : tap on empty space -> deselect AND hide the overlay (clean preview);
-//           tap on the model (not a dot) -> just deselect.
-//    Split: tap an edge -> split it, then switch to Move with the new vertex selected;
-//           tap empty space -> clean preview.
-//    Paint: tap a face -> paint it; tap empty space -> clean preview.
+//    Tap a dot (Move)       -> add it to the selection / remove it if already selected.
+//    Single tap, empty space -> deselect all vertices, at once (overlay stays).
+//    Double tap, empty space -> clean preview ("deselect the object"): second tap within
+//                               DOUBLE_TAP_MS and DOUBLE_TAP_PX of the first.
+//    Split: tap an edge -> split it, then switch to Move with the new vertex selected.
+//    Paint: tap a face -> paint it.
+//    ("Empty" = not on the model: no face under the finger. In Move mode a tap on the
+//     model but not on a dot also deselects, but doesn't count toward a double tap.)
 //  Clean preview (overlay off): only the shaded model (+ grid, + rock if on) is drawn.
-//    Tap on the model, a dot or an edge spot -> overlay back; that tap does nothing else
-//    (no select, no split). Tap empty space -> overlay back too.
-//    Exception, Paint mode: tapping a face still paints it (you see the real result
-//    without wireframe), and tapping empty space brings the overlay back.
+//    Any tap brings the overlay back and does nothing else (no select, no split).
+//    Exception, Paint mode: tapping a face still paints it (you see the real result),
+//    and tapping empty space brings the overlay back.
+const DOUBLE_TAP_MS = 300, DOUBLE_TAP_PX = 40;
+let lastEmptyTap = null;   // { t, x, y } of the last single empty-space tap
+
 function setOverlay(on) {
   if (overlayOn === on) return;
   overlayOn = on;
-  if (!on) { selected = -1; if (roEditing) closeCoordEdit(false); }
+  if (!on) { clearSelection(); if (roEditing) closeCoordEdit(false); }
   meshDirty = true;
   updateUI();
 }
@@ -1573,16 +1640,27 @@ function paintAt(x, y) {
   return true;
 }
 
+// Empty-space tap: deselect now; if it's the second quick tap, go to clean preview.
+function emptyTap(x, y, trulyEmpty) {
+  const now = performance.now(), l = lastEmptyTap;
+  if (trulyEmpty && l && now - l.t <= DOUBLE_TAP_MS && Math.hypot(x - l.x, y - l.y) <= DOUBLE_TAP_PX) {
+    lastEmptyTap = null;
+    setOverlay(false);
+    return;
+  }
+  lastEmptyTap = trulyEmpty ? { t: now, x, y } : null;
+  if (selection().length) { clearSelection(); meshDirty = true; updateUI(); }
+}
+
 function handleTap(x, y) {
   if (!overlayOn) {
+    lastEmptyTap = null;
     if (mode === "paint" && paintAt(x, y)) return;
     setOverlay(true);                       // model, dot, edge, or empty: show it again
     return;
   }
   if (mode === "move") {
-    const onModel = pickFace(x, y) >= 0 || pickEdge(x, y);
-    if (onModel) { selected = -1; meshDirty = true; updateUI(); }
-    else setOverlay(false);
+    emptyTap(x, y, pickFace(x, y) < 0);
   } else if (mode === "split") {
     const edge = pickEdge(x, y);
     if (edge) {
@@ -1590,14 +1668,15 @@ function handleTap(x, y) {
       // ready to drag. splitEdgeMirrored returns the vertex on the edge you tapped (its
       // mirror twin, if one was made, is the orange dot).
       pushUndo();
-      selected = splitEdgeMirrored(edge[0], edge[1]);
+      selectOnly(splitEdgeMirrored(edge[0], edge[1]));
       mode = "move";
       overlayOn = true;
+      lastEmptyTap = null;
       meshChanged();
-    }
-    else if (pickFace(x, y) < 0) setOverlay(false);
+    } else emptyTap(x, y, pickFace(x, y) < 0);
   } else if (mode === "paint") {
-    if (!paintAt(x, y)) setOverlay(false);
+    if (paintAt(x, y)) lastEmptyTap = null;
+    else emptyTap(x, y, true);
   }
 }
 
@@ -1784,7 +1863,7 @@ function doImport(text) {
   mesh = res.mesh;
   bakeOn = res.baked;
   if (parsed.name) modelName = cIdent(parsed.name);
-  selected = -1;
+  clearSelection();
   meshChanged();
   const notes = [`${vertCount()} verts, ${triCount()} tris`];
   const added = addToImportedPalette(mesh.colors);
@@ -1812,11 +1891,13 @@ function updateUI() {
   $("mirrorLabel").textContent = mesh.mirror ? "Mirror " + mesh.mirror.toUpperCase() : "Mirror off";
   $("bSym").disabled = !mesh.mirror;
   $("bUndo").disabled = undoStack.length === 0;
-  $("bDissolve").disabled = !(mode === "move" && selected >= 0 && selected < vertCount());
+  // Dissolve works on exactly one vertex (with several selected it's disabled).
+  $("bDissolve").disabled = !(mode === "move" && selection().length === 1);
   $("palette").classList.toggle("show", mode === "paint");
   renderPalette();
 
   if (selected >= vertCount()) selected = -1;       // e.g. after a test or tool shrank the mesh
+  if (selected < 0) selExtra.clear();
   mirrorWarnings();
   updateStats();
   updateReadout();
@@ -1831,7 +1912,9 @@ function updateStats() {
   el.classList.toggle("hide", !overlayOn);
   const tris = triCount(), verts = tris * 3, bytes = verts * 6 * 4;
   const n = (x) => x.toLocaleString("en-US");
-  el.textContent = `${n(verts)} verts · ${n(tris)} tris · ${n(bytes)} B  (${n(vertCount())} unique)`;
+  const nSel = selection().length;
+  el.textContent = `${n(verts)} verts · ${n(tris)} tris · ${n(bytes)} B  (${n(vertCount())} unique)` +
+                   (nSel > 1 ? ` · ${nSel} selected` : "");
 }
 
 // Mirror warnings as a short toast, only when a count goes from 0 to something, so a
@@ -1849,16 +1932,18 @@ function mirrorWarnings() {
 // Live X / Y / Z chip at the bottom of the view while a vertex is selected in Move mode.
 // The axis being dragged is underlined.
 function updateReadout() {
-  const show = overlayOn && mode === "move" && selected >= 0 && selected < vertCount();
+  const show = overlayOn && mode === "move" && selection().length > 0;
   $("readout").classList.toggle("show", show);
   if (!show) { if (roEditing) closeCoordEdit(false); return; }
-  if (roEditing && roEditing.vert !== selected) closeCoordEdit(false);
-  const p = getVert(selected), act = gesture && gesture.kind === "axis" ? gesture.axis : -1;
+  if (roEditing && roEditing.key !== selection().join(",")) closeCoordEdit(false);
+  // One vertex: its position. Several: their centroid (shown with a "c" prefix).
+  const multi = selection().length > 1;
+  const p = selCentroid(), act = gesture && gesture.kind === "axis" ? gesture.axis : -1;
   ["roX", "roY", "roZ"].forEach((id, a) => {
     const el = $(id);
-    el.textContent = "XYZ"[a] + " " + (Math.abs(p[a]) < 5e-5 ? 0 : p[a]).toFixed(3);
+    el.textContent = (multi ? "c" : "") + "XYZ"[a] + " " + (Math.abs(p[a]) < 5e-5 ? 0 : p[a]).toFixed(3);
     el.classList.toggle("act", a === act);
-    el.classList.toggle("locked", axisLocked(selected, a));
+    el.classList.toggle("locked", selAxisLocked(a));
     el.style.display = roEditing ? "none" : "";
   });
 }
@@ -1870,8 +1955,10 @@ function updateReadout() {
 // keypads often have no minus key. Typed values are NOT snapped. Mirror rules still
 // apply: the twin moves mirrored, and an on-plane vertex's mirror axis is locked at 0.
 // The chip sits over the canvas but isn't the canvas, so tapping it never picks,
-// orbits, or deselects.
-let roEditing = null;   // { vert, axis } while the input is open
+// orbits, or deselects. With several vertices selected the chip shows their centroid;
+// typing a value moves the centroid there, i.e. moves every selected vertex by the
+// same delta (on-plane verts stay locked on the mirror axis).
+let roEditing = null;   // { key (the selection), axis } while the input is open
 
 // With mirror on, a vertex on the plane can't leave it along the mirror axis.
 function axisLocked(v, a) {
@@ -1879,11 +1966,11 @@ function axisLocked(v, a) {
 }
 
 function openCoordEdit(a) {
-  if (selected < 0) return;
-  if (axisLocked(selected, a)) { toast(`${"XYZ"[a]} is locked to the mirror plane (0)`); return; }
-  roEditing = { vert: selected, axis: a };
-  const v = getVert(selected)[a];
-  $("roEditLbl").textContent = "XYZ"[a];
+  if (!selection().length) return;
+  if (selAxisLocked(a)) { toast(`${"XYZ"[a]} is locked to the mirror plane (0)`); return; }
+  roEditing = { key: selection().join(","), axis: a };
+  const v = selCentroid()[a];
+  $("roEditLbl").textContent = (selection().length > 1 ? "c" : "") + "XYZ"[a];
   $("roEditLbl").className = "xyz"[a];
   $("roInput").value = String(+(Math.abs(v) < 5e-5 ? 0 : v).toFixed(4));
   $("roEdit").classList.add("show");
@@ -1902,19 +1989,18 @@ function parseCoord(text) {
 
 function closeCoordEdit(apply) {
   if (!roEditing) return;
-  const { vert, axis } = roEditing;
+  const { key, axis } = roEditing;
   roEditing = null;                                // first, so blur can't run this twice
   $("roEdit").classList.remove("show");
   if (document.activeElement === $("roInput")) $("roInput").blur();
-  if (apply && vert < vertCount()) {
+  if (apply && key === selection().join(",") && selection().length) {
     const n = parseCoord($("roInput").value);
     if (n === null) toast("Not a number");
     else {
-      const p = getVert(vert);
-      if (Math.abs(p[axis] - n) > 1e-9 && !axisLocked(vert, axis)) {
+      const c = selCentroid()[axis];
+      if (Math.abs(c - n) > 1e-9 && !selAxisLocked(axis)) {
         pushUndo();
-        p[axis] = n;
-        moveVertex(vert, p);                       // also moves the mirror twin
+        moveSelection(selStarts(), axis, n - c);   // twins follow mirrored
         meshChanged();
       }
     }
@@ -1945,42 +2031,92 @@ for (const b of document.querySelectorAll("[data-mode]"))
 $("bSnap").addEventListener("click", () => {
   snapOn = !snapOn;
   // Turning snap on also snaps the selected vertex, so it lands on the grid straight away.
-  if (snapOn && selected >= 0) {
-    const s = snap(getVert(selected));
-    if (v3.len(v3.sub(s, getVert(selected))) > 1e-9) { pushUndo(); moveVertex(selected, s); }
+  if (snapOn && selection().length) {
+    const drivers = selDrivers();
+    if (drivers.some(i => v3.len(v3.sub(snap(getVert(i)), getVert(i))) > 1e-9)) {
+      pushUndo();
+      for (const i of drivers) moveVertex(i, snap(getVert(i)));
+    }
   }
   meshChanged();
 });
 
 $("bBake").addEventListener("click", () => { bakeOn = !bakeOn; meshChanged(); });
 
-// Mirror button cycles X -> Y -> off -> X. Changing it re-pairs vertices from positions.
+//----- Mirror + Symm Buttons -----||
+// Mirror cycles X -> Y -> off -> X and re-pairs twins from positions. The toast always
+// says what it found, so a model that isn't symmetric is obvious straight away:
+//   "Mirror X: 4 pairs, 2 on the plane"  or  "Mirror X: no symmetric pairs: tap Symm ..."
+function mirrorSummary() {
+  const ax = axisIndex(mesh.mirror);
+  if (ax < 0) return "Mirror off";
+  let pairs = 0, onPlane = 0, lone = 0;
+  mesh.partner.forEach((q, i) => { if (q === i) onPlane++; else if (q > i) pairs++; else if (q < 0) lone++; });
+  const name = "Mirror " + mesh.mirror.toUpperCase();
+  if (!pairs && !onPlane) return `${name}: no symmetric pairs. Tap Symm to mirror one side onto the other.`;
+  let msg = `${name}: ${pairs} pair${pairs === 1 ? "" : "s"}` + (onPlane ? `, ${onPlane} on the plane` : "");
+  if (lone) msg += `, ${lone} without a twin (red): Symm fixes it`;
+  const nt = foldedTriCount();
+  if (nt) msg += `, ${nt} folded tri${nt === 1 ? "" : "s"}`;
+  return msg;
+}
+
 $("bMirror").addEventListener("click", () => {
   pushUndo();
   mesh.mirror = mesh.mirror === "x" ? "y" : mesh.mirror === "y" ? null : "x";
   const nv = pairMirror(mesh), nt = foldedTriCount();
   lastWarn = { nv, nt };                           // this toast already reports them
-  if (mesh.mirror) toast(nv || nt ? `Mirror ${mesh.mirror.toUpperCase()}: ${nv} verts have no twin, ${nt} tris are folded. Symm rebuilds the − side from the + side.`
-                                  : `Mirror ${mesh.mirror.toUpperCase()}: symmetric`);
-  else toast("Mirror off");
+  toast(mirrorSummary());
   meshChanged();
 });
 
-$("bSym").addEventListener("click", () => {
-  if (!mesh.mirror) return;
+// Mirror the whole mesh across the plane (positions flip, winding reverses so faces
+// still point outwards). Used to run Symm "from the − side": flip, symmetrize, flip back.
+function flipMesh(ax) {
+  for (let i = 0; i < vertCount(); i++) mesh.positions[i*3 + ax] = -mesh.positions[i*3 + ax];
+  for (let t = 0; t < triCount(); t++) {
+    const b = mesh.tris[t*3 + 1];
+    mesh.tris[t*3 + 1] = mesh.tris[t*3 + 2]; mesh.tris[t*3 + 2] = b;
+  }
+}
+
+// Symm makes the model exactly symmetric by copying one side onto the other.
+//  - Already symmetric (every vert paired, nothing folded): says so, changes nothing
+//    (no pointless centre cuts).
+//  - Which side is kept: the side your selection is on; with nothing selected (or the
+//    selection on the plane), the side with more vertices (+ wins a tie).
+function doSymm() {
+  const ax = axisIndex(mesh.mirror);
+  if (ax < 0) { toast("Turn Mirror on first"); return; }
+  pairMirror(mesh);
+  const name = mesh.mirror.toUpperCase();
+  if (!unpairedCount() && !foldedTriCount()) { toast(`Already symmetric across ${name}: nothing to change`); meshChanged(); return; }
+  let sign = 0;
+  const c = selCentroid();
+  if (c && Math.abs(c[ax]) > PLANE_TOL) sign = Math.sign(c[ax]);
+  if (!sign) {
+    let plus = 0, minus = 0;
+    for (let i = 0; i < vertCount(); i++) { const v = mesh.positions[i*3 + ax]; if (v > PLANE_TOL) plus++; else if (v < -PLANE_TOL) minus++; }
+    sign = minus > plus ? -1 : 1;
+  }
   const before = snapshot();
-  if (symmetrize()) {
-    pushUndo(before); selected = -1; meshChanged();
-    toast(`Rebuilt − side from + side (${mesh.mirror.toUpperCase()})`);
-  } else toast("Nothing on the + side to copy");
-});
+  if (sign < 0) flipMesh(ax);
+  const ok = symmetrize();
+  if (sign < 0) flipMesh(ax);
+  if (!ok) { mesh = JSON.parse(before); toast(`Nothing on the ${sign < 0 ? "−" : "+"}${name} side to copy`); return; }
+  pairMirror(mesh);
+  pushUndo(before); clearSelection(); meshChanged();
+  const from = (sign < 0 ? "−" : "+") + name, to = (sign < 0 ? "+" : "−") + name;
+  toast(`Symm: copied the ${from} side onto ${to} (${vertCount()} verts, ${triCount()} tris)`);
+}
+$("bSym").addEventListener("click", doSymm);
 
 $("bUndo").addEventListener("click", undo);
 $("bDissolve").addEventListener("click", () => {
-  if (selected < 0) return;
+  if (selection().length !== 1) return;
   const before = snapshot();
   const r = dissolveVertex(selected);
-  if (r === true) { pushUndo(before); selected = -1; meshChanged(); toast("Vertex dissolved"); }
+  if (r === true) { pushUndo(before); clearSelection(); meshChanged(); toast("Vertex dissolved"); }
   else toast("Can't dissolve: " + r);
 });
 $("bRock").addEventListener("click", () => {
@@ -1998,7 +2134,7 @@ $("iGo").addEventListener("click", () => {
 $("bExport").addEventListener("click", doExport);
 $("bNew").addEventListener("click", () => {
   if (!confirm("Start a new model? (You can still Undo.)")) return;
-  pushUndo(); newModel(mesh.mirror); selected = -1; meshChanged();
+  pushUndo(); newModel(mesh.mirror); clearSelection(); meshChanged();
 });
 
 $("exportName").addEventListener("input", () => {
@@ -2405,7 +2541,7 @@ function frame() {
 function drawGizmo() {
   const hs = gizmoHandles();
   if (!hs.length) return;
-  const p = getVert(selected);
+  const p = selCentroid();
   const viewDir = v3.norm(v3.sub(p, camEye()));
   const halfW = 3 * worldPerPx(hs[0].s0.depth);    // shaft half-width: 3 CSS px
   const act = gesture && gesture.kind === "axis" ? gesture.axis : -1;
