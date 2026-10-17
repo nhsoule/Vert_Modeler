@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="pofa-modeler-version" content="v6-clean-ui">
+<meta name="pofa-modeler-version" content="v7-stats">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -40,6 +40,15 @@
     text-shadow: 0 1px 2px #000;
   }
   #info:empty { display: none; }
+
+  /* ----- Stats Line -----|| */
+  /* One small, dim line in the top-left corner: what the game will upload. */
+  #stats {
+    position: absolute; left: 10px; top: calc(env(safe-area-inset-top) + 6px);
+    pointer-events: none; font: 11px ui-monospace, Menlo, Consolas, monospace;
+    color: #8a8ea0; text-shadow: 0 1px 2px #000; white-space: nowrap;
+  }
+  #stats.hide { display: none; }
 
   /* Monochrome inline icons (SVG with currentColor), so nothing renders as colour emoji. */
   .svgic { width: 1em; height: 1em; display: inline-block; vertical-align: -0.125em; fill: currentColor; }
@@ -183,6 +192,7 @@
   <div id="view">
     <canvas id="gl"></canvas>
     <div id="info"></div>
+    <div id="stats"></div>
     <div id="readout">
       <span class="ro x" id="roX" data-axis="0"></span><span class="ro y" id="roY" data-axis="1"></span><span class="ro z" id="roZ" data-axis="2"></span>
       <span id="roEdit">
@@ -282,7 +292,7 @@
 <script>
 "use strict";
 // =====================================================================================
-//  Vert Modeler v6 (the pofa modeler)
+//  Vert Modeler v7 (the pofa modeler)
 //  A tiny touch-first low-poly modeler. Every model starts as a cube; you can move
 //  vertices (with an X/Y/Z axis gizmo), split edges, and paint faces, with optional live
 //  mirror symmetry, then export a C++ array in exactly the format the pofa renderer
@@ -1822,7 +1832,20 @@ function updateUI() {
 
   if (selected >= vertCount()) selected = -1;       // e.g. after a test or tool shrank the mesh
   mirrorWarnings();
+  updateStats();
   updateReadout();
+}
+
+// Stats line, based on the EXPORT (what the game uploads), not the editor's welded verts:
+//   export verts = tris * 3 (un-indexed, one copy per triangle corner, own colour)
+//   bytes        = export verts * 6 floats * 4 bytes = sizeof(<name>_verts[]) = VBO size
+// Unique editor verts are shown in brackets. Hidden in clean preview with the overlay.
+function updateStats() {
+  const el = $("stats");
+  el.classList.toggle("hide", !overlayOn);
+  const tris = triCount(), verts = tris * 3, bytes = verts * 6 * 4;
+  const n = (x) => x.toLocaleString("en-US");
+  el.textContent = `${n(verts)} verts · ${n(tris)} tris · ${n(bytes)} B  (${n(vertCount())} unique)`;
 }
 
 // Mirror warnings as a short toast, only when a count goes from 0 to something, so a
