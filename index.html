@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="pofa-modeler-version" content="v7-stats">
+<meta name="pofa-modeler-version" content="v8-gizmo-only">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -292,7 +292,7 @@
 <script>
 "use strict";
 // =====================================================================================
-//  Vert Modeler v7 (the pofa modeler)
+//  Vert Modeler v8 (the pofa modeler)
 //  A tiny touch-first low-poly modeler. Every model starts as a cube; you can move
 //  vertices (with an X/Y/Z axis gizmo), split edges, and paint faces, with optional live
 //  mirror symmetry, then export a C++ array in exactly the format the pofa renderer
@@ -1413,14 +1413,6 @@ function pickFace(sx, sy) {
   return best;
 }
 
-// Where a screen ray crosses a plane (point + normal). Returns null if parallel.
-function rayPlane(r, planePoint, planeNormal) {
-  const denom = v3.dot(r.dir, planeNormal);
-  if (Math.abs(denom) < 1e-9) return null;
-  const t = v3.dot(v3.sub(planePoint, r.origin), planeNormal) / denom;
-  return v3.add(r.origin, v3.scale(r.dir, t));
-}
-
 const snap = (p) => p.map(c => Math.round(c / SNAP_STEP) * SNAP_STEP);
 
 
@@ -1429,9 +1421,10 @@ const pointers = new Map();  // pointerId -> {x, y} in CSS px, relative to the c
 let gesture = null;          // what the current gesture is doing
 
 // gesture.kind:
-//   "pending" : finger down on empty space, not yet moved past TAP_SLOP (could be a tap)
-//   "orbit"   : dragging the camera
-//   "vertex"  : dragging the selected vertex freely, in the plane facing the camera
+//   "pending" : finger down, not yet moved past TAP_SLOP (could be a tap). If it went
+//               down on a dot, `picked` is set: that dot is already selected, and the
+//               release must not count as an empty-space tap.
+//   "orbit"   : dragging the camera (also when the drag started on a dot)
 //   "axis"    : dragging an axis handle: the vertex slides along X, Y, or Z only
 //   "pinch"   : two fingers zooming
 //   "idle"    : ignore until all fingers lift (e.g. after a pinch)
@@ -1448,7 +1441,7 @@ canvas.addEventListener("pointerdown", (e) => {
 
   // Second finger: switch to pinch zoom, whatever was happening.
   if (pointers.size === 2) {
-    if (gesture && (gesture.kind === "vertex" || gesture.kind === "axis") && gesture.moved) meshChanged();
+    if (gesture && gesture.kind === "axis" && gesture.moved) meshChanged();
     const [a, b] = [...pointers.values()];
     gesture = { kind: "pinch", lastDist: Math.hypot(a.x - b.x, a.y - b.y) };
     return;
@@ -1471,19 +1464,14 @@ canvas.addEventListener("pointerdown", (e) => {
       updateUI();
       return;
     }
-    // 2) A vertex? Select it, and a drag moves it in the plane facing the camera.
+    // 2) A vertex? Select it, and that's all: touching a dot NEVER moves it (only the
+    //    gizmo handles and typed coordinates do). A drag that starts on a dot orbits the
+    //    camera like any other drag, and the dot stays selected.
     const v = pickVertex(p.x, p.y);
     if (v >= 0) {
       selected = v;
       meshDirty = true;
-      // Drag plane: faces the camera and passes through the vertex.
-      const r = screenRay(p.x, p.y);
-      const hit = rayPlane(r, getVert(v), r.fwd);
-      gesture = {
-        kind: "vertex", vert: v, planeN: r.fwd, planeP: getVert(v),
-        offset: hit ? v3.sub(getVert(v), hit) : [0, 0, 0],
-        before: snapshot(), moved: false, startX: p.x, startY: p.y,
-      };
+      gesture.picked = v;
       updateUI();
     }
   }
@@ -1529,18 +1517,6 @@ canvas.addEventListener("pointermove", (e) => {
     updateUI();
   }
 
-  if (gesture.kind === "vertex") {
-    // Tiny jitters on a tap shouldn't move the vertex.
-    if (!gesture.moved && Math.hypot(p.x - gesture.startX, p.y - gesture.startY) < 3) return;
-    const hit = rayPlane(screenRay(p.x, p.y), gesture.planeP, gesture.planeN);
-    if (!hit) return;
-    let np = v3.add(hit, gesture.offset);
-    if (snapOn) np = snap(np);
-    if (!gesture.moved) { pushUndo(gesture.before); gesture.moved = true; }
-    moveVertex(gesture.vert, np);
-    meshDirty = true;
-    updateUI();
-  }
 });
 
 function endPointer(e) {
@@ -1555,9 +1531,9 @@ function endPointer(e) {
   }
   if (pointers.size) return;
 
-  if (gesture.kind === "pending" && e.type === "pointerup") handleTap(gesture.startX, gesture.startY);
+  if (gesture.kind === "pending" && e.type === "pointerup" && gesture.picked === undefined) handleTap(gesture.startX, gesture.startY);
   const wasAxis = gesture.kind === "axis";
-  if ((gesture.kind === "vertex" || wasAxis) && gesture.moved) meshChanged();
+  if (wasAxis && gesture.moved) meshChanged();
   gesture = null;
   if (wasAxis) updateUI();                         // clear the "active axis" highlight
 }
