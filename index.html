@@ -11,6 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="pofa modeler">
 <meta name="theme-color" content="#16171d">
+<meta name="pofa-modeler-version" content="v3-gizmo-rock-import">
 <title>pofa modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -66,29 +67,44 @@
   #toolbar button:disabled { opacity: 0.35; }
   #toolbar button:active { filter: brightness(1.3); }
 
-  /* ----- Export Modal -----|| */
-  #modal {
+  /* ----- Export / Import Modals -----|| */
+  .modal {
     display: none; position: fixed; inset: 0; background: #000d;
     padding: calc(env(safe-area-inset-top) + 16px) 12px calc(env(safe-area-inset-bottom) + 16px);
     box-sizing: border-box; flex-direction: column; gap: 8px; z-index: 10;
   }
-  #modal.show { display: flex; }
-  #modal .head { display: flex; align-items: center; gap: 8px; }
-  #modal .head span { flex: 1; font-weight: 600; }
-  #modal label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #b9bccb; }
+  .modal.show { display: flex; }
+  .modal .head { display: flex; align-items: center; gap: 8px; }
+  .modal .head span { flex: 1; font-weight: 600; }
+  .modal .note { font-size: 12px; color: #9a9db0; }
+  .modal label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #b9bccb; }
   #exportName {
     flex: 1; min-height: 40px; box-sizing: border-box; padding: 0 10px;
     background: #0d0e12; color: #fff; border: 1px solid #2c2e3a; border-radius: 8px;
     font: 15px ui-monospace, Menlo, Consolas, monospace; -webkit-user-select: text; user-select: text;
   }
-  #modal button { min-height: 44px; padding: 0 16px; border: 0; border-radius: 10px; background: #e0b43a; color: #16171d; font: inherit; font-weight: 600; }
-  #modal button.alt { background: #2a2c38; color: #e8e8ee; }
-  #exportText {
+  .modal button { min-height: 44px; padding: 0 16px; border: 0; border-radius: 10px; background: #e0b43a; color: #16171d; font: inherit; font-weight: 600; }
+  .modal button.alt { background: #2a2c38; color: #e8e8ee; }
+  #exportText, #importText {
     flex: 1; width: 100%; box-sizing: border-box; resize: none;
     background: #0d0e12; color: #cfe3c0; border: 1px solid #2c2e3a; border-radius: 8px;
     font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; padding: 8px;
     -webkit-user-select: text; user-select: text; white-space: pre; overflow: auto;
   }
+
+  #importText { color: #e8e8ee; }
+
+  /* ----- Gizmo Coordinate Readout -----|| */
+  #readout {
+    position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
+    display: none; gap: 10px; padding: 6px 12px; border-radius: 16px;
+    background: #000b; pointer-events: none; white-space: nowrap;
+    font: 13px ui-monospace, Menlo, Consolas, monospace;
+  }
+  #readout.show { display: flex; }
+  #readout span { opacity: 0.75; }
+  #readout span.act { opacity: 1; font-weight: 700; text-decoration: underline; }
+  #readout .x { color: #ff7a7a; } #readout .y { color: #7ee08a; } #readout .z { color: #7fa6ff; }
 
   /* Small transient message ("Copied!") */
   #toast {
@@ -104,6 +120,7 @@
   <div id="view">
     <canvas id="gl"></canvas>
     <div id="info"></div>
+    <div id="readout"><span class="x" id="roX"></span><span class="y" id="roY"></span><span class="z" id="roZ"></span></div>
   </div>
   <div id="palette"></div>
   <div id="toolbar">
@@ -112,19 +129,21 @@
       <button id="bSplit" data-mode="split"><span class="ic">✂</span>Split</button>
       <button id="bPaint" data-mode="paint"><span class="ic">🖌</span>Paint</button>
       <button id="bUndo"><span class="ic">↶</span>Undo</button>
+      <button id="bRock"><span class="ic">◆</span>Rock</button>
     </div>
     <div class="row small">
       <button id="bMirror"><span class="ic">⇋</span><span id="mirrorLabel">Mirror X</span></button>
       <button id="bSym"><span class="ic">⧓</span>Symm</button>
       <button id="bSnap"><span class="ic">#</span>Snap</button>
       <button id="bBake"><span class="ic">☀</span>Shade</button>
+      <button id="bImport"><span class="ic">⇩</span>Import</button>
       <button id="bExport"><span class="ic">⇪</span>Export</button>
       <button id="bNew"><span class="ic">□</span>New</button>
     </div>
   </div>
 </div>
 
-<div id="modal">
+<div id="modal" class="modal">
   <div class="head">
     <span>C++ export</span>
     <button id="mCopy">Copy</button>
@@ -133,15 +152,26 @@
   <label>Name <input id="exportName" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" value="model"></label>
   <textarea id="exportText" readonly spellcheck="false"></textarea>
 </div>
+<div id="importModal" class="modal">
+  <div class="head">
+    <span>Import C++ array</span>
+    <button id="iGo">Import</button>
+    <button id="iClose" class="alt">Cancel</button>
+  </div>
+  <div class="note">Paste a previous export (the whole snippet, or just the numbers). Undo brings the old model back.</div>
+  <textarea id="importText" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="static const float model_verts[] = { ... };"></textarea>
+</div>
 <div id="toast"></div>
 
 <script>
 "use strict";
 // =====================================================================================
-//  pofa modeler v2
+//  pofa modeler v3
 //  A tiny touch-first low-poly modeler. Every model starts as a cube; you can move
-//  vertices, split edges, and paint faces, with optional live mirror symmetry, then
-//  export a C++ array in exactly the format the pofa renderer uploads.
+//  vertices (with an X/Y/Z axis gizmo), split edges, and paint faces, with optional live
+//  mirror symmetry, then export a C++ array in exactly the format the pofa renderer
+//  uploads, and paste it back in later with Import. A game rock sits beside the model
+//  as a size reference (display only).
 //
 //  Coordinates match the game: Z is up, X is left/right, Y is forward/back, and models
 //  sit with their base on z = 0. Rendering uses raw WebGL 2 (= OpenGL ES 3.0), so the
@@ -160,6 +190,13 @@ const FOV_Y         = 50 * Math.PI / 180; // vertical field of view (radians)
 const PLANE_TOL     = 1e-4;               // |coord| below this = vertex lies on the mirror plane
 const PAIR_TOL      = 1e-3;               // max distance when auto-pairing mirror partners
 const UP            = [0, 0, 1];          // Z-up world, like the game
+const ROCK_KEY      = "pofa-modeler-rock";// separate key: just the rock on/off preference
+const ROCK_OFFSET   = [1.25, 0, 0];       // where the reference rock sits (+X, beside the cube)
+const GIZMO_PX      = 80;                 // CSS px: on-screen length of each axis handle
+const GIZMO_TIP_PX  = 30;                 // CSS px: grab radius around a handle's tip ball
+const GIZMO_SHAFT_PX= 18;                 // CSS px: grab distance from a handle's shaft
+const WELD_EPS      = 1e-4;               // import: positions closer than this become one vertex
+const AXIS_COLORS   = [[0.95, 0.30, 0.30], [0.35, 0.85, 0.40], [0.35, 0.55, 1.00]]; // X, Y, Z
 
 // Baked light: fixed direction (toward the light) and the formula the export uses.
 const BAKE_LIGHT    = normalize3([0.3, 0.5, 0.8]);
@@ -560,6 +597,68 @@ function symmetrize() {
 }
 
 
+//----- Reference Rock (display only) -----||
+// A straight port of the rock generator in pofa's src/render/render.cpp, render_init()
+// (the P0/M0/T0 tables, jitter(), and the loop `for (uint32_t s = 0; s < ROCK_SHAPES; s++)`),
+// for shape s = 0: seed 1000, scale 1.0, the smallest rock in the game. Positions are game
+// world units (Z-up, base on z = 0), the same units the modeler edits and exports 1:1.
+// Colours are the game's own (no baked light; the game shader doesn't light them either).
+// It is NOT part of `mesh`: never picked, edited, exported, undone, or autosaved.
+const f32 = Math.fround;   // C float maths is 32-bit; round every step like the game does
+
+// jitter(): hash (seed, i) to a float in [-mag, +mag]. uint32 overflow via Math.imul + >>> 0.
+function rockJitter(seed, i, mag) {
+  seed = (seed ^ Math.imul(i, 0x9E3779B9)) >>> 0;
+  seed = Math.imul(seed, 747796405) >>> 0;
+  const u = f32((seed >>> 8) * f32(1 / 16777215));
+  return f32(f32(f32(u * 2) - 1) * f32(mag));
+}
+
+function buildGameRock(s = 0) {
+  const P0 = [[-0.40,-0.28,0.00],[0.12,-0.50,0.00],[0.48,-0.18,0.00],[0.38,0.35,0.00],[-0.08,0.48,0.00],[-0.45,0.12,0.00]];
+  const M0 = [[-0.35,-0.32,0.20],[0.18,-0.42,0.24],[0.50,-0.08,0.22],[0.32,0.38,0.26],[-0.05,0.44,0.23],[-0.42,0.08,0.25]];
+  const T0 = [0.02, 0.03, 0.40];
+  const colBot = [0.28, 0.27, 0.25], colTop = [0.62, 0.60, 0.55];
+  const sideGreys = [[0.35,0.34,0.32],[0.40,0.38,0.36],[0.42,0.41,0.38],[0.46,0.44,0.41],[0.48,0.46,0.43],[0.52,0.50,0.47]];
+  const scales = [1.0, 1.18, 2.25, 2.25, 3.9, 3.9];
+  const seed = 1000 + s * 17, J = rockJitter, add = (a, b) => f32(f32(a) + b);
+  const P = [], M = [], N = [];
+  for (let i = 0; i < 6; i++) {
+    P.push([add(P0[i][0], J(seed, i*3 + 0, 0.10)), add(P0[i][1], J(seed, i*3 + 1, 0.10)), 0]);
+    const m = [add(M0[i][0], J(seed, 20 + i*3 + 0, 0.12)), add(M0[i][1], J(seed, 20 + i*3 + 1, 0.12)),
+               add(M0[i][2], J(seed, 20 + i*3 + 2, 0.08))];
+    if (m[2] < f32(0.12)) m[2] = f32(0.12);
+    M.push(m);
+  }
+  const T = [add(T0[0], J(seed, 90, 0.06)), add(T0[1], J(seed, 91, 0.06)), add(T0[2], J(seed, 92, 0.05))];
+  T[2] = Math.min(f32(0.48), Math.max(f32(0.32), T[2]));
+  for (let i = 0; i < 6; i++)
+    N.push([f32(M[i][0] * f32(0.45)), f32(M[i][1] * f32(0.45)), add(0.34, J(seed, 40 + i, 0.04))]);
+  const sc = f32(scales[s]);
+  for (const p of [...P, ...M, ...N, T]) for (let k = 0; k < 3; k++) p[k] = f32(p[k] * sc);
+  const out = [];
+  const tri = (a, b, c, col) => { for (const q of [a, b, c]) out.push(q[0], q[1], q[2], col[0], col[1], col[2]); };
+  tri(P[0], P[1], P[2], colBot); tri(P[0], P[2], P[3], colBot);
+  tri(P[0], P[3], P[4], colBot); tri(P[0], P[4], P[5], colBot);
+  for (let i = 0; i < 6; i++) {
+    const j = (i + 1) % 6, side = sideGreys[(s + i) % 6];
+    tri(P[i], P[j], M[j], side);   tri(P[i], M[j], M[i], side);
+    tri(M[i], M[j], N[j], colTop); tri(M[i], N[j], N[i], colTop);
+    tri(N[i], N[j], T, colTop);
+  }
+  return out;   // 34 triangles = 102 verts x 6 floats, same layout as the export
+}
+
+const GAME_ROCK = buildGameRock(0);
+// Bounding box of the rock (for the toast): [min xyz, max xyz] in world units.
+const ROCK_BOUNDS = (() => {
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < GAME_ROCK.length; i += 6)
+    for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], GAME_ROCK[i+k]); hi[k] = Math.max(hi[k], GAME_ROCK[i+k]); }
+  return [lo, hi];
+})();
+
+
 //----- App State -----||
 let mode         = "move";  // "move" | "split" | "paint"
 let snapOn       = false;
@@ -568,6 +667,8 @@ let currentColor = 8;       // palette index used by Paint
 let modelName    = "model"; // C identifier used in the export
 let selected     = -1;      // selected vertex index, -1 = none
 let undoStack    = [];      // array of JSON snapshots of `mesh`
+let showRock     = true;    // reference rock visible? (stored under ROCK_KEY, not in the model save)
+try { showRock = localStorage.getItem(ROCK_KEY) !== "0"; } catch (e) { /* storage blocked */ }
 
 // Orbit camera around `target` at `dist`; yaw spins around Z, pitch tilts up/down.
 const cam = { yaw: 0.6, pitch: 0.45, dist: 3.4, target: [0, 0, 0.5] };
@@ -723,7 +824,14 @@ const edgeBatch  = makeBatch();
 const dotBatch   = makeBatch();
 const gridBatch  = makeBatch();
 const planeBatch = makeBatch();
+const rockBatch  = makeBatch();   // reference rock: uploaded once, never rebuilt
+const gizmoBatch = makeBatch();   // axis handle shafts (thick quads), rebuilt every frame
+const gizmoTips  = makeBatch();   // axis handle tip balls (big round points)
+const gizmoGuide = makeBatch();   // thin line along the axis being dragged
 let meshDirty = true;
+
+// The rock goes up once, shifted by ROCK_OFFSET so it stands beside the cube.
+uploadBatch(rockBatch, GAME_ROCK.map((v, i) => (i % 6) < 3 ? v + ROCK_OFFSET[i % 6] : v));
 
 // Ground grid on the XY plane at z = 0, with the X axis red and the Y axis green.
 (function buildGrid() {
@@ -839,6 +947,57 @@ function pickVertex(sx, sy) {
   return best;
 }
 
+// World length of one CSS pixel at view depth w (w = distance along the camera's view axis).
+const worldPerPx = (w) => 2 * w * Math.tan(FOV_Y / 2) / viewH;
+
+// The selected vertex's three axis handles, in world and screen space.
+// Each: { axis, tipW (world), s0/s1 (screen origin/tip), visible, locked }.
+// A handle pointing (almost) straight at the camera is too short to grab, so it's hidden.
+// With mirror on, a vertex sitting on the plane can't leave it: that handle is "locked".
+function gizmoHandles() {
+  if (mode !== "move" || selected < 0 || selected >= vertCount()) return [];
+  const p = getVert(selected), s0 = project(p);
+  if (!s0) return [];
+  const L = GIZMO_PX * worldPerPx(s0.depth);
+  const ax = axisIndex(mesh.mirror);
+  const out = [];
+  for (let a = 0; a < 3; a++) {
+    const tipW = p.slice(); tipW[a] += L;
+    const s1 = project(tipW);
+    const visible = !!s1 && Math.hypot(s1.x - s0.x, s1.y - s0.y) > 14;
+    out.push({ axis: a, tipW, s0, s1, visible, locked: ax === a && mesh.partner[selected] === selected });
+  }
+  return out;
+}
+
+// Which axis handle (0, 1, 2) is under the finger, or -1. Tips win over shafts.
+function pickHandle(sx, sy) {
+  let best = -1, bestD = Infinity;
+  for (const h of gizmoHandles()) {
+    if (!h.visible || h.locked) continue;
+    const dTip = Math.hypot(h.s1.x - sx, h.s1.y - sy);
+    let d = dTip <= GIZMO_TIP_PX ? dTip : Infinity;
+    // Shaft: only its outer part, so a tap right on the vertex still grabs the vertex.
+    const fromOrigin = Math.hypot(h.s0.x - sx, h.s0.y - sy);
+    if (d === Infinity && fromOrigin > 16) {
+      const ds = distToSegment(sx, sy, h.s0, h.s1);
+      if (ds <= GIZMO_SHAFT_PX) d = ds + GIZMO_TIP_PX;   // ranked after any tip hit
+    }
+    if (d < bestD) { bestD = d; best = h.axis; }
+  }
+  return best;
+}
+
+// Closest point on the axis line (origin o, unit direction a) to a screen ray, as the
+// distance s along the axis. This is what makes the vertex follow the finger exactly
+// along the axis's on-screen direction. Returns null if the ray is parallel to the axis.
+function axisParam(r, o, a) {
+  const b = v3.dot(a, r.dir), w = v3.sub(o, r.origin);
+  const denom = 1 - b * b;
+  if (denom < 1e-6) return null;
+  return (b * v3.dot(r.dir, w) - v3.dot(a, w)) / denom;
+}
+
 // Distance from point P to segment AB in 2D screen space.
 function distToSegment(px, py, a, b) {
   const dx = b.x - a.x, dy = b.y - a.y;
@@ -903,7 +1062,8 @@ let gesture = null;          // what the current gesture is doing
 // gesture.kind:
 //   "pending" : finger down on empty space, not yet moved past TAP_SLOP (could be a tap)
 //   "orbit"   : dragging the camera
-//   "vertex"  : dragging the selected vertex
+//   "vertex"  : dragging the selected vertex freely, in the plane facing the camera
+//   "axis"    : dragging an axis handle: the vertex slides along X, Y, or Z only
 //   "pinch"   : two fingers zooming
 //   "idle"    : ignore until all fingers lift (e.g. after a pinch)
 
@@ -919,7 +1079,7 @@ canvas.addEventListener("pointerdown", (e) => {
 
   // Second finger: switch to pinch zoom, whatever was happening.
   if (pointers.size === 2) {
-    if (gesture && gesture.kind === "vertex" && gesture.moved) meshChanged();
+    if (gesture && (gesture.kind === "vertex" || gesture.kind === "axis") && gesture.moved) meshChanged();
     const [a, b] = [...pointers.values()];
     gesture = { kind: "pinch", lastDist: Math.hypot(a.x - b.x, a.y - b.y) };
     return;
@@ -929,6 +1089,18 @@ canvas.addEventListener("pointerdown", (e) => {
   gesture = { kind: "pending", startX: p.x, startY: p.y, lastX: p.x, lastY: p.y };
 
   if (mode === "move") {
+    // 1) An axis handle of the selected vertex? (Checked first: handles are the big targets.)
+    const h = pickHandle(p.x, p.y);
+    if (h >= 0) {
+      const p0 = getVert(selected), dir = [0, 0, 0];
+      dir[h] = 1;
+      const s = axisParam(screenRay(p.x, p.y), p0, dir);
+      gesture = { kind: "axis", vert: selected, axis: h, p0, dir, sGrab: s === null ? 0 : s,
+                  before: snapshot(), moved: false, startX: p.x, startY: p.y };
+      updateUI();
+      return;
+    }
+    // 2) A vertex? Select it, and a drag moves it in the plane facing the camera.
     const v = pickVertex(p.x, p.y);
     if (v >= 0) {
       selected = v;
@@ -972,6 +1144,20 @@ canvas.addEventListener("pointermove", (e) => {
     gesture.lastX = p.x; gesture.lastY = p.y;
   }
 
+  if (gesture.kind === "axis") {
+    if (!gesture.moved && Math.hypot(p.x - gesture.startX, p.y - gesture.startY) < 3) return;
+    const s = axisParam(screenRay(p.x, p.y), gesture.p0, gesture.dir);
+    if (s === null) return;
+    const np = gesture.p0.slice();
+    np[gesture.axis] = gesture.p0[gesture.axis] + (s - gesture.sGrab);
+    // Snap only the axis being dragged, so the other two coordinates never jump.
+    if (snapOn) np[gesture.axis] = Math.round(np[gesture.axis] / SNAP_STEP) * SNAP_STEP;
+    if (!gesture.moved) { pushUndo(gesture.before); gesture.moved = true; }
+    moveVertex(gesture.vert, np);                  // also drags the mirror partner
+    meshDirty = true;
+    updateUI();
+  }
+
   if (gesture.kind === "vertex") {
     // Tiny jitters on a tap shouldn't move the vertex.
     if (!gesture.moved && Math.hypot(p.x - gesture.startX, p.y - gesture.startY) < 3) return;
@@ -999,8 +1185,10 @@ function endPointer(e) {
   if (pointers.size) return;
 
   if (gesture.kind === "pending" && e.type === "pointerup") handleTap(gesture.startX, gesture.startY);
-  if (gesture.kind === "vertex" && gesture.moved) meshChanged();
+  const wasAxis = gesture.kind === "axis";
+  if ((gesture.kind === "vertex" || wasAxis) && gesture.moved) meshChanged();
   gesture = null;
+  if (wasAxis) updateUI();                         // clear the "active axis" highlight
 }
 canvas.addEventListener("pointerup", endPointer);
 canvas.addEventListener("pointercancel", endPointer);
@@ -1110,11 +1298,127 @@ async function doExport() {
 }
 
 
+//----- Import -----||
+// Paste text from a previous export and get an editable mesh back.
+//  1. Name: "<name>_verts" -> modelName.
+//  2. Numbers: everything inside the braces of the _verts[] array (or the whole text if
+//     there are no braces), with comments removed; "1.0f", "-.5", "2e-3" all parse.
+//  3. Every 6 numbers = one vertex (x, y, z, r, g, b); every 3 vertices = one triangle.
+//  4. Weld: vertices whose positions are within WELD_EPS share one index, so moving a
+//     corner moves every triangle that touches it (like the cube you started with).
+//  5. Colours: the editor stores a palette index per triangle, so each triangle's colour
+//     is matched to the nearest palette entry. If the export had Shade on, the light was
+//     multiplied in; we try both "baked" and "flat", keep whichever fits better overall,
+//     and set the Shade button to match so re-exporting gives the same numbers.
+// The editor's faces are triangles, so no quad merging is needed.
+function parseExport(text) {
+  const nameMatch = text.match(/([A-Za-z_][A-Za-z0-9_]*)_verts\s*\[/);
+  let body = text;
+  const open = nameMatch ? text.indexOf("{", nameMatch.index) : text.indexOf("{");
+  if (open >= 0) {
+    const close = text.indexOf("}", open);
+    body = text.slice(open + 1, close >= 0 ? close : undefined);
+  }
+  body = body.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+  const nums = (body.match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g) || []).map(Number);
+  if (nums.length < 18) throw new Error("Need at least one triangle (18 numbers), found " + nums.length + ".");
+  if (nums.length % 18) throw new Error(nums.length + " numbers isn't a whole number of triangles (6 per vertex, 3 vertices each).");
+  if (nums.some(n => !isFinite(n))) throw new Error("Found a number that isn't finite.");
+  return { name: nameMatch ? nameMatch[1] : null, nums };
+}
+
+function importMesh(nums, mirror) {
+  // Weld through a hash grid: each position goes in a cell of size WELD_EPS; we check the
+  // 27 neighbouring cells so two points either side of a cell border still merge.
+  const positions = [], cells = new Map(), corner = [];
+  const cellKey = (a, b, c) => a + "," + b + "," + c;
+  function weld(p) {
+    const c = p.map(v => Math.round(v / WELD_EPS));
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+      const list = cells.get(cellKey(c[0] + dx, c[1] + dy, c[2] + dz));
+      if (!list) continue;
+      for (const i of list)
+        if (Math.abs(positions[i*3] - p[0]) <= WELD_EPS && Math.abs(positions[i*3+1] - p[1]) <= WELD_EPS &&
+            Math.abs(positions[i*3+2] - p[2]) <= WELD_EPS) return i;
+    }
+    const i = positions.length / 3;
+    positions.push(p[0], p[1], p[2]);
+    const k = cellKey(c[0], c[1], c[2]);
+    if (!cells.has(k)) cells.set(k, []);
+    cells.get(k).push(i);
+    return i;
+  }
+  const tris = [], rgb = [];
+  for (let t = 0; t < nums.length / 18; t++) {
+    const idx = [0, 1, 2].map(k => weld(nums.slice(t*18 + k*6, t*18 + k*6 + 3)));
+    if (idx[0] === idx[1] || idx[1] === idx[2] || idx[0] === idx[2]) continue;   // degenerate
+    tris.push(...idx);
+    // Triangle colour = average of its 3 vertex colours (they're equal in our exports).
+    rgb.push([3, 4, 5].map(k => (nums[t*18 + k] + nums[t*18 + 6 + k] + nums[t*18 + 12 + k]) / 3));
+  }
+  if (!tris.length) throw new Error("Every triangle was degenerate (zero area).");
+  const m = { positions, tris, colors: [], partner: [], mirror };
+
+  // Palette match under both hypotheses (baked light vs flat), then keep the better one.
+  const normal = (t) => {
+    const P = (i) => positions.slice(i*3, i*3 + 3);
+    const a = P(tris[t*3]), b = P(tris[t*3+1]), c = P(tris[t*3+2]);
+    return v3.norm(v3.cross(v3.sub(b, a), v3.sub(c, a)));
+  };
+  function match(t, k) {
+    let best = 0, bestE = Infinity;
+    PALETTE.forEach((pc, i) => {
+      const e = pc.reduce((s, c, j) => s + (Math.min(1, c / 255 * k) - rgb[t][j]) ** 2, 0);
+      if (e < bestE) { bestE = e; best = i; }
+    });
+    return { i: best, e: bestE };
+  }
+  const nT = tris.length / 3, baked = [], flat = [];
+  let eBaked = 0, eFlat = 0;
+  for (let t = 0; t < nT; t++) {
+    const b = match(t, bakeFactor(normal(t))), f = match(t, 1);
+    baked.push(b); flat.push(f); eBaked += b.e; eFlat += f.e;
+  }
+  const useBaked = eBaked <= eFlat;
+  const chosen = useBaked ? baked : flat;
+  m.colors = chosen.map(c => c.i);
+  const approx = chosen.filter(c => c.e > 3 * (1.5 / 255) ** 2).length;   // off by > ~1.5/255 per channel
+  pairMirror(m);
+  return { mesh: m, baked: useBaked, approx, dropped: nums.length / 18 - nT };
+}
+
+function openImport() {
+  $("importText").value = "";
+  $("importModal").classList.add("show");
+  setTimeout(() => $("importText").focus(), 50);
+}
+
+function doImport(text) {
+  let parsed, res;
+  try {
+    parsed = parseExport(text);
+    res = importMesh(parsed.nums, mesh.mirror);
+  } catch (e) { toast("Import failed: " + e.message); return false; }
+  pushUndo();                                      // the old model, so Undo brings it back
+  mesh = res.mesh;
+  bakeOn = res.baked;
+  if (parsed.name) modelName = cIdent(parsed.name);
+  selected = -1;
+  meshChanged();
+  const notes = [`${vertCount()} verts, ${triCount()} tris`];
+  if (res.approx) notes.push(`${res.approx} faces matched to nearest palette colour`);
+  if (res.dropped) notes.push(`${res.dropped} zero-area tris dropped`);
+  if (mesh.mirror && unpairedCount()) notes.push(`${unpairedCount()} verts have no mirror twin`);
+  toast(`Imported ${modelName}: ` + notes.join(", "));
+  return true;
+}
+
+
 //----- UI Wiring -----||
 function $(id) { return document.getElementById(id); }
 
 const HINTS = {
-  move:  "<b>Move</b>: tap a dot to select, drag it to move. Drag empty space to orbit.",
+  move:  "<b>Move</b>: tap a dot, then drag a coloured handle (X red, Y green, Z blue) to slide it on that axis. Drag the dot itself to move freely. Drag empty space to orbit.",
   split: "<b>Split</b>: tap an edge to add a vertex at its midpoint.",
   paint: "<b>Paint</b>: pick a colour, tap a face to paint it.",
 };
@@ -1122,6 +1426,7 @@ const HINTS = {
 function updateUI() {
   for (const b of document.querySelectorAll("[data-mode]")) b.classList.toggle("on", b.dataset.mode === mode);
   $("bSnap").classList.toggle("on", snapOn);
+  $("bRock").classList.toggle("on", showRock);
   $("bBake").classList.toggle("on", bakeOn);
   $("bMirror").classList.toggle("on", !!mesh.mirror);
   $("mirrorLabel").textContent = mesh.mirror ? "Mirror " + mesh.mirror.toUpperCase() : "Mirror off";
@@ -1140,6 +1445,21 @@ function updateUI() {
   let line2 = parts.join(" &middot; ");
   if (selected >= 0) line2 += "<br>vertex " + selected + ": " + getVert(selected).map(c => c.toFixed(3)).join(", ");
   $("info").innerHTML = HINTS[mode] + "<br>" + line2;
+  updateReadout();
+}
+
+// Live X / Y / Z chip at the bottom of the view while a vertex is selected in Move mode.
+// The axis being dragged is underlined.
+function updateReadout() {
+  const show = mode === "move" && selected >= 0 && selected < vertCount();
+  $("readout").classList.toggle("show", show);
+  if (!show) return;
+  const p = getVert(selected), act = gesture && gesture.kind === "axis" ? gesture.axis : -1;
+  ["roX", "roY", "roZ"].forEach((id, a) => {
+    const el = $(id);
+    el.textContent = "XYZ"[a] + " " + (Math.abs(p[a]) < 5e-5 ? 0 : p[a]).toFixed(3);
+    el.classList.toggle("act", a === act);
+  });
 }
 
 // Palette swatches
@@ -1187,6 +1507,18 @@ $("bSym").addEventListener("click", () => {
 });
 
 $("bUndo").addEventListener("click", undo);
+$("bRock").addEventListener("click", () => {
+  showRock = !showRock;
+  try { localStorage.setItem(ROCK_KEY, showRock ? "1" : "0"); } catch (e) { /* ignore */ }
+  const [lo, hi] = ROCK_BOUNDS, f = (k) => (hi[k] - lo[k]).toFixed(2);
+  toast(showRock ? `Game rock (shape 0): ${f(0)} × ${f(1)} × ${f(2)} units, display only` : "Rock hidden");
+  updateUI();
+});
+$("bImport").addEventListener("click", openImport);
+$("iClose").addEventListener("click", () => $("importModal").classList.remove("show"));
+$("iGo").addEventListener("click", () => {
+  if (doImport($("importText").value)) $("importModal").classList.remove("show");
+});
 $("bExport").addEventListener("click", doExport);
 $("bNew").addEventListener("click", () => {
   if (!confirm("Start a new model? (You can still Undo.)")) return;
@@ -1244,6 +1576,11 @@ function frame() {
   gl.polygonOffset(1, 1);
   gl.bindVertexArray(faceBatch.vao);
   gl.drawArrays(gl.TRIANGLES, 0, faceBatch.count);
+  // 2b) Reference rock (display only): the game's colours, no edges, just like in game.
+  if (showRock) {
+    gl.bindVertexArray(rockBatch.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, rockBatch.count);
+  }
   gl.disable(gl.POLYGON_OFFSET_FILL);
 
   // 3) Edges (depth tested, so hidden edges stay hidden)
@@ -1271,8 +1608,64 @@ function frame() {
   gl.bindVertexArray(dotBatch.vao);
   gl.drawArrays(gl.POINTS, 0, dotBatch.count);
 
+  // 6) Move gizmo on the selected vertex (on top of everything, like the dots).
+  drawGizmo();
+
   gl.bindVertexArray(null);
   requestAnimationFrame(frame);
+}
+
+
+//----- Gizmo Drawing -----||
+// Rebuilt every frame (it's tiny): it must keep the same on-screen size as you zoom.
+// Shafts are thick quads (WebGL lines are only 1 px wide), turned to face the camera;
+// tips are big round points. The handle being dragged turns yellow and shows a thin guide
+// line through the vertex's start position along its axis.
+function drawGizmo() {
+  const hs = gizmoHandles();
+  if (!hs.length) return;
+  const p = getVert(selected);
+  const viewDir = v3.norm(v3.sub(p, camEye()));
+  const halfW = 3 * worldPerPx(hs[0].s0.depth);    // shaft half-width: 3 CSS px
+  const act = gesture && gesture.kind === "axis" ? gesture.axis : -1;
+  const quads = [], tips = [], guide = [];
+  for (const h of hs) {
+    if (!h.visible) continue;
+    let col = AXIS_COLORS[h.axis];
+    if (h.locked) col = [0.4, 0.4, 0.45];
+    if (h.axis === act) col = [1.0, 0.85, 0.1];
+    const dir = [0, 0, 0]; dir[h.axis] = 1;
+    const side = v3.scale(v3.norm(v3.cross(dir, viewDir)), halfW);
+    const a0 = v3.add(p, v3.scale(v3.sub(h.tipW, p), 0.12)), a1 = h.tipW;   // leave a gap at the vertex
+    const c = [v3.add(a0, side), v3.sub(a0, side), v3.sub(a1, side), v3.add(a1, side)];
+    for (const k of [0, 1, 2, 0, 2, 3]) quads.push(...c[k], ...col);
+    tips.push(...h.tipW, ...col);
+  }
+  if (act >= 0) {
+    const g = gesture.p0, far = 50;
+    const a = g.slice(), b = g.slice(); a[act] -= far; b[act] += far;
+    guide.push(...a, 1.0, 0.85, 0.1, ...b, 1.0, 0.85, 0.1);
+  }
+  uploadBatch(gizmoBatch, quads);
+  uploadBatch(gizmoTips, tips);
+  uploadBatch(gizmoGuide, guide);
+
+  gl.disable(gl.DEPTH_TEST);
+  gl.uniform1i(U.round, 0);
+  if (guide.length) {
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniform1f(U.alpha, 0.55);
+    gl.bindVertexArray(gizmoGuide.vao);
+    gl.drawArrays(gl.LINES, 0, gizmoGuide.count);
+    gl.uniform1f(U.alpha, 1);
+    gl.disable(gl.BLEND);
+  }
+  gl.bindVertexArray(gizmoBatch.vao);
+  gl.drawArrays(gl.TRIANGLES, 0, gizmoBatch.count);
+  gl.uniform1i(U.round, 1);
+  gl.uniform1f(U.size, 24 * dpr);                  // 24 CSS px balls (grab radius is 30 px)
+  gl.bindVertexArray(gizmoTips.vao);
+  gl.drawArrays(gl.POINTS, 0, gizmoTips.count);
 }
 
 
