@@ -1,0 +1,1286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- user-scalable=no + touch-action:none (below) stop the browser zooming/scrolling,
+     so every finger gesture comes to us. viewport-fit=cover uses the whole screen on
+     notched phones; we pad with safe-area insets instead. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="pofa modeler">
+<meta name="theme-color" content="#16171d">
+<title>pofa modeler</title>
+<style>
+  /* ----- Page Setup -----|| */
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: #16171d; color: #e8e8ee;
+    font: 14px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+  }
+  #app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+
+  /* The 3D view takes all the space the bars don't. */
+  #view { flex: 1; position: relative; min-height: 0; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+  /* ----- Info Overlay -----|| */
+  #info {
+    position: absolute; left: 0; right: 0; top: 0;
+    padding: calc(env(safe-area-inset-top) + 8px) 12px 8px;
+    pointer-events: none; font-size: 13px; color: #b9bccb;
+    text-shadow: 0 1px 2px #000;
+  }
+  #info b { color: #fff; }
+  #info .warn { color: #ff8a7a; }
+
+  /* ----- Palette Bar -----|| */
+  #palette {
+    display: none; grid-template-columns: repeat(8, 1fr); gap: 6px;
+    padding: 8px 10px; background: #1f2029; border-top: 1px solid #2c2e3a;
+  }
+  #palette.show { display: grid; }
+  .swatch { height: 34px; border-radius: 8px; border: 2px solid #0000; padding: 0; }
+  .swatch.on { border-color: #fff; box-shadow: 0 0 0 2px #000 inset; }
+
+  /* ----- Toolbar (two rows: tools on top, toggles/actions below) -----|| */
+  #toolbar {
+    display: flex; flex-direction: column; gap: 4px;
+    padding: 6px 6px calc(env(safe-area-inset-bottom) + 6px);
+    background: #1f2029; border-top: 1px solid #2c2e3a;
+  }
+  .row { display: flex; gap: 4px; }
+  #toolbar button {
+    flex: 1; min-width: 0; min-height: 52px;
+    background: #2a2c38; color: #e8e8ee; border: 0; border-radius: 10px;
+    font: inherit; font-size: 12px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 2px; touch-action: manipulation;
+  }
+  #toolbar .row.small button { min-height: 46px; font-size: 11px; }
+  #toolbar button .ic { font-size: 19px; line-height: 1; }
+  #toolbar button.on { background: #e0b43a; color: #16171d; }
+  #toolbar button:disabled { opacity: 0.35; }
+  #toolbar button:active { filter: brightness(1.3); }
+
+  /* ----- Export Modal -----|| */
+  #modal {
+    display: none; position: fixed; inset: 0; background: #000d;
+    padding: calc(env(safe-area-inset-top) + 16px) 12px calc(env(safe-area-inset-bottom) + 16px);
+    box-sizing: border-box; flex-direction: column; gap: 8px; z-index: 10;
+  }
+  #modal.show { display: flex; }
+  #modal .head { display: flex; align-items: center; gap: 8px; }
+  #modal .head span { flex: 1; font-weight: 600; }
+  #modal label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #b9bccb; }
+  #exportName {
+    flex: 1; min-height: 40px; box-sizing: border-box; padding: 0 10px;
+    background: #0d0e12; color: #fff; border: 1px solid #2c2e3a; border-radius: 8px;
+    font: 15px ui-monospace, Menlo, Consolas, monospace; -webkit-user-select: text; user-select: text;
+  }
+  #modal button { min-height: 44px; padding: 0 16px; border: 0; border-radius: 10px; background: #e0b43a; color: #16171d; font: inherit; font-weight: 600; }
+  #modal button.alt { background: #2a2c38; color: #e8e8ee; }
+  #exportText {
+    flex: 1; width: 100%; box-sizing: border-box; resize: none;
+    background: #0d0e12; color: #cfe3c0; border: 1px solid #2c2e3a; border-radius: 8px;
+    font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; padding: 8px;
+    -webkit-user-select: text; user-select: text; white-space: pre; overflow: auto;
+  }
+
+  /* Small transient message ("Copied!") */
+  #toast {
+    position: fixed; left: 50%; bottom: 170px; transform: translateX(-50%);
+    background: #000c; color: #fff; padding: 8px 14px; border-radius: 20px; text-align: center;
+    opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 20; max-width: 85vw;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="view">
+    <canvas id="gl"></canvas>
+    <div id="info"></div>
+  </div>
+  <div id="palette"></div>
+  <div id="toolbar">
+    <div class="row">
+      <button id="bMove"  data-mode="move"><span class="ic">✥</span>Move</button>
+      <button id="bSplit" data-mode="split"><span class="ic">✂</span>Split</button>
+      <button id="bPaint" data-mode="paint"><span class="ic">🖌</span>Paint</button>
+      <button id="bUndo"><span class="ic">↶</span>Undo</button>
+    </div>
+    <div class="row small">
+      <button id="bMirror"><span class="ic">⇋</span><span id="mirrorLabel">Mirror X</span></button>
+      <button id="bSym"><span class="ic">⧓</span>Symm</button>
+      <button id="bSnap"><span class="ic">#</span>Snap</button>
+      <button id="bBake"><span class="ic">☀</span>Shade</button>
+      <button id="bExport"><span class="ic">⇪</span>Export</button>
+      <button id="bNew"><span class="ic">□</span>New</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal">
+  <div class="head">
+    <span>C++ export</span>
+    <button id="mCopy">Copy</button>
+    <button id="mClose" class="alt">Close</button>
+  </div>
+  <label>Name <input id="exportName" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" value="model"></label>
+  <textarea id="exportText" readonly spellcheck="false"></textarea>
+</div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+// =====================================================================================
+//  pofa modeler v2
+//  A tiny touch-first low-poly modeler. Every model starts as a cube; you can move
+//  vertices, split edges, and paint faces, with optional live mirror symmetry, then
+//  export a C++ array in exactly the format the pofa renderer uploads.
+//
+//  Coordinates match the game: Z is up, X is left/right, Y is forward/back, and models
+//  sit with their base on z = 0. Rendering uses raw WebGL 2 (= OpenGL ES 3.0), so the
+//  shaders (GLSL ES 3.00) and buffer/VAO calls are the same ones the game uses.
+// =====================================================================================
+
+
+//----- Constants -----||
+const SAVE_KEY      = "pofa-modeler-v2";  // localStorage key for autosave
+const OLD_SAVE_KEY  = "pofa-modeler-v1";  // v1 saves were Y-up; converted once on load
+const TOUCH_RADIUS  = 24;                 // CSS px: how close a tap must be to a vertex/edge
+const TAP_SLOP      = 8;                  // CSS px a finger may wiggle and still count as a tap
+const SNAP_STEP     = 0.125;              // grid snap size in model units
+const UNDO_LIMIT    = 100;                // max snapshots kept
+const FOV_Y         = 50 * Math.PI / 180; // vertical field of view (radians)
+const PLANE_TOL     = 1e-4;               // |coord| below this = vertex lies on the mirror plane
+const PAIR_TOL      = 1e-3;               // max distance when auto-pairing mirror partners
+const UP            = [0, 0, 1];          // Z-up world, like the game
+
+// Baked light: fixed direction (toward the light) and the formula the export uses.
+const BAKE_LIGHT    = normalize3([0.3, 0.5, 0.8]);
+const bakeFactor    = (n) => 0.55 + 0.45 * Math.max(0, n[0]*BAKE_LIGHT[0] + n[1]*BAKE_LIGHT[1] + n[2]*BAKE_LIGHT[2]);
+
+// 16-colour palette (PICO-8 colours). Index 0..15 is what gets stored per triangle.
+const PALETTE = [
+  [  0,  0,  0], [ 29, 43, 83], [126, 37, 83], [  0,135, 81],
+  [171, 82, 54], [ 95, 87, 79], [194,195,199], [255,241,232],
+  [255,  0, 77], [255,163,  0], [255,236, 39], [  0,228, 54],
+  [ 41,173,255], [131,118,156], [255,119,168], [255,204,170],
+];
+
+
+//----- Small Vector Math -----||
+// Vectors are plain [x, y, z] arrays. Kept tiny on purpose so every line is readable.
+function normalize3(a) { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0]/l, a[1]/l, a[2]/l]; }
+const v3 = {
+  sub:   (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]],
+  add:   (a, b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]],
+  scale: (a, s) => [a[0]*s, a[1]*s, a[2]*s],
+  dot:   (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2],
+  cross: (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]],
+  len:   (a)    => Math.hypot(a[0], a[1], a[2]),
+  norm:  normalize3,
+};
+
+
+//----- Matrix Math (column-major, like OpenGL) -----||
+// Element (row r, column c) lives at m[c*4 + r].
+function mat4Multiply(a, b) {
+  const out = new Float32Array(16);
+  for (let c = 0; c < 4; c++)
+    for (let r = 0; r < 4; r++) {
+      let s = 0;
+      for (let k = 0; k < 4; k++) s += a[k*4 + r] * b[c*4 + k];
+      out[c*4 + r] = s;
+    }
+  return out;
+}
+
+// Standard OpenGL perspective projection (same as glm::perspective).
+function mat4Perspective(fovy, aspect, near, far) {
+  const f = 1 / Math.tan(fovy / 2);
+  const m = new Float32Array(16);
+  m[0]  = f / aspect;
+  m[5]  = f;
+  m[10] = (far + near) / (near - far);
+  m[11] = -1;
+  m[14] = (2 * far * near) / (near - far);
+  return m;
+}
+
+// Camera matrix looking from eye toward target (same as glm::lookAt). Passing up = +Z
+// makes the camera treat Z as "up", so we can draw the Z-up world directly without the
+// game's (x, z, -y) remap. Both are rotations, so the picture and the winding are the same.
+function mat4LookAt(eye, target, up) {
+  const z = v3.norm(v3.sub(eye, target)); // camera looks down its own -z
+  const x = v3.norm(v3.cross(up, z));
+  const y = v3.cross(z, x);
+  return new Float32Array([
+    x[0], y[0], z[0], 0,
+    x[1], y[1], z[1], 0,
+    x[2], y[2], z[2], 0,
+    -v3.dot(x, eye), -v3.dot(y, eye), -v3.dot(z, eye), 1,
+  ]);
+}
+
+
+//----- Mesh Data -----||
+// Struct-of-arrays, just like the game's data:
+//   positions : flat [x0,y0,z0, x1,y1,z1, ...]  (3 floats per vertex, Z-up)
+//   tris      : flat [a0,b0,c0, a1,b1,c1, ...]  (3 vertex indices per triangle, CCW from outside)
+//   colors    : [c0, c1, ...]                     (one palette index 0..15 per triangle)
+//   partner   : [p0, p1, ...]                     (mirror partner per vertex: other index,
+//                                                  itself if it lies on the plane, -1 if none)
+//   mirror    : "x" | "y" | null                  (mirror axis; the plane is axis = 0)
+// Everything lives in this one object, so undo snapshots and autosave capture it all.
+let mesh = null;   // set by newModel("x") at startup, once everything below is defined
+
+// New model: a plain cube (8 verts, 12 tris). If mirror is on, it's then Symmetrized, which
+// cuts it along the plane (16 verts, 28 tris for X: the diagonals get cut too) so every triangle has an exact mirror twin.
+// A plain cube can't be: a quad crossing the plane has one diagonal, and its mirror image
+// would need the other diagonal.
+function newModel(mirror) {
+  mesh = makeCube(mirror);
+  if (mirror) symmetrize();
+}
+
+function makeCube(mirror = null) {
+  const h = 0.5; // unit cube: x,y from -0.5 to +0.5, z from 0 to 1 (base on the ground)
+  const positions = [
+    -h,-h, 0,   h,-h, 0,   h, h, 0,  -h, h, 0,   // 0..3 bottom (z = 0)
+    -h,-h, 1,   h,-h, 1,   h, h, 1,  -h, h, 1,   // 4..7 top    (z = 1)
+  ];
+  // Each side as a quad listed counter-clockwise when seen from OUTSIDE,
+  // then cut into 2 triangles (q0,q1,q2) and (q0,q2,q3).
+  const quads = [
+    [4, 5, 6, 7],   // top    +z (seen from above: x right, y up)
+    [0, 3, 2, 1],   // bottom -z
+    [0, 1, 5, 4],   // front  -y
+    [2, 3, 7, 6],   // back   +y
+    [1, 2, 6, 5],   // right  +x
+    [3, 0, 4, 7],   // left   -x
+  ];
+  const tris = [];
+  for (const q of quads) tris.push(q[0], q[1], q[2],  q[0], q[2], q[3]);
+  const m = { positions, tris, colors: new Array(12).fill(6), partner: new Array(8).fill(-1), mirror };
+  pairMirror(m);
+  return m;
+}
+
+const vertCount = () => mesh.positions.length / 3;
+const triCount  = () => mesh.tris.length / 3;
+const getVert   = (i) => [mesh.positions[i*3], mesh.positions[i*3+1], mesh.positions[i*3+2]];
+function setVert(i, p) { mesh.positions[i*3] = p[0]; mesh.positions[i*3+1] = p[1]; mesh.positions[i*3+2] = p[2]; }
+
+// Face normal of triangle t: cross product of two edges, normalised.
+function triNormal(t) {
+  const a = getVert(mesh.tris[t*3]), b = getVert(mesh.tris[t*3+1]), c = getVert(mesh.tris[t*3+2]);
+  return v3.norm(v3.cross(v3.sub(b, a), v3.sub(c, a)));
+}
+
+// Colour of triangle t as 0..1 floats, with baked light if "Shade" is on.
+function triColor(t) {
+  const k = bakeOn ? bakeFactor(triNormal(t)) : 1;
+  return PALETTE[mesh.colors[t]].map(c => Math.min(1, c / 255 * k));
+}
+
+// Unique edges as [a, b] pairs (a < b). Each edge is shared by up to 2 triangles.
+function uniqueEdges() {
+  const seen = new Set(), edges = [];
+  for (let t = 0; t < triCount(); t++)
+    for (let k = 0; k < 3; k++) {
+      let a = mesh.tris[t*3 + k], b = mesh.tris[t*3 + (k+1) % 3];
+      if (a > b) [a, b] = [b, a];
+      const key = a + "," + b;
+      if (!seen.has(key)) { seen.add(key); edges.push([a, b]); }
+    }
+  return edges;
+}
+
+function edgeExists(a, b) {
+  for (let t = 0; t < triCount(); t++)
+    for (let k = 0; k < 3; k++) {
+      const p = mesh.tris[t*3 + k], q = mesh.tris[t*3 + (k+1) % 3];
+      if ((p === a && q === b) || (p === b && q === a)) return true;
+    }
+  return false;
+}
+
+// Split edge (a,b): add a vertex m at its midpoint, then replace every triangle that
+// uses that edge with two triangles. For triangle (x, y, z) where x->y is the edge,
+// the halves are (x, m, z) and (m, y, z), which keeps the original winding.
+function splitEdge(a, b) {
+  const m = vertCount();
+  const pa = getVert(a), pb = getVert(b);
+  mesh.positions.push((pa[0]+pb[0])/2, (pa[1]+pb[1])/2, (pa[2]+pb[2])/2);
+  mesh.partner.push(-1);
+
+  const newTris = [], newColors = [];
+  for (let t = 0; t < triCount(); t++) {
+    const v = mesh.tris.slice(t*3, t*3 + 3);
+    let k = -1;
+    for (let i = 0; i < 3; i++) {
+      const p = v[i], q = v[(i+1) % 3];
+      if ((p === a && q === b) || (p === b && q === a)) k = i;
+    }
+    if (k < 0) { newTris.push(...v); newColors.push(mesh.colors[t]); continue; }
+    const x = v[k], y = v[(k+1) % 3], z = v[(k+2) % 3];
+    newTris.push(x, m, z,  m, y, z);
+    newColors.push(mesh.colors[t], mesh.colors[t]);
+  }
+  mesh.tris = newTris;
+  mesh.colors = newColors;
+  return m;
+}
+
+
+//----- Mirror Symmetry -----||
+// The mirror plane passes through the origin, perpendicular to the chosen axis:
+//   "x" -> plane x = 0, left/right symmetry     "y" -> plane y = 0, forward/back symmetry
+// (A function declaration, not an arrow const, so makeCube() can use it before this line runs.)
+function axisIndex(axis) { return axis === "x" ? 0 : axis === "y" ? 1 : -1; }
+
+// Reflect a point across the mirror plane (flip the sign of one coordinate).
+function reflect(p, ax) { const q = p.slice(); q[ax] = -q[ax]; return q; }
+
+// Find a partner for every vertex of mesh `m` from positions alone:
+//   on the plane          -> partner is itself (and the coordinate is snapped to exactly 0)
+//   mirrored twin nearby  -> partner is the twin (closest within PAIR_TOL)
+//   otherwise             -> -1 (unpaired; moves on its own until you Symmetrize)
+// Returns the number of unpaired vertices.
+function pairMirror(m) {
+  const n = m.positions.length / 3;
+  m.partner = new Array(n).fill(-1);
+  const ax = axisIndex(m.mirror);
+  if (ax < 0) return 0;
+  const P = m.positions;
+  for (let i = 0; i < n; i++)
+    if (Math.abs(P[i*3 + ax]) < PLANE_TOL) { P[i*3 + ax] = 0; m.partner[i] = i; }
+  for (let i = 0; i < n; i++) {
+    if (m.partner[i] >= 0) continue;
+    const want = reflect([P[i*3], P[i*3+1], P[i*3+2]], ax);
+    let best = -1, bestD = PAIR_TOL;
+    for (let j = 0; j < n; j++) {
+      if (j === i || m.partner[j] >= 0) continue;
+      const d = Math.hypot(P[j*3] - want[0], P[j*3+1] - want[1], P[j*3+2] - want[2]);
+      if (d < bestD) { best = j; bestD = d; }
+    }
+    if (best >= 0) { m.partner[i] = best; m.partner[best] = i; }
+  }
+  return m.partner.filter(p => p < 0).length;
+}
+
+const unpairedCount = () => axisIndex(mesh.mirror) < 0 ? 0 : mesh.partner.filter(p => p < 0).length;
+
+// Move vertex i to p, keeping symmetry: a plane vertex stays on the plane, and a paired
+// vertex drags its partner along to the mirrored spot.
+function moveVertex(i, p) {
+  const ax = axisIndex(mesh.mirror);
+  const q = mesh.partner[i];
+  if (ax >= 0 && q === i) p[ax] = 0;               // locked to the plane on that axis
+  setVert(i, p);
+  if (ax >= 0 && q >= 0 && q !== i) setVert(q, reflect(p, ax));
+}
+
+// Split edge (a,b), and with mirror on also split its mirrored edge, pairing the two new
+// vertices. An edge that is its own mirror (crosses or lies in the plane) splits once, and
+// its midpoint lands on the plane.
+function splitEdgeMirrored(a, b) {
+  const m = splitEdge(a, b);
+  const ax = axisIndex(mesh.mirror);
+  if (ax < 0) return m;
+  const pa = mesh.partner[a], pb = mesh.partner[b];
+  if (Math.abs(mesh.positions[m*3 + ax]) < PLANE_TOL) {
+    // Midpoint lands on the plane (e.g. a cube-top diagonal from (-,-) to (+,+)): it is
+    // its own mirror. (The other diagonal doesn't exist, so there's nothing else to split.)
+    mesh.positions[m*3 + ax] = 0;
+    mesh.partner[m] = m;
+    return m;
+  }
+  if (pa < 0 || pb < 0) return m;                  // unpaired edge: no mirror to split
+  const selfMirror = (pa === a && pb === b) || (pa === b && pb === a);
+  if (selfMirror) {
+    mesh.positions[m*3 + ax] = 0;
+    mesh.partner[m] = m;
+  } else if (edgeExists(pa, pb)) {
+    const m2 = splitEdge(pa, pb);
+    mesh.partner[m] = m2; mesh.partner[m2] = m;
+    setVert(m2, reflect(getVert(m), ax));          // exact mirror, no float drift
+  }
+  return m;
+}
+
+// Topological mirror of triangle t: the triangle made of the partners of t's three
+// vertices, or -1. Can be t itself for a triangle that straddles the plane symmetrically.
+function topoMirror(t) {
+  if (axisIndex(mesh.mirror) < 0) return -1;
+  const want = [0, 1, 2].map(k => mesh.partner[mesh.tris[t*3 + k]]);
+  if (want.some(p => p < 0)) return -1;
+  const key = want.sort((a, b) => a - b).join(",");
+  for (let u = 0; u < triCount(); u++)
+    if (mesh.tris.slice(u*3, u*3 + 3).sort((a, b) => a - b).join(",") === key) return u;
+  return -1;
+}
+
+// Triangles with no topological mirror (shown in the info bar as a hint to Symmetrize).
+function asymTriCount() {
+  if (axisIndex(mesh.mirror) < 0) return 0;
+  let n = 0;
+  for (let t = 0; t < triCount(); t++) if (topoMirror(t) < 0) n++;
+  return n;
+}
+
+// Which triangles should be painted along with t? Returns an array (maybe empty).
+//  1. The topological mirror, if there is one (the normal case after Symmetrize).
+//  2. Fallback: a quad that crosses the plane but is split by ONE diagonal has two
+//     triangles that aren't mirror images. Then reflect a few sample points of t and
+//     take the triangle nearest to each, so the paint still comes out symmetric.
+function mirroredTris(t) {
+  const ax = axisIndex(mesh.mirror);
+  if (ax < 0) return [];
+  const u = topoMirror(t);
+  if (u >= 0) return [u];
+  const P = [0, 1, 2].map(k => getVert(mesh.tris[t*3 + k]));
+  const cen = v3.scale(v3.add(P[0], v3.add(P[1], P[2])), 1 / 3);
+  const samples = [cen, ...P.map(p => v3.add(v3.scale(cen, 0.7), v3.scale(p, 0.3)))];
+  const found = new Set();
+  for (const sp of samples) {
+    const q = reflect(sp, ax);
+    let best = -1, bestD = 0.1;                    // ignore anything further than 0.1 units
+    for (let w = 0; w < triCount(); w++) {
+      const d = pointTriDist(q, getVert(mesh.tris[w*3]), getVert(mesh.tris[w*3+1]), getVert(mesh.tris[w*3+2]));
+      if (d < bestD) { best = w; bestD = d; }
+    }
+    if (best >= 0) found.add(best);
+  }
+  return [...found];
+}
+
+// 3D distance from point p to segment a-b.
+function segDist(p, a, b) {
+  const ab = v3.sub(b, a), l2 = v3.dot(ab, ab);
+  const t = l2 ? Math.max(0, Math.min(1, v3.dot(v3.sub(p, a), ab) / l2)) : 0;
+  return v3.len(v3.sub(p, v3.add(a, v3.scale(ab, t))));
+}
+
+// 3D distance from point p to triangle abc: if p projects inside the triangle it's the
+// distance to the triangle's plane, otherwise the distance to the nearest edge.
+function pointTriDist(p, a, b, c) {
+  const nRaw = v3.cross(v3.sub(b, a), v3.sub(c, a));
+  if (v3.len(nRaw) < 1e-12) return Math.min(segDist(p, a, b), segDist(p, b, c), segDist(p, c, a));
+  const n = v3.norm(nRaw);
+  const d = v3.dot(n, v3.sub(p, a));
+  const q = v3.sub(p, v3.scale(n, d));             // p dropped onto the plane
+  const inside = v3.dot(n, v3.cross(v3.sub(b, a), v3.sub(q, a))) >= 0 &&
+                 v3.dot(n, v3.cross(v3.sub(c, b), v3.sub(q, b))) >= 0 &&
+                 v3.dot(n, v3.cross(v3.sub(a, c), v3.sub(q, c))) >= 0;
+  return inside ? Math.abs(d) : Math.min(segDist(p, a, b), segDist(p, b, c), segDist(p, c, a));
+}
+
+// Symmetrize: throw away the minus side and rebuild it as a mirror copy of the plus side.
+//  1. Clip every triangle to the half-space axis >= 0. Triangles that cross the plane are
+//     cut, with new vertices where their edges cross it (shared between neighbours).
+//  2. Keep only vertices still in use, snap plane vertices to exactly 0.
+//  3. Copy each off-plane vertex to its reflected position, and add every triangle again
+//     with reflected vertices and reversed winding (a reflection flips CCW to CW).
+// Returns false if there was nothing on the plus side.
+function symmetrize() {
+  const ax = axisIndex(mesh.mirror);
+  if (ax < 0) return false;
+  const pos = mesh.positions.slice();
+  const side = (i) => { const c = pos[i*3 + ax]; return Math.abs(c) < PLANE_TOL ? 0 : c; };
+  const cutCache = new Map();
+  function cutVertex(a, b) {                        // where edge a-b crosses the plane
+    const key = Math.min(a, b) + "," + Math.max(a, b);
+    if (cutCache.has(key)) return cutCache.get(key);
+    const ca = pos[a*3 + ax], cb = pos[b*3 + ax], t = ca / (ca - cb);
+    const p = [0, 1, 2].map(k => pos[a*3 + k] + (pos[b*3 + k] - pos[a*3 + k]) * t);
+    p[ax] = 0;
+    const idx = pos.length / 3;
+    pos.push(...p);
+    cutCache.set(key, idx);
+    return idx;
+  }
+
+  // 1. clip (Sutherland-Hodgman against one plane), then fan-triangulate the polygon
+  const keptTris = [], keptColors = [];
+  for (let t = 0; t < triCount(); t++) {
+    const v = mesh.tris.slice(t*3, t*3 + 3);
+    if (v.every(i => side(i) === 0)) continue;     // lies flat in the plane: would double up
+    const poly = [];
+    for (let k = 0; k < 3; k++) {
+      const cur = v[k], nxt = v[(k+1) % 3];
+      const sc = side(cur), sn = side(nxt);
+      if (sc >= 0) poly.push(cur);
+      if ((sc > 0 && sn < 0) || (sc < 0 && sn > 0)) poly.push(cutVertex(cur, nxt));
+    }
+    for (let j = 1; j + 1 < poly.length; j++) {
+      keptTris.push(poly[0], poly[j], poly[j+1]);
+      keptColors.push(mesh.colors[t]);
+    }
+  }
+  if (!keptTris.length) return false;
+
+  // 2. compact the vertices that are still used
+  const remap = new Map(), positions = [], partner = [];
+  for (const i of keptTris) {
+    if (remap.has(i)) continue;
+    remap.set(i, positions.length / 3);
+    const p = [pos[i*3], pos[i*3+1], pos[i*3+2]];
+    if (Math.abs(p[ax]) < PLANE_TOL) p[ax] = 0;
+    positions.push(...p);
+    partner.push(-1);
+  }
+
+  // 3. mirror the vertices and the triangles
+  const nKept = positions.length / 3;
+  for (let i = 0; i < nKept; i++) {
+    const p = positions.slice(i*3, i*3 + 3);
+    if (p[ax] === 0) { partner[i] = i; continue; }
+    const j = positions.length / 3;
+    positions.push(...reflect(p, ax));
+    partner.push(i);
+    partner[i] = j;
+  }
+  const tris = keptTris.map(i => remap.get(i));
+  const colors = keptColors.slice();
+  const nTris = tris.length / 3;
+  for (let t = 0; t < nTris; t++) {
+    const a = partner[tris[t*3]], b = partner[tris[t*3+1]], c = partner[tris[t*3+2]];
+    tris.push(a, c, b);                            // reversed winding
+    colors.push(colors[t]);
+  }
+  mesh = { positions, tris, colors, partner, mirror: mesh.mirror };
+  return true;
+}
+
+
+//----- App State -----||
+let mode         = "move";  // "move" | "split" | "paint"
+let snapOn       = false;
+let bakeOn       = true;    // bake light into face colours (preview + export)
+let currentColor = 8;       // palette index used by Paint
+let modelName    = "model"; // C identifier used in the export
+let selected     = -1;      // selected vertex index, -1 = none
+let undoStack    = [];      // array of JSON snapshots of `mesh`
+
+// Orbit camera around `target` at `dist`; yaw spins around Z, pitch tilts up/down.
+const cam = { yaw: 0.6, pitch: 0.45, dist: 3.4, target: [0, 0, 0.5] };
+
+
+//----- Undo + Autosave -----||
+function snapshot() { return JSON.stringify(mesh); }
+
+function pushUndo(snap = snapshot()) {
+  undoStack.push(snap);
+  if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+  updateUI();
+}
+
+function undo() {
+  if (!undoStack.length) return;
+  mesh = JSON.parse(undoStack.pop());
+  if (selected >= vertCount()) selected = -1;
+  meshChanged();
+}
+
+function save() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 2, mesh, currentColor, snapOn, bakeOn, modelName }));
+  } catch (e) { /* storage full or blocked (private mode): ignore */ }
+}
+
+function validMesh(m) {
+  return m && Array.isArray(m.positions) && Array.isArray(m.tris) && Array.isArray(m.colors)
+    && m.positions.length % 3 === 0 && m.tris.length % 3 === 0
+    && m.colors.length === m.tris.length / 3
+    && m.tris.every(i => Number.isInteger(i) && i >= 0 && i < m.positions.length / 3);
+}
+
+function load() {
+  try {
+    let d = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (!d) {
+      // One-time upgrade from v1 (Y-up, cube centred on 0): rotate into Z-up and lift
+      // by 0.5 so the base sits on z = 0. (x, y, z)_old -> (x, -z, y + 0.5)_new.
+      const old = JSON.parse(localStorage.getItem(OLD_SAVE_KEY));
+      if (old && old.v === 1 && validMesh(old.mesh)) {
+        const P = old.mesh.positions, out = [];
+        for (let i = 0; i < P.length; i += 3) out.push(P[i], -P[i+2], P[i+1] + 0.5);
+        old.mesh.positions = out;
+        old.mesh.mirror = null;
+        d = { v: 2, mesh: old.mesh, currentColor: old.currentColor, snapOn: old.snapOn };
+      }
+    }
+    if (!d || d.v !== 2) return;
+    if (validMesh(d.mesh)) {
+      mesh = d.mesh;
+      if (mesh.mirror !== "x" && mesh.mirror !== "y") mesh.mirror = null;
+      if (!Array.isArray(mesh.partner) || mesh.partner.length !== vertCount()) pairMirror(mesh);
+    }
+    if (Number.isInteger(d.currentColor)) currentColor = d.currentColor & 15;
+    snapOn = !!d.snapOn;
+    if (typeof d.bakeOn === "boolean") bakeOn = d.bakeOn;
+    if (typeof d.modelName === "string") modelName = cIdent(d.modelName);
+  } catch (e) { /* corrupt save: start fresh */ }
+}
+
+// Call after any edit: rebuild GPU buffers, save, refresh labels.
+function meshChanged() {
+  meshDirty = true;
+  save();
+  updateUI();
+}
+
+
+//----- WebGL Setup -----||
+const canvas = document.getElementById("gl");
+const gl = canvas.getContext("webgl2", { antialias: true });
+if (!gl) {
+  document.getElementById("info").textContent = "WebGL 2 is not available in this browser.";
+  throw new Error("WebGL2 unavailable");
+}
+
+// Compile one shader stage; throws with the driver's log if it fails.
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+
+// Link a vertex + fragment shader into a program. The stages can be deleted once linked.
+function makeProgram(vsSrc, fsSrc) {
+  const vs = compile(gl.VERTEX_SHADER, vsSrc), fs = compile(gl.FRAGMENT_SHADER, fsSrc);
+  const p = gl.createProgram();
+  gl.attachShader(p, vs); gl.attachShader(p, fs);
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  gl.deleteShader(vs); gl.deleteShader(fs);
+  return p;
+}
+
+// One shader for everything, with the same inputs as the game's: pos3 + color3, no
+// lighting (light is baked into the colours on the CPU). So the preview matches the game.
+// Extras for the editor only: alpha (mirror plane), point size and round dots.
+const prog = makeProgram(`#version 300 es
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aColor;
+uniform mat4 uMVP;
+uniform float uPointSize;
+out vec3 vColor;
+void main() {
+  vColor = aColor;
+  gl_Position = uMVP * vec4(aPos, 1.0);
+  gl_PointSize = uPointSize;
+}`, `#version 300 es
+precision mediump float;
+in vec3 vColor;
+uniform bool uRoundPoints;
+uniform float uAlpha;
+out vec4 fragColor;
+void main() {
+  // Points are squares by default; throw away the corners to get round dots.
+  if (uRoundPoints && length(gl_PointCoord - 0.5) > 0.5) discard;
+  fragColor = vec4(vColor, uAlpha);
+}`);
+
+const U = {
+  mvp:   gl.getUniformLocation(prog, "uMVP"),
+  size:  gl.getUniformLocation(prog, "uPointSize"),
+  round: gl.getUniformLocation(prog, "uRoundPoints"),
+  alpha: gl.getUniformLocation(prog, "uAlpha"),
+};
+
+// A "draw batch" = one VAO + one VBO + a vertex count. Layout is the game's:
+// 6 floats per vertex (x, y, z, r, g, b), stride 6 * 4 = 24 bytes.
+function makeBatch() {
+  const vao = gl.createVertexArray(), vbo = gl.createBuffer();
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);    // position
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);   // colour
+  gl.bindVertexArray(null);
+  return { vao, vbo, count: 0 };
+}
+
+function uploadBatch(batch, data) {
+  gl.bindBuffer(gl.ARRAY_BUFFER, batch.vbo);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.DYNAMIC_DRAW);
+  batch.count = data.length / 6;
+}
+
+const faceBatch  = makeBatch();
+const edgeBatch  = makeBatch();
+const dotBatch   = makeBatch();
+const gridBatch  = makeBatch();
+const planeBatch = makeBatch();
+let meshDirty = true;
+
+// Ground grid on the XY plane at z = 0, with the X axis red and the Y axis green.
+(function buildGrid() {
+  const d = [], n = 8, s = 0.25, e = n * s, g = [0.24, 0.25, 0.31];
+  for (let i = -n; i <= n; i++) {
+    const cy = i === 0 ? [0.35, 0.8, 0.4] : g;   // line along Y (x = i*s); green at x = 0
+    const cx = i === 0 ? [0.9, 0.3, 0.3] : g;    // line along X (y = i*s); red at y = 0
+    d.push(i*s, -e, 0, ...cy,  i*s, e, 0, ...cy);
+    d.push(-e, i*s, 0, ...cx,  e, i*s, 0, ...cx);
+  }
+  uploadBatch(gridBatch, d);
+})();
+
+// Turn the mesh into GPU vertex data. Faces are "un-indexed": every triangle gets its
+// own 3 vertices so it can carry its own colour (exactly what the export produces).
+function rebuildBuffers() {
+  const faces = [];
+  for (let t = 0; t < triCount(); t++) {
+    const c = triColor(t);
+    for (let k = 0; k < 3; k++) faces.push(...getVert(mesh.tris[t*3 + k]), ...c);
+  }
+  uploadBatch(faceBatch, faces);
+
+  const lines = [];
+  for (const [a, b] of uniqueEdges()) lines.push(...getVert(a), 0.08, 0.08, 0.1,  ...getVert(b), 0.08, 0.08, 0.1);
+  uploadBatch(edgeBatch, lines);
+
+  // Dot colours: selected = yellow, its mirror partner = orange,
+  // unpaired (mirror on but no twin) = red, everything else = white.
+  const ax = axisIndex(mesh.mirror);
+  const partnerOfSel = selected >= 0 ? mesh.partner[selected] : -1;
+  const dots = [];
+  for (let i = 0; i < vertCount(); i++) {
+    let c = [0.95, 0.95, 1.0];
+    if (ax >= 0 && mesh.partner[i] < 0) c = [1.0, 0.35, 0.3];
+    if (i === partnerOfSel && i !== selected) c = [1.0, 0.55, 0.15];
+    if (i === selected) c = [1.0, 0.85, 0.1];
+    dots.push(...getVert(i), ...c);
+  }
+  uploadBatch(dotBatch, dots);
+
+  // Mirror plane: a quad on axis = 0, a bit bigger than the model on the other two axes.
+  const plane = [];
+  if (ax >= 0) {
+    const o = [0, 1, 2].filter(k => k !== ax);    // the two axes the plane spans
+    let lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
+    for (let i = 0; i < vertCount(); i++) {
+      const p = getVert(i);
+      o.forEach((k, j) => { lo[j] = Math.min(lo[j], p[k]); hi[j] = Math.max(hi[j], p[k]); });
+    }
+    if (!isFinite(lo[0])) { lo = [-0.5, 0]; hi = [0.5, 1]; }
+    const corner = (u, v) => { const p = [0, 0, 0]; p[o[0]] = u; p[o[1]] = v; return [...p, 0.45, 0.7, 1.0]; };
+    const u0 = lo[0] - 0.25, u1 = hi[0] + 0.25, w0 = lo[1] - 0.25, w1 = hi[1] + 0.25;
+    plane.push(...corner(u0, w0), ...corner(u1, w0), ...corner(u1, w1),
+               ...corner(u0, w0), ...corner(u1, w1), ...corner(u0, w1));
+  }
+  uploadBatch(planeBatch, plane);
+
+  meshDirty = false;
+}
+
+
+//----- Camera -----||
+let viewW = 1, viewH = 1, dpr = 1;   // canvas size in CSS px, and device pixel ratio
+let viewProj = new Float32Array(16);
+
+// Eye position on a sphere around the target. yaw = 0 looks from -Y (the "front").
+function camEye() {
+  const cp = Math.cos(cam.pitch);
+  return v3.add(cam.target, v3.scale([cp * Math.sin(cam.yaw), -cp * Math.cos(cam.yaw), Math.sin(cam.pitch)], cam.dist));
+}
+
+function updateCamera() {
+  const proj = mat4Perspective(FOV_Y, viewW / viewH, 0.05, 100);
+  const view = mat4LookAt(camEye(), cam.target, UP);
+  viewProj = mat4Multiply(proj, view);
+}
+
+// World point -> screen position in CSS px. Returns null if behind the camera.
+function project(p) {
+  const m = viewProj;
+  const x = m[0]*p[0] + m[4]*p[1] + m[8]*p[2]  + m[12];
+  const y = m[1]*p[0] + m[5]*p[1] + m[9]*p[2]  + m[13];
+  const w = m[3]*p[0] + m[7]*p[1] + m[11]*p[2] + m[15];
+  if (w <= 1e-6) return null;
+  return { x: (x / w * 0.5 + 0.5) * viewW, y: (1 - (y / w * 0.5 + 0.5)) * viewH, depth: w };
+}
+
+// Screen position (CSS px) -> ray from the eye into the scene.
+function screenRay(sx, sy) {
+  const eye = camEye();
+  const fwd = v3.norm(v3.sub(cam.target, eye));
+  const right = v3.norm(v3.cross(fwd, UP));
+  const up = v3.cross(right, fwd);
+  const t = Math.tan(FOV_Y / 2);
+  const nx = (sx / viewW) * 2 - 1, ny = 1 - (sy / viewH) * 2;   // -1..1
+  const dir = v3.norm(v3.add(fwd, v3.add(v3.scale(right, nx * t * viewW / viewH), v3.scale(up, ny * t))));
+  return { origin: eye, dir, fwd };
+}
+
+
+//----- Picking -----||
+// Nearest vertex whose projected dot is within TOUCH_RADIUS of the tap.
+function pickVertex(sx, sy) {
+  let best = -1, bestD = TOUCH_RADIUS, bestDepth = Infinity;
+  for (let i = 0; i < vertCount(); i++) {
+    const s = project(getVert(i));
+    if (!s) continue;
+    const d = Math.hypot(s.x - sx, s.y - sy);
+    // Closer on screen wins; if two are about equally close, the one nearer the camera wins.
+    if (d < bestD - 2 || (Math.abs(d - bestD) <= 2 && s.depth < bestDepth)) { best = i; bestD = d; bestDepth = s.depth; }
+  }
+  return best;
+}
+
+// Distance from point P to segment AB in 2D screen space.
+function distToSegment(px, py, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len2 = dx*dx + dy*dy;
+  let t = len2 ? ((px - a.x) * dx + (py - a.y) * dy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (a.x + t*dx), py - (a.y + t*dy));
+}
+
+// Nearest edge on screen within TOUCH_RADIUS.
+function pickEdge(sx, sy) {
+  let best = null, bestD = TOUCH_RADIUS;
+  for (const [a, b] of uniqueEdges()) {
+    const pa = project(getVert(a)), pb = project(getVert(b));
+    if (!pa || !pb) continue;
+    const d = distToSegment(sx, sy, pa, pb);
+    if (d < bestD) { best = [a, b]; bestD = d; }
+  }
+  return best;
+}
+
+// Möller–Trumbore ray/triangle test. Returns distance t along the ray, or null.
+function rayTriangle(o, d, a, b, c) {
+  const e1 = v3.sub(b, a), e2 = v3.sub(c, a);
+  const p = v3.cross(d, e2);
+  const det = v3.dot(e1, p);
+  if (Math.abs(det) < 1e-9) return null;           // ray parallel to triangle
+  const inv = 1 / det, s = v3.sub(o, a);
+  const u = v3.dot(s, p) * inv;          if (u < 0 || u > 1) return null;
+  const q = v3.cross(s, e1);
+  const v = v3.dot(d, q) * inv;          if (v < 0 || u + v > 1) return null;
+  const t = v3.dot(e2, q) * inv;
+  return t > 1e-6 ? t : null;
+}
+
+// Nearest triangle under the tap.
+function pickFace(sx, sy) {
+  const r = screenRay(sx, sy);
+  let best = -1, bestT = Infinity;
+  for (let t = 0; t < triCount(); t++) {
+    const hit = rayTriangle(r.origin, r.dir, getVert(mesh.tris[t*3]), getVert(mesh.tris[t*3+1]), getVert(mesh.tris[t*3+2]));
+    if (hit !== null && hit < bestT) { bestT = hit; best = t; }
+  }
+  return best;
+}
+
+// Where a screen ray crosses a plane (point + normal). Returns null if parallel.
+function rayPlane(r, planePoint, planeNormal) {
+  const denom = v3.dot(r.dir, planeNormal);
+  if (Math.abs(denom) < 1e-9) return null;
+  const t = v3.dot(v3.sub(planePoint, r.origin), planeNormal) / denom;
+  return v3.add(r.origin, v3.scale(r.dir, t));
+}
+
+const snap = (p) => p.map(c => Math.round(c / SNAP_STEP) * SNAP_STEP);
+
+
+//----- Input (Pointer Events: mouse, touch, and pen all in one API) -----||
+const pointers = new Map();  // pointerId -> {x, y} in CSS px, relative to the canvas
+let gesture = null;          // what the current gesture is doing
+
+// gesture.kind:
+//   "pending" : finger down on empty space, not yet moved past TAP_SLOP (could be a tap)
+//   "orbit"   : dragging the camera
+//   "vertex"  : dragging the selected vertex
+//   "pinch"   : two fingers zooming
+//   "idle"    : ignore until all fingers lift (e.g. after a pinch)
+
+function localPos(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+canvas.addEventListener("pointerdown", (e) => {
+  canvas.setPointerCapture(e.pointerId);
+  const p = localPos(e);
+  pointers.set(e.pointerId, p);
+
+  // Second finger: switch to pinch zoom, whatever was happening.
+  if (pointers.size === 2) {
+    if (gesture && gesture.kind === "vertex" && gesture.moved) meshChanged();
+    const [a, b] = [...pointers.values()];
+    gesture = { kind: "pinch", lastDist: Math.hypot(a.x - b.x, a.y - b.y) };
+    return;
+  }
+  if (pointers.size > 2) return;
+
+  gesture = { kind: "pending", startX: p.x, startY: p.y, lastX: p.x, lastY: p.y };
+
+  if (mode === "move") {
+    const v = pickVertex(p.x, p.y);
+    if (v >= 0) {
+      selected = v;
+      meshDirty = true;
+      // Drag plane: faces the camera and passes through the vertex.
+      const r = screenRay(p.x, p.y);
+      const hit = rayPlane(r, getVert(v), r.fwd);
+      gesture = {
+        kind: "vertex", vert: v, planeN: r.fwd, planeP: getVert(v),
+        offset: hit ? v3.sub(getVert(v), hit) : [0, 0, 0],
+        before: snapshot(), moved: false, startX: p.x, startY: p.y,
+      };
+      updateUI();
+    }
+  }
+});
+
+canvas.addEventListener("pointermove", (e) => {
+  if (!pointers.has(e.pointerId)) return;
+  const p = localPos(e);
+  pointers.set(e.pointerId, p);
+  if (!gesture) return;
+
+  if (gesture.kind === "pinch" && pointers.size >= 2) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (d > 0 && gesture.lastDist > 0) zoomBy(gesture.lastDist / d);
+    gesture.lastDist = d;
+    return;
+  }
+
+  if (gesture.kind === "pending" &&
+      Math.hypot(p.x - gesture.startX, p.y - gesture.startY) > TAP_SLOP) {
+    gesture.kind = "orbit";
+  }
+
+  if (gesture.kind === "orbit") {
+    cam.yaw   -= (p.x - gesture.lastX) * 0.01;
+    cam.pitch += (p.y - gesture.lastY) * 0.01;
+    cam.pitch  = Math.max(-1.55, Math.min(1.55, cam.pitch)); // stop just short of straight up/down
+    gesture.lastX = p.x; gesture.lastY = p.y;
+  }
+
+  if (gesture.kind === "vertex") {
+    // Tiny jitters on a tap shouldn't move the vertex.
+    if (!gesture.moved && Math.hypot(p.x - gesture.startX, p.y - gesture.startY) < 3) return;
+    const hit = rayPlane(screenRay(p.x, p.y), gesture.planeP, gesture.planeN);
+    if (!hit) return;
+    let np = v3.add(hit, gesture.offset);
+    if (snapOn) np = snap(np);
+    if (!gesture.moved) { pushUndo(gesture.before); gesture.moved = true; }
+    moveVertex(gesture.vert, np);
+    meshDirty = true;
+    updateUI();
+  }
+});
+
+function endPointer(e) {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.delete(e.pointerId);
+  if (!gesture) return;
+
+  if (gesture.kind === "pinch") {
+    // Lifting one of two fingers: don't let the remaining finger suddenly orbit.
+    gesture = pointers.size ? { kind: "idle" } : null;
+    return;
+  }
+  if (pointers.size) return;
+
+  if (gesture.kind === "pending" && e.type === "pointerup") handleTap(gesture.startX, gesture.startY);
+  if (gesture.kind === "vertex" && gesture.moved) meshChanged();
+  gesture = null;
+}
+canvas.addEventListener("pointerup", endPointer);
+canvas.addEventListener("pointercancel", endPointer);
+
+// A tap on empty space (or anywhere, in Split/Paint mode).
+function handleTap(x, y) {
+  if (mode === "move") {            // tap on nothing = deselect
+    selected = -1; meshDirty = true; updateUI();
+  } else if (mode === "split") {
+    const edge = pickEdge(x, y);
+    if (edge) { pushUndo(); selected = splitEdgeMirrored(edge[0], edge[1]); meshChanged(); }
+  } else if (mode === "paint") {
+    const t = pickFace(x, y);
+    if (t < 0) return;
+    const targets = [t, ...mirroredTris(t)];   // just [t] when mirror is off
+    if (targets.every(u => mesh.colors[u] === currentColor)) return;
+    pushUndo();
+    for (const u of targets) mesh.colors[u] = currentColor;
+    meshChanged();
+  }
+}
+
+function zoomBy(factor) {
+  cam.dist = Math.max(0.6, Math.min(30, cam.dist * factor));
+}
+canvas.addEventListener("wheel", (e) => { e.preventDefault(); zoomBy(Math.exp(e.deltaY * 0.001)); }, { passive: false });
+
+// Block iOS Safari's own pinch-zoom / double-tap gestures on the page.
+document.addEventListener("gesturestart", (e) => e.preventDefault());
+document.addEventListener("dblclick", (e) => e.preventDefault());
+document.addEventListener("touchmove", (e) => { if (e.target === canvas) e.preventDefault(); }, { passive: false });
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+
+//----- Export -----||
+// Turn any text into a valid C identifier: letters/digits/underscore only, no leading digit.
+function cIdent(s) {
+  let id = String(s).trim().replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+  if (!id) id = "model";
+  if (/^[0-9]/.test(id)) id = "_" + id;
+  return id;
+}
+
+const f4 = (x) => (Math.abs(x) < 5e-5 ? 0 : x).toFixed(4) + "f";
+const f3 = (x) => x.toFixed(3) + "f";
+
+// Output matches the pofa renderer: 6 floats per vertex (pos3 Z-up + color3 0..1),
+// 3 vertices per triangle, CCW from outside, ready for glDrawArrays(GL_TRIANGLES).
+function buildExport() {
+  const name = cIdent(modelName);
+  const nVerts = triCount() * 3;
+  const L = [];
+  L.push(`// ${name}: ${triCount()} triangles, ${nVerts} verts (exported from pofa modeler)`);
+  L.push(`// layout per vertex: pos3 (x, y, z in Z-up world units) + color3 (r, g, b in 0..1)`);
+  L.push(`//   6 floats, stride 6*sizeof(float); 3 verts per triangle, CCW seen from outside`);
+  L.push(`//   base sits on z = 0; lighting ${bakeOn ? "baked into colors (0.55 + 0.45*max(0, n.(0.3,0.5,0.8)))" : "not baked (flat palette colors)"}`);
+  L.push(`// usage: mesh_upload(&g_mesh, ${name}_verts, ${name}_vert_count);`);
+  L.push(`static const float ${name}_verts[] = {`);
+  for (let t = 0; t < triCount(); t++) {
+    const c = triColor(t);
+    for (let k = 0; k < 3; k++) {
+      const p = getVert(mesh.tris[t*3 + k]);
+      L.push(`    ${p.map(f4).join(", ")},  ${c.map(f3).join(", ")},`);
+    }
+  }
+  L.push(`};`);
+  L.push(`static const int ${name}_vert_count = ${nVerts};`);
+  L.push(``);
+  L.push(`// palette used (index: r, g, b):`);
+  for (let i = 0; i < 16; i += 4)
+    L.push("//  " + PALETTE.slice(i, i + 4).map((c, j) => `${String(i + j).padStart(2)}: ${c.join(",")}`).join("   "));
+  return L.join("\n") + "\n";
+}
+
+// Clipboard API needs a secure context (https or localhost); file:// may refuse,
+// so fall back to the old select-and-execCommand trick on a hidden textarea.
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; }
+  } catch (e) { /* fall through */ }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+  document.body.appendChild(ta);
+  ta.select(); ta.setSelectionRange(0, text.length);
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+  ta.remove();
+  return ok;
+}
+
+let toastTimer = 0;
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+}
+
+async function doExport() {
+  $("exportName").value = modelName;
+  const text = buildExport();
+  $("exportText").value = text;
+  $("modal").classList.add("show");
+  const ok = await copyText(text);
+  toast(ok ? "Copied to clipboard" : "Tap Copy, or select the text");
+}
+
+
+//----- UI Wiring -----||
+function $(id) { return document.getElementById(id); }
+
+const HINTS = {
+  move:  "<b>Move</b>: tap a dot to select, drag it to move. Drag empty space to orbit.",
+  split: "<b>Split</b>: tap an edge to add a vertex at its midpoint.",
+  paint: "<b>Paint</b>: pick a colour, tap a face to paint it.",
+};
+
+function updateUI() {
+  for (const b of document.querySelectorAll("[data-mode]")) b.classList.toggle("on", b.dataset.mode === mode);
+  $("bSnap").classList.toggle("on", snapOn);
+  $("bBake").classList.toggle("on", bakeOn);
+  $("bMirror").classList.toggle("on", !!mesh.mirror);
+  $("mirrorLabel").textContent = mesh.mirror ? "Mirror " + mesh.mirror.toUpperCase() : "Mirror off";
+  $("bSym").disabled = !mesh.mirror;
+  $("bUndo").disabled = undoStack.length === 0;
+  $("palette").classList.toggle("show", mode === "paint");
+  for (const s of document.querySelectorAll(".swatch")) s.classList.toggle("on", +s.dataset.i === currentColor);
+
+  const parts = [vertCount() + " verts", triCount() + " tris"];
+  if (mesh.mirror) {
+    const nv = unpairedCount(), nt = asymTriCount();
+    const warn = [nv ? nv + " unpaired verts" : "", nt ? nt + " asym tris" : ""].filter(Boolean).join(", ");
+    parts.push("mirror " + mesh.mirror.toUpperCase() + (warn ? ` <span class="warn">(${warn}: Symm)</span>` : ""));
+  }
+  if (snapOn) parts.push("snap " + SNAP_STEP);
+  let line2 = parts.join(" &middot; ");
+  if (selected >= 0) line2 += "<br>vertex " + selected + ": " + getVert(selected).map(c => c.toFixed(3)).join(", ");
+  $("info").innerHTML = HINTS[mode] + "<br>" + line2;
+}
+
+// Palette swatches
+PALETTE.forEach((c, i) => {
+  const b = document.createElement("button");
+  b.className = "swatch"; b.dataset.i = i;
+  b.style.background = `rgb(${c[0]},${c[1]},${c[2]})`;
+  b.addEventListener("click", () => { currentColor = i; save(); updateUI(); });
+  $("palette").appendChild(b);
+});
+
+for (const b of document.querySelectorAll("[data-mode]"))
+  b.addEventListener("click", () => { mode = b.dataset.mode; updateUI(); });
+
+$("bSnap").addEventListener("click", () => {
+  snapOn = !snapOn;
+  // Turning snap on also snaps the selected vertex, so it lands on the grid straight away.
+  if (snapOn && selected >= 0) {
+    const s = snap(getVert(selected));
+    if (v3.len(v3.sub(s, getVert(selected))) > 1e-9) { pushUndo(); moveVertex(selected, s); }
+  }
+  meshChanged();
+});
+
+$("bBake").addEventListener("click", () => { bakeOn = !bakeOn; meshChanged(); });
+
+// Mirror button cycles X -> Y -> off -> X. Changing it re-pairs vertices from positions.
+$("bMirror").addEventListener("click", () => {
+  pushUndo();
+  mesh.mirror = mesh.mirror === "x" ? "y" : mesh.mirror === "y" ? null : "x";
+  const nv = pairMirror(mesh), nt = asymTriCount();
+  if (mesh.mirror) toast(nv || nt ? `Mirror ${mesh.mirror.toUpperCase()}: ${nv} verts / ${nt} tris have no twin. Tap Symm to rebuild the − side from the + side.`
+                                  : `Mirror ${mesh.mirror.toUpperCase()}: fully symmetric`);
+  else toast("Mirror off");
+  meshChanged();
+});
+
+$("bSym").addEventListener("click", () => {
+  if (!mesh.mirror) return;
+  const before = snapshot();
+  if (symmetrize()) {
+    pushUndo(before); selected = -1; meshChanged();
+    toast(`Rebuilt − side from + side (${mesh.mirror.toUpperCase()})`);
+  } else toast("Nothing on the + side to copy");
+});
+
+$("bUndo").addEventListener("click", undo);
+$("bExport").addEventListener("click", doExport);
+$("bNew").addEventListener("click", () => {
+  if (!confirm("Start a new model? (You can still Undo.)")) return;
+  pushUndo(); newModel(mesh.mirror); selected = -1; meshChanged();
+});
+
+$("exportName").addEventListener("input", () => {
+  modelName = cIdent($("exportName").value);
+  $("exportText").value = buildExport();
+  save();
+});
+$("mClose").addEventListener("click", () => $("modal").classList.remove("show"));
+$("mCopy").addEventListener("click", async () => {
+  const ok = await copyText(buildExport());
+  toast(ok ? "Copied to clipboard" : "Copy failed: long-press the text to copy");
+});
+
+
+//----- Resize (handles devicePixelRatio) -----||
+// The canvas has a CSS size (layout) and a pixel size (drawing buffer). On a phone
+// with DPR 3, a 390 px wide canvas needs 1170 real pixels to look sharp.
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const r = canvas.getBoundingClientRect();
+  viewW = Math.max(1, r.width); viewH = Math.max(1, r.height);
+  const w = Math.round(viewW * dpr), h = Math.round(viewH * dpr);
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+}
+window.addEventListener("resize", resize);
+new ResizeObserver(resize).observe(canvas);
+
+
+//----- Draw Loop -----||
+function frame() {
+  resize();
+  if (meshDirty) rebuildBuffers();
+  updateCamera();
+
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.clearColor(0.086, 0.09, 0.114, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  gl.useProgram(prog);
+  gl.uniformMatrix4fv(U.mvp, false, viewProj);
+  gl.uniform1f(U.alpha, 1);
+  gl.uniform1i(U.round, 0);
+
+  // 1) Ground grid
+  gl.bindVertexArray(gridBatch.vao);
+  gl.drawArrays(gl.LINES, 0, gridBatch.count);
+
+  // 2) Faces, pushed slightly back in depth so the edge lines on top don't flicker.
+  //    No back-face culling: faces stay visible even if a drag turns one inside-out.
+  gl.enable(gl.POLYGON_OFFSET_FILL);
+  gl.polygonOffset(1, 1);
+  gl.bindVertexArray(faceBatch.vao);
+  gl.drawArrays(gl.TRIANGLES, 0, faceBatch.count);
+  gl.disable(gl.POLYGON_OFFSET_FILL);
+
+  // 3) Edges (depth tested, so hidden edges stay hidden)
+  gl.bindVertexArray(edgeBatch.vao);
+  gl.drawArrays(gl.LINES, 0, edgeBatch.count);
+
+  // 4) Mirror plane: translucent, blended over what's behind, and it doesn't write
+  //    depth so it never hides anything.
+  if (planeBatch.count) {
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    gl.uniform1f(U.alpha, 0.16);
+    gl.bindVertexArray(planeBatch.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, planeBatch.count);
+    gl.uniform1f(U.alpha, 1);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+  }
+
+  // 5) Vertex dots, drawn on top of everything so back vertices can still be grabbed.
+  gl.disable(gl.DEPTH_TEST);
+  gl.uniform1i(U.round, 1);
+  gl.uniform1f(U.size, 10 * dpr);
+  gl.bindVertexArray(dotBatch.vao);
+  gl.drawArrays(gl.POINTS, 0, dotBatch.count);
+
+  gl.bindVertexArray(null);
+  requestAnimationFrame(frame);
+}
+
+
+//----- Start -----||
+newModel("x");   // default: mirror X on
+load();
+updateUI();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
