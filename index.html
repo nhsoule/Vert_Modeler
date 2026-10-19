@@ -496,11 +496,11 @@ function sunWhere() {
   return names[Math.round(deg / 45) % 8];
 }
 function sunReadout() {
-  const turn = Math.round(((sunYaw * 180 / Math.PI) % 360 + 360) % 360);
-  const shown = turn > 180 ? turn - 360 : turn;
+  // 0..359 so turning right always increases the number (no jump at ±180).
+  const turn = Math.round(((sunYaw * 180 / Math.PI) % 360 + 360) % 360) % 360;
   const up = Math.round(sunPitch * 180 / Math.PI);
   const height = up >= 75 ? "overhead" : up <= -75 ? "underneath" : up >= 0 ? up + "° up" : (-up) + "° below";
-  return `from ${sunWhere()} · ${shown}° · ${height}`;
+  return `from ${sunWhere()} · ${turn}° · ${height}`;
 }
 function sunPresetOn(name) {
   const p0 = Math.asin(Math.max(-1, Math.min(1, SUN_DEFAULT[2])));
