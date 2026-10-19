@@ -1268,15 +1268,15 @@ function setMergeOn(on) {
 //     left inside the model,
 //  3. builds one wall quad (2 CCW triangles, facing outward, in the colour of the cap
 //     triangle on that edge) along every boundary edge, old ring to new ring,
-//  4. pre-offsets each connected cap by EXTRUDE_STEP (one snap step) along its average
-//     normal, so the block shows at once and no wall is ever zero-area, then
+//  4. pre-offsets each connected cap by EXTRUDE_STEP (a quarter of one snap step) along
+//     its average normal, so the block shows at once and no wall is ever zero-area, then
 //  5. selects the cap vertices, so the gizmo drags it straight out.
 // A quad adds 4 verts and 8 tris. Several separate regions are each extruded. One undo.
 // Mirror: the twin of every covered triangle is extruded in the same step (selecting
 // one side is enough). A region that crosses the plane is one symmetric region; a
 // region touching the plane joins its twin along the on-plane edge, which is then an
 // inner edge: no wall is built on the mirror plane, and on-plane cap verts stay on it.
-const EXTRUDE_STEP = SNAP_STEP;
+const EXTRUDE_STEP = SNAP_STEP / 4;   // 0.03125: a short first pull, drag the gizmo out from there
 
 // Triangles whose three corners are all selected.
 function coveredTris() {
