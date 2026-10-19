@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="pofa-modeler-version" content="v14-paint-rotate-select-views">
+<meta name="pofa-modeler-version" content="v15-sun-menu">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -176,6 +176,40 @@
                   background: #1f2029a0; color: #e8e8eecc; font: 600 11px ui-monospace, Menlo, Consolas, monospace;
                   touch-action: manipulation; }
   #views button:active { background: #e0b43a; color: #16171d; }
+  #toolbar button.open { box-shadow: inset 0 0 0 2px #8ec8ff; }
+
+  /* Sun menu: opens from Shade, sits under the stats line and clear of the view buttons. */
+  #sunMenu {
+    display: none; position: absolute; z-index: 6;
+    left: 8px; top: calc(env(safe-area-inset-top) + 26px);
+    width: min(248px, calc(100% - 56px));
+    padding: 8px; border-radius: 14px;
+    background: #1f2029f2; border: 1px solid #3a3d4c;
+    box-shadow: 0 8px 24px #000a;
+    flex-direction: column; gap: 6px;
+  }
+  #sunMenu.show { display: flex; }
+  #sunMenu button {
+    min-height: 40px; border: 0; border-radius: 9px; background: #2a2c38; color: #e8e8ee;
+    font: inherit; font-size: 13px; touch-action: manipulation; padding: 0 8px;
+  }
+  #sunMenu button.on { background: #e0b43a; color: #16171d; }
+  #sunMenu button:active { filter: brightness(1.3); }
+  .sunHead { display: flex; gap: 6px; }
+  .sunHead #sunToggle { flex: 1; font-weight: 600; }
+  .sunHead #sunClose { width: 40px; min-width: 40px; padding: 0; font-size: 18px; }
+  .sunPresets { display: flex; gap: 4px; }
+  .sunPresets button {
+    flex: 1; min-width: 0; min-height: 32px; padding: 0;
+    font: 600 11px ui-monospace, Menlo, Consolas, monospace;
+  }
+  #sunRead {
+    text-align: center; font: 12px ui-monospace, Menlo, Consolas, monospace; color: #b9bccb;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .sunRow { display: flex; gap: 6px; }
+  .sunRow button { flex: 1; min-width: 0; }
+  #sunMenu .note { font-size: 11px; color: #9a9db0; text-align: center; }
   /* Select mode: the box being dragged */
   #boxSel { position: absolute; display: none; pointer-events: none;
             border: 1px dashed #e0b43a; background: #e0b43a22; }
@@ -226,6 +260,32 @@
       <button data-view="bottom" title="Bottom: from −Z, looking up">Bo</button>
       <button data-view="iso"    title="Iso: front-right, from above">Iso</button>
     </div>
+    <div id="sunMenu" aria-label="Sun">
+      <div class="sunHead">
+        <button id="sunToggle" type="button">Shade on</button>
+        <button id="sunClose" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="sunPresets" role="group" aria-label="Light from">
+        <button type="button" data-sun="front"  title="Light from the front (−Y)">F</button>
+        <button type="button" data-sun="back"   title="Light from the back (+Y)">Bk</button>
+        <button type="button" data-sun="left"   title="Light from the left (−X)">L</button>
+        <button type="button" data-sun="right"  title="Light from the right (+X)">R</button>
+        <button type="button" data-sun="top"    title="Light from above">T</button>
+        <button type="button" data-sun="bottom" title="Light from below">Bo</button>
+      </div>
+      <div id="sunRead"></div>
+      <div class="sunRow">
+        <button id="sunYawL" type="button" aria-label="Turn sun left">↺</button>
+        <button id="sunYawR" type="button" aria-label="Turn sun right">↻</button>
+        <button id="sunPitchD" type="button" aria-label="Lower the sun">↓</button>
+        <button id="sunPitchU" type="button" aria-label="Raise the sun">↑</button>
+      </div>
+      <div class="sunRow">
+        <button id="sunView" type="button" title="Put the sun behind the camera">This view</button>
+        <button id="sunReset" type="button" title="Original sun: up, from the back-right">Reset</button>
+      </div>
+      <div class="note">Hold ↺↻↓↑ to sweep. Shade bakes this sun into the export.</div>
+    </div>
     <div id="boxSel"></div>
     <div id="readout">
       <button id="roScale" type="button" aria-label="Move / Scale" title="Switch the gizmo between Move and Scale (2+ verts)"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v2H6.4l4.3 4.3-1.4 1.4L5 6.4V10H3zm11 0h7v7h-2V6.4l-4.3 4.3-1.4-1.4L17.6 5H14zM9.3 13.3l1.4 1.4L6.4 19H10v2H3v-7h2v3.6zm5.4 0l4.3 4.3V14h2v7h-7v-2h3.6l-4.3-4.3z"/></svg></button>
@@ -261,7 +321,7 @@
       <button id="bMirror"><span class="ic">⇋︎</span><span id="mirrorLabel">Mirror X</span></button>
       <button id="bSym"><span class="ic">⧓</span>Symm</button>
       <button id="bSelect" data-mode="select"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h4v2H5v2H3zm6 0h6v2H9zm8 0h4v4h-2V5h-2zM3 9h2v6H3zm16 0h2v6h-2zM3 17h2v2h2v2H3zm16 0h2v4h-4v-2h2zM9 19h6v2H9z"/></svg></span>Select</button>
-      <button id="bBake"><span class="ic">☀︎</span>Shade</button>
+      <button id="bBake" aria-haspopup="true" aria-expanded="false" title="Shade and sun direction"><span class="ic">☀︎</span>Shade</button>
       <button id="bImport"><span class="ic">⇩</span>Import</button>
       <button id="bExport"><span class="ic">⇪</span>Export</button>
       <button id="bNew"><span class="ic">□︎</span>New</button>
@@ -330,7 +390,7 @@
 <script>
 "use strict";
 // =====================================================================================
-//  Vert Modeler v14 (the pofa modeler)
+//  Vert Modeler v15 (the pofa modeler)
 //  A tiny touch-first low-poly modeler. Every model starts as a cube; you can move
 //  vertices (with an X/Y/Z axis gizmo), split edges, and paint faces, with optional live
 //  mirror symmetry, then export a C++ array in exactly the format the pofa renderer
@@ -341,7 +401,8 @@
 //  Vertices hidden behind the model (or off screen) are greyed out and can't be grabbed.
 //  Tap a number in the X / Y / Z chip to type an exact coordinate. A quick tap on empty
 //  space hides the editing overlay for a clean in-game preview. Colours come from named
-//  palettes you can create, edit, export to C++, and import (Paint mode).
+//  palettes you can create, edit, export to C++, and import (Paint mode). Shade opens a
+//  sun menu: swing the light onto a dark side (the same direction is baked on export).
 //
 //  Coordinates match the game: Z is up, X is left/right, Y is forward/back, and models
 //  sit with their base on z = 0. Rendering uses raw WebGL 2 (= OpenGL ES 3.0), so the
@@ -368,9 +429,105 @@ const GIZMO_SHAFT_PX= 18;                 // CSS px: grab distance from a handle
 const WELD_EPS      = 1e-4;               // import: positions closer than this become one vertex
 const AXIS_COLORS   = [[0.95, 0.30, 0.30], [0.35, 0.85, 0.40], [0.35, 0.55, 1.00]]; // X, Y, Z
 
-// Baked light: fixed direction (toward the light) and the formula the export uses.
-const BAKE_LIGHT    = normalize3([0.3, 0.5, 0.8]);
-const bakeFactor    = (n) => 0.55 + 0.45 * Math.max(0, n[0]*BAKE_LIGHT[0] + n[1]*BAKE_LIGHT[1] + n[2]*BAKE_LIGHT[2]);
+// Baked light: direction toward the sun, and the formula the export uses.
+// The original fixed sun is normalize([0.3, 0.5, 0.8]) (up, from the back-right).
+// Shade's menu swings it; Reset puts this vector back. yaw 0 = light from +Y (back).
+const SUN_DEFAULT   = normalize3([0.3, 0.5, 0.8]);
+const SUN_KEY       = "pofa-modeler-sun";
+const SUN_PITCH_MAX = 80 * Math.PI / 180;
+const SUN_STEP      = 15 * Math.PI / 180;
+let sunYaw   = Math.atan2(SUN_DEFAULT[0], SUN_DEFAULT[1]);
+let sunPitch = Math.asin(Math.max(-1, Math.min(1, SUN_DEFAULT[2])));
+let sunDir   = SUN_DEFAULT.slice();
+function applySunAngles() {
+  const cp = Math.cos(sunPitch);
+  sunDir = [cp * Math.sin(sunYaw), cp * Math.cos(sunYaw), Math.sin(sunPitch)];
+}
+const sunIsDefault = () => v3.dot(sunDir, SUN_DEFAULT) > 1 - 1e-8;
+function bakeFactorFor(n, light) {
+  const L = light || sunDir;
+  return 0.55 + 0.45 * Math.max(0, n[0]*L[0] + n[1]*L[1] + n[2]*L[2]);
+}
+const bakeFactor = (n) => bakeFactorFor(n, sunDir);
+
+// Remember the sun between sessions. Import of a baked file overwrites this so the
+// preview matches the numbers that were saved.
+function saveSun() {
+  try { localStorage.setItem(SUN_KEY, JSON.stringify(sunDir)); } catch (e) { /* storage blocked */ }
+}
+function adoptSun(d) {
+  const n = normalize3(d);
+  sunPitch = Math.max(-SUN_PITCH_MAX, Math.min(SUN_PITCH_MAX, Math.asin(Math.max(-1, Math.min(1, n[2])))));
+  sunYaw = Math.atan2(n[0], n[1]);
+  applySunAngles();
+  saveSun();
+}
+function loadSun() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SUN_KEY));
+    if (Array.isArray(d) && d.length === 3 && d.every(isFinite) && Math.hypot(d[0], d[1], d[2]) > 0.5)
+      adoptSun(d);
+  } catch (e) { /* corrupt: keep the original sun */ }
+}
+// Turning the sun turns Shade on, otherwise the drag would change nothing you can see.
+function setSunAngles(yaw, pitch) {
+  sunPitch = Math.max(-SUN_PITCH_MAX, Math.min(SUN_PITCH_MAX, pitch));
+  sunYaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
+  applySunAngles();
+  saveSun();
+  if (!bakeOn) { bakeOn = true; save(); }
+  meshDirty = true;
+  updateUI();
+}
+function setSunFromDir(d) { adoptSun(d); if (!bakeOn) { bakeOn = true; save(); } meshDirty = true; updateUI(); }
+
+// Side presets keep the original sun's height, so a vertical face is actually lit.
+// Top / bottom go steep, and keep the current yaw so lowering the sun comes back to this side.
+function applySunPreset(name) {
+  const p0 = Math.asin(Math.max(-1, Math.min(1, SUN_DEFAULT[2])));
+  const yawOf = { front: Math.PI, back: 0, left: -Math.PI / 2, right: Math.PI / 2 };
+  if (name in yawOf) setSunAngles(yawOf[name], p0);
+  else if (name === "top") setSunAngles(sunYaw, SUN_PITCH_MAX);
+  else if (name === "bottom") setSunAngles(sunYaw, -SUN_PITCH_MAX);
+}
+function sunWhere() {
+  const names = ["Back", "Back-right", "Right", "Front-right", "Front", "Front-left", "Left", "Back-left"];
+  const deg = ((sunYaw * 180 / Math.PI) % 360 + 360) % 360;
+  return names[Math.round(deg / 45) % 8];
+}
+function sunReadout() {
+  // 0..359 so turning right always increases the number (no jump at ±180).
+  const turn = Math.round(((sunYaw * 180 / Math.PI) % 360 + 360) % 360) % 360;
+  const up = Math.round(sunPitch * 180 / Math.PI);
+  const height = up >= 75 ? "overhead" : up <= -75 ? "underneath" : up >= 0 ? up + "° up" : (-up) + "° below";
+  return `from ${sunWhere()} · ${turn}° · ${height}`;
+}
+function sunPresetOn(name) {
+  const p0 = Math.asin(Math.max(-1, Math.min(1, SUN_DEFAULT[2])));
+  if (name === "top") return sunPitch > 75 * Math.PI / 180;
+  if (name === "bottom") return sunPitch < -75 * Math.PI / 180;
+  const yawOf = { front: Math.PI, back: 0, left: -Math.PI / 2, right: Math.PI / 2 };
+  const dy = Math.atan2(Math.sin(sunYaw - yawOf[name]), Math.cos(sunYaw - yawOf[name]));
+  return Math.abs(dy) < 8 * Math.PI / 180 && Math.abs(sunPitch - p0) < 8 * Math.PI / 180;
+}
+// Comment text inside "baked into colors (...)". The original sun keeps the historical
+// wording exactly, so older files still say n.(0.3,0.5,0.8).
+function sunFormulaText() {
+  if (sunIsDefault()) return "0.55 + 0.45*max(0, n.(0.3,0.5,0.8))";
+  const parts = sunDir.map(v => (Math.round(v * 1e4) / 1e4).toFixed(4));
+  return `0.55 + 0.45*max(0, n.(${parts.join(",")}))`;
+}
+// null = the comment has no vector (old "baked" lines, or flat). (0.3,0.5,0.8) is the
+// pre-normalized original sun, not a unit vector.
+function parseSunVector(text) {
+  const m = text.match(/n\.\(\s*([-+0-9.eE]+)\s*,\s*([-+0-9.eE]+)\s*,\s*([-+0-9.eE]+)\s*\)/);
+  if (!m) return null;
+  const v = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (v.some(n => !isFinite(n)) || Math.hypot(v[0], v[1], v[2]) < 1e-6) return null;
+  if (Math.abs(v[0] - 0.3) < 1e-9 && Math.abs(v[1] - 0.5) < 1e-9 && Math.abs(v[2] - 0.8) < 1e-9)
+    return SUN_DEFAULT.slice();
+  return normalize3(v);
+}
 
 // Built-in palette (PICO-8 colours, 0..255). Faces store their own RGB (0..1 floats), so a
 // palette is just a set of colours to paint with; changing palettes never recolours a model.
@@ -2516,7 +2673,7 @@ function buildExport() {
   L.push(`// ${name}: ${triCount()} triangles, ${nVerts} verts (exported from Vert Modeler)`);
   L.push(`// layout per vertex: pos3 (x, y, z in Z-up world units) + color3 (r, g, b in 0..1)`);
   L.push(`//   6 floats, stride 6*sizeof(float); 3 verts per triangle, CCW seen from outside`);
-  L.push(`//   base sits on z = 0; lighting ${bakeOn ? "baked into colors (0.55 + 0.45*max(0, n.(0.3,0.5,0.8)))" : "not baked (flat palette colors)"}`);
+  L.push(`//   base sits on z = 0; lighting ${bakeOn ? "baked into colors (" + sunFormulaText() + ")" : "not baked (flat palette colors)"}`);
   L.push(`// usage: mesh_upload(&g_mesh, ${name}_verts, ${name}_vert_count);`);
   L.push(`static const float ${name}_verts[] = {`);
   for (let t = 0; t < triCount(); t++) {
@@ -2579,8 +2736,11 @@ async function doExport() {
 //     so we divide it back out (and turn Shade on) so re-exporting prints the same
 //     numbers. Which one? The export's own comment says "baked into colors" or "not
 //     baked"; for bare numbers we guess by which reading matches palette colours more
-//     (tie = flat, which is always exact). Colours that aren't in the active palette
-//     are added to a palette called "Imported" so you can paint with them again.
+//     (tie = flat, which is always exact). The sun is the n.(x,y,z) in that comment
+//     (missing, or the original 0.3,0.5,0.8, means the original sun). A baked import
+//     points the editor's sun the same way, so the preview matches the file. Colours
+//     that aren't in the active palette are added to a palette called "Imported" so
+//     you can paint with them again.
 // The editor's faces are triangles, so no quad merging is needed.
 function parseExport(text) {
   const nameMatch = text.match(/([A-Za-z_][A-Za-z0-9_]*)_verts\s*\[/);
@@ -2596,10 +2756,10 @@ function parseExport(text) {
   if (nums.length % 18) throw new Error(nums.length + " numbers isn't a whole number of triangles (6 per vertex, 3 vertices each).");
   if (nums.some(n => !isFinite(n))) throw new Error("Found a number that isn't finite.");
   const lighting = /baked into colors/.test(text) ? "baked" : /not baked/.test(text) ? "flat" : null;
-  return { name: nameMatch ? nameMatch[1] : null, nums, lighting };
+  return { name: nameMatch ? nameMatch[1] : null, nums, lighting, sun: parseSunVector(text) };
 }
 
-function importMesh(nums, mirror, lighting = null) {
+function importMesh(nums, mirror, lighting = null, light = null) {
   // Weld through a hash grid: each position goes in a cell of size WELD_EPS; we check the
   // 27 neighbouring cells so two points either side of a cell border still merge.
   const positions = [], cells = new Map(), corner = [];
@@ -2637,7 +2797,9 @@ function importMesh(nums, mirror, lighting = null) {
     return v3.norm(v3.cross(v3.sub(b, a), v3.sub(c, a)));
   };
   const nT = tris.length / 3;
-  const unbaked = rgb.map((c, t) => { const k = bakeFactor(normal(t)); return c.map(v => v / k); });
+  // Un-bake with the FILE's sun, not whatever the menu is pointing at right now.
+  const L = (light && light.length === 3) ? light : SUN_DEFAULT;
+  const unbaked = rgb.map((c, t) => { const k = bakeFactorFor(normal(t), L); return c.map(v => v / k); });
   let useBaked = lighting === "baked";
   if (lighting === null) {
     // Guess: count faces whose colour is a palette colour under each reading.
@@ -2647,7 +2809,7 @@ function importMesh(nums, mirror, lighting = null) {
   }
   m.colors = (useBaked ? unbaked : rgb).map(c => c.slice());
   pairMirror(m);
-  return { mesh: m, baked: useBaked, dropped: nums.length / 18 - nT };
+  return { mesh: m, baked: useBaked, dropped: nums.length / 18 - nT, light: L };
 }
 
 function openImport() {
@@ -2660,11 +2822,13 @@ function doImport(text) {
   let parsed, res;
   try {
     parsed = parseExport(text);
-    res = importMesh(parsed.nums, mesh.mirror, parsed.lighting);
+    const fileSun = parsed.sun || SUN_DEFAULT.slice();
+    res = importMesh(parsed.nums, mesh.mirror, parsed.lighting, fileSun);
   } catch (e) { toast("Import failed: " + e.message); return false; }
   pushUndo();                                      // the old model, so Undo brings it back
   mesh = res.mesh;
   bakeOn = res.baked;
+  if (res.baked) adoptSun(res.light);          // preview sun matches the light that was baked in
   if (parsed.name) modelName = cIdent(parsed.name);
   clearSelection();
   meshChanged();
@@ -2685,10 +2849,23 @@ function $(id) { return document.getElementById(id); }
 // Nathan's request. Mirror problems now show up as a one-off toast when they appear.)
 let lastWarn = { nv: 0, nt: 0 };
 
+function updateSunMenu() {
+  const on = $("sunMenu").classList.contains("show");
+  $("sunToggle").classList.toggle("on", bakeOn);
+  $("sunToggle").textContent = bakeOn ? "Shade on" : "Shade off";
+  $("sunToggle").setAttribute("aria-pressed", bakeOn ? "true" : "false");
+  $("sunRead").textContent = sunReadout();
+  $("sunReset").classList.toggle("on", sunIsDefault());
+  for (const b of document.querySelectorAll("[data-sun]")) b.classList.toggle("on", on && sunPresetOn(b.dataset.sun));
+}
+
 function updateUI() {
   for (const b of document.querySelectorAll("[data-mode]")) b.classList.toggle("on", b.dataset.mode === mode);
   $("bRock").classList.toggle("on", showRock);
   $("bBake").classList.toggle("on", bakeOn);
+  $("bBake").classList.toggle("open", $("sunMenu").classList.contains("show"));
+  $("bBake").setAttribute("aria-expanded", $("sunMenu").classList.contains("show") ? "true" : "false");
+  updateSunMenu();
   $("bMirror").classList.toggle("on", !!mesh.mirror);
   $("mirrorLabel").textContent = mesh.mirror ? "Mirror " + mesh.mirror.toUpperCase() : "Mirror off";
   $("bSym").disabled = !mesh.mirror;
@@ -2903,7 +3080,40 @@ $("roOk").addEventListener("click", () => closeCoordEdit(true));
 for (const b of document.querySelectorAll("[data-mode]"))
   b.addEventListener("click", () => { mode = b.dataset.mode; overlayOn = true; meshDirty = true; updateUI(); });
 
-$("bBake").addEventListener("click", () => { bakeOn = !bakeOn; meshChanged(); });
+$("bBake").addEventListener("click", () => {
+  $("sunMenu").classList.toggle("show");
+  updateUI();
+});
+$("sunToggle").addEventListener("click", () => { bakeOn = !bakeOn; meshChanged(); });
+$("sunClose").addEventListener("click", () => { $("sunMenu").classList.remove("show"); updateUI(); });
+for (const b of document.querySelectorAll("[data-sun]"))
+  b.addEventListener("click", () => applySunPreset(b.dataset.sun));
+// Tap = one 15° step. Hold = keep sweeping, so a dark side comes around without dozens of taps.
+function holdSun(el, dyaw, dpitch) {
+  let timer = 0, iv = 0;
+  const stop = () => { clearTimeout(timer); clearInterval(iv); timer = iv = 0; };
+  el.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    setSunAngles(sunYaw + dyaw, sunPitch + dpitch);
+    stop();
+    timer = setTimeout(() => { iv = setInterval(() => setSunAngles(sunYaw + dyaw, sunPitch + dpitch), 70); }, 280);
+  });
+  el.addEventListener("pointerup", stop);
+  el.addEventListener("pointercancel", stop);
+  el.addEventListener("pointerleave", stop);
+}
+holdSun($("sunYawL"), -SUN_STEP, 0);
+holdSun($("sunYawR"), SUN_STEP, 0);
+holdSun($("sunPitchD"), 0, -SUN_STEP);
+holdSun($("sunPitchU"), 0, SUN_STEP);
+$("sunView").addEventListener("click", () => setSunFromDir(v3.sub(camEye(), cam.target)));
+$("sunReset").addEventListener("click", () => setSunFromDir(SUN_DEFAULT));
+document.addEventListener("pointerdown", (e) => {
+  if (!$("sunMenu").classList.contains("show")) return;
+  if (e.target.closest("#sunMenu") || e.target.closest("#bBake")) return;
+  $("sunMenu").classList.remove("show");
+  updateUI();
+});
 
 //----- Mirror + Symm Buttons -----||
 // Mirror cycles X -> Y -> off -> X and re-pairs twins from positions. The toast always
@@ -3524,6 +3734,7 @@ function drawGizmo() {
 newModel("x");   // default: mirror X on
 palLoad();
 load();
+loadSun();
 updateUI();
 requestAnimationFrame(frame);
 </script>
