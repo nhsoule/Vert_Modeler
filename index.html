@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="pofa-modeler-version" content="v15-sun-menu">
+<meta name="pofa-modeler-version" content="v15-normals-rigid-rotate">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -403,6 +403,8 @@
 //  space hides the editing overlay for a clean in-game preview. Colours come from named
 //  palettes you can create, edit, export to C++, and import (Paint mode). Shade opens a
 //  sun menu: swing the light onto a dark side (the same direction is baked on export).
+//  The export is pos3 + color3 + normal3 (the face normal on each of the triangle's
+//  vertices). Rotating several vertices turns them together about one centre.
 //
 //  Coordinates match the game: Z is up, X is left/right, Y is forward/back, and models
 //  sit with their base on z = 0. Rendering uses raw WebGL 2 (= OpenGL ES 3.0), so the
@@ -1416,7 +1418,7 @@ function buildGameRock(s = 0) {
     tri(M[i], M[j], N[j], colTop); tri(M[i], N[j], N[i], colTop);
     tri(N[i], N[j], T, colTop);
   }
-  return out;   // 34 triangles = 102 verts x 6 floats, same layout as the export
+  return out;   // 34 triangles = 102 verts x 6 floats (pos3 + color3), preview only
 }
 
 const GAME_ROCK = buildGameRock(0);
@@ -1593,8 +1595,8 @@ const U = {
   alpha: gl.getUniformLocation(prog, "uAlpha"),
 };
 
-// A "draw batch" = one VAO + one VBO + a vertex count. Layout is the game's:
-// 6 floats per vertex (x, y, z, r, g, b), stride 6 * 4 = 24 bytes.
+// A "draw batch" = one VAO + one VBO + a vertex count. The preview is pos3 + color3
+// (6 floats, stride 24). The C++ export adds the face normal after the colour.
 function makeBatch() {
   const vao = gl.createVertexArray(), vbo = gl.createBuffer();
   gl.bindVertexArray(vao);
@@ -2172,7 +2174,9 @@ canvas.addEventListener("pointerdown", (e) => {
     const ra = rotateActive() ? pickRing(p.x, p.y) : -1;
     if (ra >= 0) {
       const c = scaleCentroid();
-      gesture = { kind: "axis", rotate: true, axis: ra, p0: c, starts: selStarts(), angle: 0,
+      // All selected verts, not just selDrivers: a selected twin must turn with the
+      // group, not be overwritten later by the reflection of its partner.
+      gesture = { kind: "axis", rotate: true, axis: ra, p0: c, starts: selRotateStarts(), angle: 0,
                   before: snapshot(), moved: false, startX: p.x, startY: p.y, merge: -1, solo: -1 };
       gesture.useScreen = Math.abs(v3.dot(screenRay(p.x, p.y).dir, unitAxis(ra))) < 0.15;
       gesture.lastRaw = ringAngle(gesture, p.x, p.y);
@@ -2369,6 +2373,7 @@ function endPointer(e) {
     } else handleTap(gesture.startX, gesture.startY);
   }
   const wasAxis = gesture.kind === "axis";
+  if (wasAxis && gesture.rotate && gesture.moved) pairMirror(mesh);
   if (wasAxis && gesture.merge >= 0 && mergeOn) {
     // Released in range: dissolve it (and its twin). Same undo step as the drag.
     mergeVerts = new Set();
@@ -2459,12 +2464,17 @@ function boxSelect(x0, y0, x1, y1) {
 // measured where the finger meets the ring's plane (or around the pivot on screen when
 // the ring is seen edge-on), so the ring follows the finger. The chip shows the live
 // angle; tap an angle to type degrees. Pivot = centroid of the selection + twins.
-// Mirror (say Mirror X): turning about X (the mirror axis) is the same rotation on both
-// sides, so a symmetric selection simply turns. Turning about Y or Z is applied to one
-// side and mirrored onto the other (the two halves turn in opposite senses), which is
-// the only way to stay symmetric. On-plane verts are kept on the plane: if they're all
-// on the plane, the Y and Z rings are locked (they could only push them off it); mixed
-// with off-plane verts, an on-plane vert's X is held at 0 while it turns.
+// Every selected vertex turns by the same angle about one pivot (scaleCentroid: the
+// selection plus any mirror twins, the same centre Scale uses), from its own start
+// position. That is one rigid motion.
+// Mirror used to send each driver through moveVertex, which writes the partner as the
+// reflection of the driver. A selected twin was therefore mirrored instead of rotated,
+// so the two halves turned in opposite directions. Selected verts are written directly.
+// A twin that is NOT selected still follows by reflection, so a one-sided edit stays
+// symmetric. On-plane verts stay on the plane: if they're all on the plane, the Y and Z
+// rings are locked (they could only push them off it); mixed with off-plane verts, an
+// on-plane vert's plane coordinate is held at 0 while it turns. pairMirror runs on
+// release so the partner links match the new positions.
 // One undo per drag; no auto-merge; re-triangulation runs on release.
 const ROT_PX = 62, ROT_GRAB_PX = 14;
 const rotateActive = () => gizmoMode === "rotate" && selection().length >= 2;
@@ -2512,13 +2522,25 @@ function ringAngle(g, x, y) {
   const sc = project(g.p0), sgn = Math.sign(v3.dot(e, v3.sub(camEye(), g.p0))) || 1;
   return -Math.atan2(y - sc.y, x - sc.x) * sgn;     // screen y is down: CCW on screen = +
 }
+// Start positions of every selected vertex (rotate). Move and scale still use
+// selStarts(), which drops a twin when its partner is also selected.
+function selRotateStarts() { return new Map(selection().map(i => [i, getVert(i)])); }
 function rotateSelection(starts, c, a, ang) {
   const i1 = (a + 1) % 3, i2 = (a + 2) % 3, cs = Math.cos(ang), sn = Math.sin(ang);
+  const ax = axisIndex(mesh.mirror);
+  const rotated = new Map();
   for (const [i, p0] of starts) {
     const np = p0.slice(), ru = p0[i1] - c[i1], rw = p0[i2] - c[i2];
     np[i1] = c[i1] + ru * cs - rw * sn;
     np[i2] = c[i2] + ru * sn + rw * cs;
-    moveVertex(i, np);                             // twin mirrored, on-plane stays on plane
+    if (ax >= 0 && mesh.partner[i] === i && a !== ax) np[ax] = 0;   // seam stays on the plane
+    rotated.set(i, np);
+  }
+  for (const [i, np] of rotated) setVert(i, np);
+  // Unselected twins follow by mirror. A selected twin already has its own rigid spot.
+  if (ax >= 0) for (const [i, np] of rotated) {
+    const q = mesh.partner[i];
+    if (q >= 0 && q !== i && !rotated.has(q)) setVert(q, reflect(np, ax));
   }
 }
 
@@ -2664,23 +2686,28 @@ function cIdent(s) {
 const f4 = (x) => (Math.abs(x) < 5e-5 ? 0 : x).toFixed(4) + "f";
 const f3 = (x) => x.toFixed(3) + "f";
 
-// Output matches the pofa renderer: 6 floats per vertex (pos3 Z-up + color3 0..1),
-// 3 vertices per triangle, CCW from outside, ready for glDrawArrays(GL_TRIANGLES).
+// Export stride. This repo's export was pos3 + color3 (6 floats) from the first commit;
+// normals were never in that array. They go after the colour, so the old pos-then-color
+// order stays and each vertex also carries the face normal (flat shaded: the same unit
+// outward normal on all 3 corners). Preview buffers stay 6 floats.
+const EXPORT_FLOATS = 9;
+// Output is ready for glDrawArrays(GL_TRIANGLES): 3 vertices per triangle, CCW from outside.
 function buildExport() {
   const name = cIdent(modelName);
   const nVerts = triCount() * 3;
   const L = [];
   L.push(`// ${name}: ${triCount()} triangles, ${nVerts} verts (exported from Vert Modeler)`);
-  L.push(`// layout per vertex: pos3 (x, y, z in Z-up world units) + color3 (r, g, b in 0..1)`);
-  L.push(`//   6 floats, stride 6*sizeof(float); 3 verts per triangle, CCW seen from outside`);
+  L.push(`// layout per vertex: pos3 (x, y, z in Z-up world units) + color3 (r, g, b in 0..1) + normal3 (nx, ny, nz, unit, outward)`);
+  L.push(`//   ${EXPORT_FLOATS} floats, stride ${EXPORT_FLOATS}*sizeof(float); 3 verts per triangle, CCW seen from outside`);
+  L.push(`//   normal3 is the face normal, repeated on the triangle's 3 vertices`);
   L.push(`//   base sits on z = 0; lighting ${bakeOn ? "baked into colors (" + sunFormulaText() + ")" : "not baked (flat palette colors)"}`);
   L.push(`// usage: mesh_upload(&g_mesh, ${name}_verts, ${name}_vert_count);`);
   L.push(`static const float ${name}_verts[] = {`);
   for (let t = 0; t < triCount(); t++) {
-    const c = triColor(t);
+    const c = triColor(t), n = triNormal(t);
     for (let k = 0; k < 3; k++) {
       const p = getVert(mesh.tris[t*3 + k]);
-      L.push(`    ${p.map(f4).join(", ")},  ${c.map(f3).join(", ")},`);
+      L.push(`    ${p.map(f4).join(", ")},  ${c.map(f3).join(", ")},  ${n.map(f4).join(", ")},`);
     }
   }
   L.push(`};`);
@@ -2729,7 +2756,8 @@ async function doExport() {
 //  1. Name: "<name>_verts" -> modelName.
 //  2. Numbers: everything inside the braces of the _verts[] array (or the whole text if
 //     there are no braces), with comments removed; "1.0f", "-.5", "2e-3" all parse.
-//  3. Every 6 numbers = one vertex (x, y, z, r, g, b); every 3 vertices = one triangle.
+//  3. Every vertex is 6 numbers (x, y, z, r, g, b) or 9 (those, then nx, ny, nz).
+//     The export comment says which (stride 6 or stride 9). Every 3 vertices = one triangle.
 //  4. Weld: vertices whose positions are within WELD_EPS share one index, so moving a
 //     corner moves every triangle that touches it (like the cube you started with).
 //  5. Colours are kept EXACTLY. If the export had Shade on, the light was multiplied in,
@@ -2752,14 +2780,22 @@ function parseExport(text) {
   }
   body = body.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
   const nums = (body.match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g) || []).map(Number);
-  if (nums.length < 18) throw new Error("Need at least one triangle (18 numbers), found " + nums.length + ".");
-  if (nums.length % 18) throw new Error(nums.length + " numbers isn't a whole number of triangles (6 per vertex, 3 vertices each).");
   if (nums.some(n => !isFinite(n))) throw new Error("Found a number that isn't finite.");
+  // The comment wins. A count that fits both strides (a multiple of 54) is an old
+  // 6-float file unless the header says normal3 / stride 9.
+  let stride = 0;
+  if (/normal3/.test(text) || /stride\s+9\s*\*/.test(text)) stride = 9;
+  else if (/stride\s+6\s*\*/.test(text)) stride = 6;
+  else if (nums.length % 27 === 0 && nums.length % 18 !== 0) stride = 9;
+  else if (nums.length % 18 === 0) stride = 6;
+  const perTri = stride * 3;
+  if (!stride || nums.length < perTri) throw new Error("Need at least one triangle (" + (perTri || 18) + " numbers), found " + nums.length + ".");
+  if (nums.length % perTri) throw new Error(nums.length + " numbers isn't a whole number of triangles (" + stride + " per vertex, 3 vertices each).");
   const lighting = /baked into colors/.test(text) ? "baked" : /not baked/.test(text) ? "flat" : null;
-  return { name: nameMatch ? nameMatch[1] : null, nums, lighting, sun: parseSunVector(text) };
+  return { name: nameMatch ? nameMatch[1] : null, nums, lighting, sun: parseSunVector(text), stride };
 }
 
-function importMesh(nums, mirror, lighting = null, light = null) {
+function importMesh(nums, mirror, lighting = null, light = null, stride = 6) {
   // Weld through a hash grid: each position goes in a cell of size WELD_EPS; we check the
   // 27 neighbouring cells so two points either side of a cell border still merge.
   const positions = [], cells = new Map(), corner = [];
@@ -2781,12 +2817,19 @@ function importMesh(nums, mirror, lighting = null, light = null) {
     return i;
   }
   const tris = [], rgb = [];
-  for (let t = 0; t < nums.length / 18; t++) {
-    const idx = [0, 1, 2].map(k => weld(nums.slice(t*18 + k*6, t*18 + k*6 + 3)));
+  const perTri = stride * 3;
+  for (let t = 0; t < nums.length / perTri; t++) {
+    const base = t * perTri;
+    const idx = [0, 1, 2].map(k => weld(nums.slice(base + k*stride, base + k*stride + 3)));
     if (idx[0] === idx[1] || idx[1] === idx[2] || idx[0] === idx[2]) continue;   // degenerate
     tris.push(...idx);
     // Triangle colour = average of its 3 vertex colours (they're equal in our exports).
-    rgb.push([3, 4, 5].map(k => (nums[t*18 + k] + nums[t*18 + 6 + k] + nums[t*18 + 12 + k]) / 3));
+    // Colour stays at offset 3 for both the old 6-float layout and pos+color+normal.
+    rgb.push([0, 1, 2].map(ch => {
+      let s = 0;
+      for (let k = 0; k < 3; k++) s += nums[base + k*stride + 3 + ch];
+      return s / 3;
+    }));
   }
   if (!tris.length) throw new Error("Every triangle was degenerate (zero area).");
   const m = { positions, tris, colors: [], partner: [], mirror };
@@ -2809,7 +2852,7 @@ function importMesh(nums, mirror, lighting = null, light = null) {
   }
   m.colors = (useBaked ? unbaked : rgb).map(c => c.slice());
   pairMirror(m);
-  return { mesh: m, baked: useBaked, dropped: nums.length / 18 - nT, light: L };
+  return { mesh: m, baked: useBaked, dropped: nums.length / perTri - nT, light: L };
 }
 
 function openImport() {
@@ -2823,7 +2866,7 @@ function doImport(text) {
   try {
     parsed = parseExport(text);
     const fileSun = parsed.sun || SUN_DEFAULT.slice();
-    res = importMesh(parsed.nums, mesh.mirror, parsed.lighting, fileSun);
+    res = importMesh(parsed.nums, mesh.mirror, parsed.lighting, fileSun, parsed.stride);
   } catch (e) { toast("Import failed: " + e.message); return false; }
   pushUndo();                                      // the old model, so Undo brings it back
   mesh = res.mesh;
@@ -2888,12 +2931,12 @@ function updateUI() {
 
 // Stats line, based on the EXPORT (what the game uploads), not the editor's welded verts:
 //   export verts = tris * 3 (un-indexed, one copy per triangle corner, own colour)
-//   bytes        = export verts * 6 floats * 4 bytes = sizeof(<name>_verts[]) = VBO size
+//   bytes        = export verts * 9 floats * 4 bytes = sizeof(<name>_verts[]) = VBO size
 // Unique editor verts are shown in brackets. Hidden in clean preview with the overlay.
 function updateStats() {
   const el = $("stats");
   el.classList.toggle("hide", !overlayOn);
-  const tris = triCount(), verts = tris * 3, bytes = verts * 6 * 4;
+  const tris = triCount(), verts = tris * 3, bytes = verts * EXPORT_FLOATS * 4;
   const n = (x) => x.toLocaleString("en-US");
   const nSel = selection().length;
   el.textContent = `${n(verts)} verts · ${n(tris)} tris · ${n(bytes)} B  (${n(vertCount())} unique)` +
@@ -3027,7 +3070,8 @@ function closeCoordEdit(apply) {
     if (n === null) toast("Not a number");
     else if (Math.abs(n) > 1e-9) {
       pushUndo();
-      rotateSelection(selStarts(), scaleCentroid(), axis, n * Math.PI / 180);
+      rotateSelection(selRotateStarts(), scaleCentroid(), axis, n * Math.PI / 180);
+      pairMirror(mesh);
       meshChanged();
     }
     updateUI();
