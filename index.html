@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="pofa-modeler-version" content="v15-normals-rigid-rotate">
+<meta name="pofa-modeler-version" content="v16-packed-export">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -107,6 +107,8 @@
     background: #0d0e12; color: #fff; border: 1px solid #2c2e3a; border-radius: 8px;
     font: 15px ui-monospace, Menlo, Consolas, monospace; -webkit-user-select: text; user-select: text;
   }
+  .modal label.chk { font-size: 12px; color: #9a9db0; }
+  .modal label.chk input { width: 16px; height: 16px; accent-color: #e0b43a; }
   .modal button { min-height: 44px; padding: 0 16px; border: 0; border-radius: 10px; background: #e0b43a; color: #16171d; font: inherit; font-weight: 600; }
   .modal button.alt { background: #2a2c38; color: #e8e8ee; }
   #exportText, #importText {
@@ -253,12 +255,12 @@
     <div id="stats"></div>
     <div id="views" aria-label="View">
       <button data-view="front"  title="Front: from −Y, looking +Y">F</button>
-      <button data-view="back"   title="Back: from +Y, looking −Y">Bk</button>
+      <button data-view="back"   title="Back: from +Y, looking −Y">B</button>
       <button data-view="left"   title="Left: from −X, looking +X">L</button>
       <button data-view="right"  title="Right: from +X, looking −X">R</button>
       <button data-view="top"    title="Top: from +Z, looking down">T</button>
-      <button data-view="bottom" title="Bottom: from −Z, looking up">Bo</button>
-      <button data-view="iso"    title="Iso: front-right, from above">Iso</button>
+      <button data-view="bottom" title="Bottom: from −Z, looking up">D</button>
+      <button data-view="iso"    title="Iso: front-right, from above">I</button>
     </div>
     <div id="sunMenu" aria-label="Sun">
       <div class="sunHead">
@@ -314,6 +316,7 @@
       <button id="bPaint" data-mode="paint"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.7 3.3a1 1 0 0 0-1.4 0L10 12.6l1.4 1.4 9.3-9.3a1 1 0 0 0 0-1.4zM8.6 13.4c-1.9 0-3.4 1.5-3.4 3.4 0 1.1-.9 2-2 2.2.8 1.1 2.2 1.8 3.7 1.8 2.6 0 4.6-2 4.6-4.6 0-.4-.1-.8-.2-1.2z"/></svg></span>Paint</button>
       <button id="bExtrude"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5l5 5h-3.2v4.3h-3.6V6.5H7zM3 13.2l4.4-2.4h2.2v1.8H8l-2 1.1 6 3.3 6-3.3-2-1.1h-1.6v-1.8h2.2l4.4 2.4v5.6L12 23.5l-9-4.7zm1.8 2v2.5l6.3 3.3v-2.5zm14.4 0l-6.3 3.3V21l6.3-3.3z"/></svg></span>Extrude</button>
       <button id="bUndo"><span class="ic">↶︎</span>Undo</button>
+      <button id="bRedo"><span class="ic">↷︎</span>Redo</button>
       <button id="bDissolve"><span class="ic">⌫︎</span>Dissolve</button>
       <button id="bRock"><span class="ic">◆︎</span>Rock</button>
     </div>
@@ -336,6 +339,7 @@
     <button id="mClose" class="alt">Close</button>
   </div>
   <label>Name <input id="exportName" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" value="model"></label>
+  <label class="chk"><input id="exportFloats" type="checkbox"> 9-float export (pos + color + normal)</label>
   <textarea id="exportText" readonly spellcheck="false"></textarea>
 </div>
 <div id="importModal" class="modal">
@@ -344,7 +348,7 @@
     <button id="iGo">Import</button>
     <button id="iClose" class="alt">Cancel</button>
   </div>
-  <div class="note">Paste a previous export (the whole snippet, or just the numbers). Undo brings the old model back.</div>
+  <div class="note">Paste a 12-byte Vert export, or an older 6-float / 9-float array. Undo brings the old model back.</div>
   <textarea id="importText" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="static const float model_verts[] = { ... };"></textarea>
 </div>
 <div id="palModal" class="modal">
@@ -390,7 +394,7 @@
 <script>
 "use strict";
 // =====================================================================================
-//  Vert Modeler v15 (the pofa modeler)
+//  Vert Modeler v16 (the pofa modeler)
 //  A tiny touch-first low-poly modeler. Every model starts as a cube; you can move
 //  vertices (with an X/Y/Z axis gizmo), split edges, and paint faces, with optional live
 //  mirror symmetry, then export a C++ array in exactly the format the pofa renderer
@@ -403,8 +407,10 @@
 //  space hides the editing overlay for a clean in-game preview. Colours come from named
 //  palettes you can create, edit, export to C++, and import (Paint mode). Shade opens a
 //  sun menu: swing the light onto a dark side (the same direction is baked on export).
-//  The export is pos3 + color3 + normal3 (the face normal on each of the triangle's
-//  vertices). Rotating several vertices turns them together about one centre.
+//  The default export is a 12-byte Vert (int16 position, octahedral normal, rgba).
+//  Positions snap to that 16-bit grid on every edit. An older 9-float export is still
+//  in the export window. Import accepts the 12-byte Vert and the old 6-float and
+//  9-float arrays. Rotating several vertices turns them together about one centre.
 //
 //  Coordinates match the game: Z is up, X is left/right, Y is forward/back, and models
 //  sit with their base on z = 0. Rendering uses raw WebGL 2 (= OpenGL ES 3.0), so the
@@ -1441,6 +1447,7 @@ let modelName    = "model"; // C identifier used in the export
 let selected     = -1;      // primary selected vertex (the last one tapped), -1 = none
 let selExtra     = new Set(); // the other selected vertices (multi-select); empty if selected < 0
 let undoStack    = [];      // array of JSON snapshots of `mesh`
+let redoStack    = [];      // snapshots undone, cleared by the next new edit
 let mergeOn      = true;    // auto-merge on drag release (stored under MERGE_KEY)
 try { mergeOn = localStorage.getItem("pofa-modeler-merge") !== "0"; } catch (e) { /* storage blocked */ }
 let gizmoMode    = "move";  // "move", "scale" or "rotate" (scale/rotate need 2+ selected verts)
@@ -1461,12 +1468,25 @@ function snapshot() { return JSON.stringify(mesh); }
 function pushUndo(snap = snapshot()) {
   undoStack.push(snap);
   if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+  redoStack.length = 0;                          // a new edit drops the redo branch
   updateUI();
 }
 
 function undo() {
   if (!undoStack.length) return;
+  redoStack.push(snapshot());
+  if (redoStack.length > UNDO_LIMIT) redoStack.shift();
   mesh = JSON.parse(undoStack.pop());
+  if (selection().some(i => i >= vertCount())) clearSelection();
+  meshChanged();
+}
+
+function redo() {
+  if (!redoStack.length) return;
+  // Push straight onto the undo stack. pushUndo() would clear redo.
+  undoStack.push(snapshot());
+  if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+  mesh = JSON.parse(redoStack.pop());
   if (selection().some(i => i >= vertCount())) clearSelection();
   meshChanged();
 }
@@ -1523,8 +1543,9 @@ function load() {
   } catch (e) { /* corrupt save: start fresh */ }
 }
 
-// Call after any edit: rebuild GPU buffers, save, refresh labels.
+// Call after any edit: snap positions onto the export grid, rebuild GPU buffers, save.
 function meshChanged() {
+  snapPositionsToExportGrid();                     // what you model is what the 12-byte export stores
   retriangulate();                                 // flat faces: best-shaped triangles
   meshDirty = true;
   save();
@@ -2450,6 +2471,8 @@ function boxSelect(x0, y0, x1, y1) {
     const s = project(getVert(i));               // null = behind the camera
     if (s && s.x >= lx && s.x <= hx && s.y >= ly && s.y <= hy) { toggleSelect(i); added++; }
   }
+  // A box that ends with verts selected hands them to Move, so the gizmo is ready.
+  if (selection().length) mode = "move";
   lastEmptyTap = null;
   meshDirty = true;
   updateUI();
@@ -2670,7 +2693,18 @@ canvas.addEventListener("contextmenu", (e) => e.preventDefault());   // right-dr
 canvas.addEventListener("auxclick", (e) => e.preventDefault());
 document.addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-  if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey && !e.altKey) recenter();
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && !e.altKey && (e.key === "z" || e.key === "Z")) {
+    e.preventDefault();
+    if (e.shiftKey) redo(); else undo();
+    return;
+  }
+  if (mod && !e.shiftKey && !e.altKey && (e.key === "y" || e.key === "Y")) {
+    e.preventDefault();
+    redo();
+    return;
+  }
+  if ((e.key === "f" || e.key === "F") && !mod && !e.altKey) recenter();
 });
 
 
@@ -2685,14 +2719,194 @@ function cIdent(s) {
 
 const f4 = (x) => (Math.abs(x) < 5e-5 ? 0 : x).toFixed(4) + "f";
 const f3 = (x) => x.toFixed(3) + "f";
+// Enough digits that a printed scale/offset round-trips through parseFloat.
+function fmtFloat(x) {
+  if (!isFinite(x)) return "0.0f";
+  const r = Math.round(x * 1e8) / 1e8;
+  if (r === 0) return "0.0f";
+  let s = String(r);
+  if (!/[.eE]/.test(s)) s += ".0";
+  return s + "f";
+}
 
-// Export stride. This repo's export was pos3 + color3 (6 floats) from the first commit;
-// normals were never in that array. They go after the colour, so the old pos-then-color
-// order stays and each vertex also carries the face normal (flat shaded: the same unit
-// outward normal on all 3 corners). Preview buffers stay 6 floats.
-const EXPORT_FLOATS = 9;
-// Output is ready for glDrawArrays(GL_TRIANGLES): 3 vertices per triangle, CCW from outside.
-function buildExport() {
+//----- Packed vertex -----||
+// Default export: 12 bytes, no padding, for a Mali-G31. GL's normalized SHORT maps
+// -32767..32767 onto -1..1 (32767, not 32768: 32767/32767 = 1). GL_BYTE normalized
+// maps -127..127 onto -1..1 the same way (-128 also maps to -1, so we never emit it).
+const POS_Q = 32767;
+const NRM_Q = 127;
+const EXPORT_FLOATS = 9;   // secondary export only (pos3 + color3 + normal3)
+
+// Bounds of the editor mesh. scale is half the longest side, so the extremes land on
+// exactly ±1 (±32767). offset is the centre. A mirrored model whose centre is already
+// within one step of the plane keeps that axis at 0, so reflection stays on the grid.
+function modelFrame() {
+  const n = vertCount();
+  if (!n) return { offset: [0, 0, 0], scale: 1 };
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < n; i++) {
+    const p = getVert(i);
+    for (let k = 0; k < 3; k++) { if (p[k] < lo[k]) lo[k] = p[k]; if (p[k] > hi[k]) hi[k] = p[k]; }
+  }
+  const offset = [0, 1, 2].map(k => (lo[k] + hi[k]) * 0.5);
+  let scale = 0;
+  for (let k = 0; k < 3; k++) scale = Math.max(scale, (hi[k] - lo[k]) * 0.5);
+  if (!(scale > 0)) scale = 1;
+  const ax = axisIndex(mesh.mirror);
+  if (ax >= 0 && Math.abs(offset[ax]) <= scale / POS_Q) offset[ax] = 0;
+  return { offset, scale };
+}
+
+function quantizePos(p, frame) {
+  return [0, 1, 2].map(k => {
+    let q = Math.round((p[k] - frame.offset[k]) / frame.scale * POS_Q);
+    if (q > POS_Q) q = POS_Q;
+    if (q < -POS_Q) q = -POS_Q;
+    return q;
+  });
+}
+
+function dequantizePos(q, frame) {
+  return [0, 1, 2].map(k => frame.offset[k] + (q[k] / POS_Q) * frame.scale);
+}
+
+// Octahedral unit-normal encode (Meyer). z is not recomputed after the xy unwrap;
+// the decode in the export's GLSL matches this, including the sign of a zero.
+function octEncode(n) {
+  const l1 = Math.abs(n[0]) + Math.abs(n[1]) + Math.abs(n[2]) || 1;
+  let x = n[0] / l1, y = n[1] / l1;
+  if (n[2] < 0) {
+    const ox = x, oy = y;
+    x = (1 - Math.abs(oy)) * (ox >= 0 ? 1 : -1);
+    y = (1 - Math.abs(ox)) * (oy >= 0 ? 1 : -1);
+  }
+  const q = (v) => Math.max(-NRM_Q, Math.min(NRM_Q, Math.round(v * NRM_Q)));
+  return [q(x), q(y)];
+}
+
+function octDecode(q) {
+  const x0 = q[0] / NRM_Q, y0 = q[1] / NRM_Q;
+  let x = x0, y = y0, z = 1 - Math.abs(x0) - Math.abs(y0);
+  if (z < 0) {
+    const ox = x, oy = y;
+    x = (1 - Math.abs(oy)) * (ox >= 0 ? 1 : -1);
+    y = (1 - Math.abs(ox)) * (oy >= 0 ? 1 : -1);
+  }
+  return normalize3([x, y, z]);
+}
+
+function colorByte(c) {
+  return Math.max(0, Math.min(255, Math.round(c * 255)));
+}
+
+// Snap every vertex onto the 16-bit grid the export will store, then put mirror twins
+// back on the exact reflection so symmetry doesn't drift. The step on a unit cube is
+// about 0.5/32767, so the snap is invisible. A few passes: rounding an extreme can
+// shrink the bounds, and the next pass settles on that smaller grid.
+function snapPositionsToExportGrid() {
+  const n = vertCount();
+  if (!n) return false;
+  let moved = false;
+  for (let pass = 0; pass < 4; pass++) {
+    const frame = modelFrame();
+    let passMoved = false;
+    for (let i = 0; i < n; i++) {
+      const p = dequantizePos(quantizePos(getVert(i), frame), frame);
+      for (let k = 0; k < 3; k++) {
+        if (mesh.positions[i*3 + k] !== p[k]) { mesh.positions[i*3 + k] = p[k]; passMoved = true; }
+      }
+    }
+    const ax = axisIndex(mesh.mirror);
+    if (ax >= 0) {
+      pairMirror(mesh);
+      for (let i = 0; i < n; i++) {
+        const q = mesh.partner[i];
+        if (q === i) {
+          if (mesh.positions[i*3 + ax] !== 0) { mesh.positions[i*3 + ax] = 0; passMoved = true; }
+        } else if (q > i) {
+          const r = reflect(getVert(i), ax);
+          for (let k = 0; k < 3; k++) {
+            if (mesh.positions[q*3 + k] !== r[k]) { mesh.positions[q*3 + k] = r[k]; passMoved = true; }
+          }
+        }
+      }
+    }
+    if (passMoved) moved = true;
+    else break;
+  }
+  return moved;
+}
+
+function lightingComment() {
+  return bakeOn ? "baked into colors (" + sunFormulaText() + ")" : "not baked (flat palette colors)";
+}
+
+// Default: copy-pasteable C++. 3 verts per triangle, CCW from outside. The face's
+// outward unit normal is octahedral-encoded and repeated on all 3 corners. Shade on
+// writes the baked colour into rgba; Shade off writes the raw palette colour.
+function buildExportPacked() {
+  const name = cIdent(modelName);
+  const nVerts = triCount() * 3;
+  const frame = modelFrame();
+  const L = [];
+  L.push(`// ${name}: ${triCount()} triangles, ${nVerts} verts, ${nVerts * 12} bytes (exported from Vert Modeler)`);
+  L.push(`//----- Vert -----||`);
+  L.push(`// 12 bytes, stride 12, no padding. 3 verts per triangle, CCW seen from outside.`);
+  L.push(`//   pos  int16 x3 at byte 0, GL_SHORT normalized: -32767..32767 maps to -1..1`);
+  L.push(`//   nrm  int8  x2 at byte 6, GL_BYTE normalized, octahedral unit normal (outward)`);
+  L.push(`//   rgba uint8 x4 at byte 8, GL_UNSIGNED_BYTE normalized (alpha is 255)`);
+  L.push(`// The same face normal is stored on all 3 corners of a triangle.`);
+  L.push(`// lighting ${lightingComment()}`);
+  L.push(`#include <cstdint>`);
+  L.push(`#include <cstddef>`);
+  L.push(`struct Vert {`);
+  L.push(`    int16_t pos[3];  // offset 0, GL_SHORT, normalized (-32767..32767 maps to -1..1)`);
+  L.push(`    int8_t  nrm[2];  // offset 6, GL_BYTE, normalized, octahedral-encoded unit normal`);
+  L.push(`    uint8_t rgba[4]; // offset 8, GL_UNSIGNED_BYTE, normalized`);
+  L.push(`};`);
+  L.push(`static_assert(sizeof(Vert) == 12, "Vert is 12 bytes with no padding");`);
+  L.push(`static_assert(offsetof(Vert, nrm) == 6, "nrm at byte 6");`);
+  L.push(`static_assert(offsetof(Vert, rgba) == 8, "rgba at byte 8");`);
+  L.push(`//----- ${name} -----||`);
+  L.push(`// Recover world units. aPos is the normalized GL_SHORT (pos/32767, in -1..1):`);
+  L.push(`//   world = ${name}_offset + aPos * ${name}_scale`);
+  L.push(`// Model matrix: translate(${name}_offset) * scale(${name}_scale)`);
+  L.push(`// ${name}_scale is half the longest side of the bounds; ${name}_offset is the centre.`);
+  L.push(`static const float ${name}_offset[3] = { ${frame.offset.map(fmtFloat).join(", ")} };`);
+  L.push(`static const float ${name}_scale = ${fmtFloat(frame.scale)};`);
+  L.push(`static const Vert ${name}_verts[] = {`);
+  for (let t = 0; t < triCount(); t++) {
+    const c = triColor(t).map(colorByte);
+    const nrm = octEncode(triNormal(t));
+    for (let k = 0; k < 3; k++) {
+      const q = quantizePos(getVert(mesh.tris[t*3 + k]), frame);
+      L.push(`    { { ${q.join(", ")} }, { ${nrm.join(", ")} }, { ${c[0]}, ${c[1]}, ${c[2]}, 255 } },`);
+    }
+  }
+  L.push(`};`);
+  L.push(`static const int ${name}_vert_count = ${nVerts};`);
+  L.push(`//----- Attributes -----||`);
+  L.push(`// stride 12, no padding. The shader sees pos in -1..1, nrm in -1..1, rgba in 0..1.`);
+  L.push(`glVertexAttribPointer(0, 3, GL_SHORT, GL_TRUE, 12, (void*)0);`);
+  L.push(`glVertexAttribPointer(1, 2, GL_BYTE, GL_TRUE, 12, (void*)6);`);
+  L.push(`glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, 12, (void*)8);`);
+  L.push(`glEnableVertexAttribArray(0);`);
+  L.push(`glEnableVertexAttribArray(1);`);
+  L.push(`glEnableVertexAttribArray(2);`);
+  L.push(`//----- Octahedral decode -----||`);
+  L.push(`// GLSL, paste into the vertex shader. aNrm is already normalized to -1..1.`);
+  L.push(`vec3 octDecode(vec2 e) {`);
+  L.push(`    vec3 n = vec3(e.x, e.y, 1.0 - abs(e.x) - abs(e.y));`);
+  L.push(`    if (n.z < 0.0)`);
+  L.push(`        n.xy = (1.0 - abs(n.yx)) * vec2(n.x >= 0.0 ? 1.0 : -1.0, n.y >= 0.0 ? 1.0 : -1.0);`);
+  L.push(`    return normalize(n);`);
+  L.push(`}`);
+  L.push(``);
+  return L.join("\n") + "\n";
+}
+
+// Secondary option: the v15 9-float layout (pos3 + color3 + normal3).
+function buildExportFloats() {
   const name = cIdent(modelName);
   const nVerts = triCount() * 3;
   const L = [];
@@ -2700,7 +2914,7 @@ function buildExport() {
   L.push(`// layout per vertex: pos3 (x, y, z in Z-up world units) + color3 (r, g, b in 0..1) + normal3 (nx, ny, nz, unit, outward)`);
   L.push(`//   ${EXPORT_FLOATS} floats, stride ${EXPORT_FLOATS}*sizeof(float); 3 verts per triangle, CCW seen from outside`);
   L.push(`//   normal3 is the face normal, repeated on the triangle's 3 vertices`);
-  L.push(`//   base sits on z = 0; lighting ${bakeOn ? "baked into colors (" + sunFormulaText() + ")" : "not baked (flat palette colors)"}`);
+  L.push(`//   base sits on z = 0; lighting ${lightingComment()}`);
   L.push(`// usage: mesh_upload(&g_mesh, ${name}_verts, ${name}_vert_count);`);
   L.push(`static const float ${name}_verts[] = {`);
   for (let t = 0; t < triCount(); t++) {
@@ -2714,6 +2928,11 @@ function buildExport() {
   L.push(`static const int ${name}_vert_count = ${nVerts};`);
   L.push(``);
   return L.join("\n") + "\n";
+}
+
+function buildExport() {
+  const floats = $("exportFloats") && $("exportFloats").checked;
+  return floats ? buildExportFloats() : buildExportPacked();
 }
 
 // Clipboard API needs a secure context (https or localhost); file:// may refuse,
@@ -2743,6 +2962,7 @@ function toast(msg) {
 
 async function doExport() {
   $("exportName").value = modelName;
+  $("exportFloats").checked = false;             // the 12-byte Vert is the default
   const text = buildExport();
   $("exportText").value = text;
   $("modal").classList.add("show");
@@ -2754,23 +2974,65 @@ async function doExport() {
 //----- Import -----||
 // Paste text from a previous export and get an editable mesh back.
 //  1. Name: "<name>_verts" -> modelName.
-//  2. Numbers: everything inside the braces of the _verts[] array (or the whole text if
-//     there are no braces), with comments removed; "1.0f", "-.5", "2e-3" all parse.
-//  3. Every vertex is 6 numbers (x, y, z, r, g, b) or 9 (those, then nx, ny, nz).
-//     The export comment says which (stride 6 or stride 9). Every 3 vertices = one triangle.
+//  2. Which file? Auto-detected, packed first (its GLSL and attrib calls contain
+//     extra numbers that must not be read as vertices):
+//       12-byte Vert  — "struct Vert", "int16_t pos", "octDecode", "Vert name_verts",
+//                       or a run of { {x,y,z}, {nx,ny}, {r,g,b,a} }.
+//                       World position = offset + (short/32767)*scale. Colour = rgb/255.
+//                       Stored normals are dropped; the next export rebuilds them from
+//                       the triangle winding.
+//       9-float       — header says normal3 / stride 9, or the count only fits 9.
+//       6-float       — header says stride 6, or the count fits 6 (a multiple of 54
+//                       is the old 6-float file unless the header says 9).
+//  3. Numbers (float files): everything inside the braces of the _verts[] array (or
+//     the whole text if there are no braces), comments removed; "1.0f" parses.
+//     Every 3 vertices = one triangle. Colour stays at offset 3.
 //  4. Weld: vertices whose positions are within WELD_EPS share one index, so moving a
 //     corner moves every triangle that touches it (like the cube you started with).
-//  5. Colours are kept EXACTLY. If the export had Shade on, the light was multiplied in,
-//     so we divide it back out (and turn Shade on) so re-exporting prints the same
-//     numbers. Which one? The export's own comment says "baked into colors" or "not
-//     baked"; for bare numbers we guess by which reading matches palette colours more
-//     (tie = flat, which is always exact). The sun is the n.(x,y,z) in that comment
-//     (missing, or the original 0.3,0.5,0.8, means the original sun). A baked import
-//     points the editor's sun the same way, so the preview matches the file. Colours
-//     that aren't in the active palette are added to a palette called "Imported" so
-//     you can paint with them again.
-// The editor's faces are triangles, so no quad merging is needed.
+//  5. Colours are kept. If the export had Shade on, the light was multiplied in,
+//     so we divide it back out (and turn Shade on). Which one? The export's own
+//     comment says "baked into colors" or "not baked"; for bare numbers we guess by
+//     which reading matches palette colours more (tie = flat). The sun is the
+//     n.(x,y,z) in that comment (missing, or the original 0.3,0.5,0.8, means the
+//     original sun). A baked import points the editor's sun the same way. Colours
+//     that aren't in the active palette are added to a palette called "Imported".
+// A 12-byte file is turned into the same pos3+color3 list, so one weld path serves
+// all three. The editor has no stored normals: they come from the winding.
+function isPackedExport(text) {
+  if (/struct\s+Vert\b/.test(text)) return true;
+  if (/int16_t\s+pos\s*\[/.test(text)) return true;
+  if (/octDecode\s*\(/.test(text)) return true;
+  if (/\bVert\s+[A-Za-z_][A-Za-z0-9_]*_verts\s*\[/.test(text)) return true;
+  return /\{\s*\{\s*-?\d+\s*,\s*-?\d+\s*,\s*-?\d+\s*\}\s*,\s*\{\s*-?\d+\s*,\s*-?\d+\s*\}\s*,\s*\{\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\}\s*\}/.test(text);
+}
+
+function parsePacked(text) {
+  const nameMatch = text.match(/([A-Za-z_][A-Za-z0-9_]*)_verts\s*\[/);
+  const offM = text.match(/_offset\s*\[\s*3\s*\]\s*=\s*\{([^}]*)\}/);
+  const scM = text.match(/_scale\s*=\s*([-+0-9.eE]+)/);
+  if (!offM || !scM) throw new Error("12-byte export is missing model_offset or model_scale.");
+  const offset = offM[1].split(",").map(s => parseFloat(s));
+  const scale = parseFloat(scM[1]);
+  if (offset.length !== 3 || offset.some(n => !isFinite(n)) || !(scale > 0))
+    throw new Error("12-byte export has a bad offset or scale.");
+  const re = /\{\s*\{\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*\}\s*,\s*\{\s*(-?\d+)\s*,\s*(-?\d+)\s*\}\s*,\s*\{\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\}\s*\}/g;
+  const nums = [];
+  let m;
+  while ((m = re.exec(text))) {
+    nums.push(
+      offset[0] + (+m[1] / POS_Q) * scale,
+      offset[1] + (+m[2] / POS_Q) * scale,
+      offset[2] + (+m[3] / POS_Q) * scale,
+      +m[6] / 255, +m[7] / 255, +m[8] / 255);
+  }
+  if (nums.length < 18 || nums.length % 18)
+    throw new Error("12-byte export needs whole triangles of Vert { pos, nrm, rgba }.");
+  const lighting = /baked into colors/.test(text) ? "baked" : /not baked/.test(text) ? "flat" : null;
+  return { name: nameMatch ? nameMatch[1] : null, nums, lighting, sun: parseSunVector(text), stride: 6, kind: "packed" };
+}
+
 function parseExport(text) {
+  if (isPackedExport(text)) return parsePacked(text);
   const nameMatch = text.match(/([A-Za-z_][A-Za-z0-9_]*)_verts\s*\[/);
   let body = text;
   const open = nameMatch ? text.indexOf("{", nameMatch.index) : text.indexOf("{");
@@ -2792,7 +3054,7 @@ function parseExport(text) {
   if (!stride || nums.length < perTri) throw new Error("Need at least one triangle (" + (perTri || 18) + " numbers), found " + nums.length + ".");
   if (nums.length % perTri) throw new Error(nums.length + " numbers isn't a whole number of triangles (" + stride + " per vertex, 3 vertices each).");
   const lighting = /baked into colors/.test(text) ? "baked" : /not baked/.test(text) ? "flat" : null;
-  return { name: nameMatch ? nameMatch[1] : null, nums, lighting, sun: parseSunVector(text), stride };
+  return { name: nameMatch ? nameMatch[1] : null, nums, lighting, sun: parseSunVector(text), stride, kind: stride === 9 ? "float9" : "float6" };
 }
 
 function importMesh(nums, mirror, lighting = null, light = null, stride = 6) {
@@ -2876,6 +3138,9 @@ function doImport(text) {
   clearSelection();
   meshChanged();
   const notes = [`${vertCount()} verts, ${triCount()} tris`];
+  if (parsed.kind === "packed") notes.push("12-byte Vert");
+  else if (parsed.kind === "float9") notes.push("converted from 9-float");
+  else notes.push("converted from 6-float");
   const added = addToImportedPalette(mesh.colors);
   if (added) notes.push(`${added} new colour${added > 1 ? "s" : ""} added to the "Imported" palette`);
   if (res.dropped) notes.push(`${res.dropped} zero-area tris dropped`);
@@ -2913,12 +3178,13 @@ function updateUI() {
   $("mirrorLabel").textContent = mesh.mirror ? "Mirror " + mesh.mirror.toUpperCase() : "Mirror off";
   $("bSym").disabled = !mesh.mirror;
   $("bUndo").disabled = undoStack.length === 0;
+  $("bRedo").disabled = redoStack.length === 0;
   // Dissolve works on exactly one vertex (with several selected it's disabled).
   $("bDissolve").disabled = !(editMode() && selection().length === 1);
   $("roMerge").classList.toggle("off", !mergeOn);
   // Extrude needs 3+ selected verts (if they cover no face, pressing it says why).
   $("bExtrude").disabled = !(editMode() && selection().length >= 3);
-  $("views").classList.toggle("hide", !overlayOn);
+  // View snaps stay up in the clean preview and with nothing selected.
   $("palette").classList.toggle("show", mode === "paint");
   renderPalette();
 
@@ -2931,12 +3197,12 @@ function updateUI() {
 
 // Stats line, based on the EXPORT (what the game uploads), not the editor's welded verts:
 //   export verts = tris * 3 (un-indexed, one copy per triangle corner, own colour)
-//   bytes        = export verts * 9 floats * 4 bytes = sizeof(<name>_verts[]) = VBO size
+//   bytes        = export verts * 12 = sizeof(Vert) * N = the default packed VBO
 // Unique editor verts are shown in brackets. Hidden in clean preview with the overlay.
 function updateStats() {
   const el = $("stats");
   el.classList.toggle("hide", !overlayOn);
-  const tris = triCount(), verts = tris * 3, bytes = verts * EXPORT_FLOATS * 4;
+  const tris = triCount(), verts = tris * 3, bytes = verts * 12;
   const n = (x) => x.toLocaleString("en-US");
   const nSel = selection().length;
   el.textContent = `${n(verts)} verts · ${n(tris)} tris · ${n(bytes)} B  (${n(vertCount())} unique)` +
@@ -3228,6 +3494,7 @@ function doSymm() {
 $("bSym").addEventListener("click", doSymm);
 
 $("bUndo").addEventListener("click", undo);
+$("bRedo").addEventListener("click", redo);
 $("bExtrude").addEventListener("click", doExtrude);
 $("roMerge").addEventListener("click", () => setMergeOn(!mergeOn));
 $("roScale").addEventListener("click", () => {
@@ -3272,6 +3539,7 @@ $("exportName").addEventListener("input", () => {
   $("exportText").value = buildExport();
   save();
 });
+$("exportFloats").addEventListener("change", () => { $("exportText").value = buildExport(); });
 $("mClose").addEventListener("click", () => $("modal").classList.remove("show"));
 $("mCopy").addEventListener("click", async () => {
   const ok = await copyText(buildExport());
@@ -3778,6 +4046,7 @@ function drawGizmo() {
 newModel("x");   // default: mirror X on
 palLoad();
 load();
+if (snapPositionsToExportGrid()) save();       // older saves land on the same grid the game uses
 loadSun();
 updateUI();
 requestAnimationFrame(frame);
