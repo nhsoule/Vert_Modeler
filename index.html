@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="pofa-modeler-version" content="v16-packed-export">
+<meta name="pofa-modeler-version" content="v17-header-export">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -394,7 +394,7 @@
 <script>
 "use strict";
 // =====================================================================================
-//  Vert Modeler v16 (the pofa modeler)
+//  Vert Modeler v17 (the pofa modeler)
 //  A tiny touch-first low-poly modeler. Every model starts as a cube; you can move
 //  vertices (with an X/Y/Z axis gizmo), split edges, and paint faces, with optional live
 //  mirror symmetry, then export a C++ array in exactly the format the pofa renderer
@@ -407,10 +407,12 @@
 //  space hides the editing overlay for a clean in-game preview. Colours come from named
 //  palettes you can create, edit, export to C++, and import (Paint mode). Shade opens a
 //  sun menu: swing the light onto a dark side (the same direction is baked on export).
-//  The default export is a 12-byte Vert (int16 position, octahedral normal, rgba).
-//  Positions snap to that 16-bit grid on every edit. An older 9-float export is still
-//  in the export window. Import accepts the 12-byte Vert and the old 6-float and
-//  9-float arrays. Rotating several vertices turns them together about one centre.
+//  The default export is a model header: #pragma once, #include "vert.h", then the
+//  12-byte Vert array (int16 position, octahedral normal, rgba). The struct itself
+//  lives in vert.h so many model headers can be included together. Positions snap to
+//  that 16-bit grid on every edit. An older 9-float export is still in the export
+//  window. Import accepts this header, the v16 packed export, and the old 6-float
+//  and 9-float arrays. Rotating several vertices turns them together about one centre.
 //
 //  Coordinates match the game: Z is up, X is left/right, Y is forward/back, and models
 //  sit with their base on z = 0. Rendering uses raw WebGL 2 (= OpenGL ES 3.0), so the
@@ -2841,32 +2843,26 @@ function lightingComment() {
   return bakeOn ? "baked into colors (" + sunFormulaText() + ")" : "not baked (flat palette colors)";
 }
 
-// Default: copy-pasteable C++. 3 verts per triangle, CCW from outside. The face's
-// outward unit normal is octahedral-encoded and repeated on all 3 corners. Shade on
-// writes the baked colour into rgba; Shade off writes the raw palette colour.
+// Default: a standalone model header for models/<name>.h. Many of these are included
+// into one render.cpp, so the Vert struct lives in vert.h (one copy) and the attribute
+// setup and octDecode stay in the renderer. 3 verts per triangle, CCW from outside.
+// The face's outward unit normal is octahedral-encoded and repeated on all 3 corners.
+// Shade on writes the baked colour into rgba; Shade off writes the raw palette colour.
 function buildExportPacked() {
   const name = cIdent(modelName);
   const nVerts = triCount() * 3;
   const frame = modelFrame();
   const L = [];
+  L.push(`#pragma once`);
   L.push(`// ${name}: ${triCount()} triangles, ${nVerts} verts, ${nVerts * 12} bytes (exported from Vert Modeler)`);
   L.push(`//----- Vert -----||`);
   L.push(`// 12 bytes, stride 12, no padding. 3 verts per triangle, CCW seen from outside.`);
-  L.push(`//   pos  int16 x3 at byte 0, GL_SHORT normalized: -32767..32767 maps to -1..1`);
-  L.push(`//   nrm  int8  x2 at byte 6, GL_BYTE normalized, octahedral unit normal (outward)`);
-  L.push(`//   rgba uint8 x4 at byte 8, GL_UNSIGNED_BYTE normalized (alpha is 255)`);
+  L.push(`//   pos  int16x3 @0, GL_SHORT normalized: -32767..32767 maps to -1..1`);
+  L.push(`//   nrm  int8x2 octahedral @6, GL_BYTE normalized, unit normal (outward)`);
+  L.push(`//   rgba uint8x4 @8, GL_UNSIGNED_BYTE normalized (alpha is 255)`);
   L.push(`// The same face normal is stored on all 3 corners of a triangle.`);
   L.push(`// lighting ${lightingComment()}`);
-  L.push(`#include <cstdint>`);
-  L.push(`#include <cstddef>`);
-  L.push(`struct Vert {`);
-  L.push(`    int16_t pos[3];  // offset 0, GL_SHORT, normalized (-32767..32767 maps to -1..1)`);
-  L.push(`    int8_t  nrm[2];  // offset 6, GL_BYTE, normalized, octahedral-encoded unit normal`);
-  L.push(`    uint8_t rgba[4]; // offset 8, GL_UNSIGNED_BYTE, normalized`);
-  L.push(`};`);
-  L.push(`static_assert(sizeof(Vert) == 12, "Vert is 12 bytes with no padding");`);
-  L.push(`static_assert(offsetof(Vert, nrm) == 6, "nrm at byte 6");`);
-  L.push(`static_assert(offsetof(Vert, rgba) == 8, "rgba at byte 8");`);
+  L.push(`#include "vert.h"`);
   L.push(`//----- ${name} -----||`);
   L.push(`// Recover world units. aPos is the normalized GL_SHORT (pos/32767, in -1..1):`);
   L.push(`//   world = ${name}_offset + aPos * ${name}_scale`);
@@ -2885,22 +2881,6 @@ function buildExportPacked() {
   }
   L.push(`};`);
   L.push(`static const int ${name}_vert_count = ${nVerts};`);
-  L.push(`//----- Attributes -----||`);
-  L.push(`// stride 12, no padding. The shader sees pos in -1..1, nrm in -1..1, rgba in 0..1.`);
-  L.push(`glVertexAttribPointer(0, 3, GL_SHORT, GL_TRUE, 12, (void*)0);`);
-  L.push(`glVertexAttribPointer(1, 2, GL_BYTE, GL_TRUE, 12, (void*)6);`);
-  L.push(`glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, 12, (void*)8);`);
-  L.push(`glEnableVertexAttribArray(0);`);
-  L.push(`glEnableVertexAttribArray(1);`);
-  L.push(`glEnableVertexAttribArray(2);`);
-  L.push(`//----- Octahedral decode -----||`);
-  L.push(`// GLSL, paste into the vertex shader. aNrm is already normalized to -1..1.`);
-  L.push(`vec3 octDecode(vec2 e) {`);
-  L.push(`    vec3 n = vec3(e.x, e.y, 1.0 - abs(e.x) - abs(e.y));`);
-  L.push(`    if (n.z < 0.0)`);
-  L.push(`        n.xy = (1.0 - abs(n.yx)) * vec2(n.x >= 0.0 ? 1.0 : -1.0, n.y >= 0.0 ? 1.0 : -1.0);`);
-  L.push(`    return normalize(n);`);
-  L.push(`}`);
   L.push(``);
   return L.join("\n") + "\n";
 }
@@ -2976,8 +2956,9 @@ async function doExport() {
 //  1. Name: "<name>_verts" -> modelName.
 //  2. Which file? Auto-detected, packed first (its GLSL and attrib calls contain
 //     extra numbers that must not be read as vertices):
-//       12-byte Vert  — "struct Vert", "int16_t pos", "octDecode", "Vert name_verts",
-//                       or a run of { {x,y,z}, {nx,ny}, {r,g,b,a} }.
+//       12-byte Vert  — a v17 header (#include "vert.h"), a v16 export ("struct Vert",
+//                       "int16_t pos", "octDecode"), "Vert name_verts", or a run of
+//                       { {x,y,z}, {nx,ny}, {r,g,b,a} }.
 //                       World position = offset + (short/32767)*scale. Colour = rgb/255.
 //                       Stored normals are dropped; the next export rebuilds them from
 //                       the triangle winding.
@@ -2999,9 +2980,10 @@ async function doExport() {
 // A 12-byte file is turned into the same pos3+color3 list, so one weld path serves
 // all three. The editor has no stored normals: they come from the winding.
 function isPackedExport(text) {
-  if (/struct\s+Vert\b/.test(text)) return true;
-  if (/int16_t\s+pos\s*\[/.test(text)) return true;
-  if (/octDecode\s*\(/.test(text)) return true;
+  if (/#include\s+"vert\.h"/.test(text)) return true;       // v17 model header
+  if (/struct\s+Vert\b/.test(text)) return true;            // v16, struct pasted in
+  if (/int16_t\s+pos\s*\[/.test(text)) return true;         // v16
+  if (/octDecode\s*\(/.test(text)) return true;             // v16
   if (/\bVert\s+[A-Za-z_][A-Za-z0-9_]*_verts\s*\[/.test(text)) return true;
   return /\{\s*\{\s*-?\d+\s*,\s*-?\d+\s*,\s*-?\d+\s*\}\s*,\s*\{\s*-?\d+\s*,\s*-?\d+\s*\}\s*,\s*\{\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\}\s*\}/.test(text);
 }
