@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="vert-modeler-version" content="v19-player-ref">
+<meta name="vert-modeler-version" content="v20-move-refs">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -357,6 +357,7 @@
         <button id="scHide" type="button" title="Hide / show the selected objects (H)">Hide</button>
         <button id="scSave" type="button" title="Download the whole scene as a .json project">Save .json</button>
         <button id="scOpen" type="button" title="Open a scene .json (replaces the scene) or add .h models">Open…</button>
+        <button id="scRefs" type="button" title="Put the rock and player references back beside the start cube">Reset refs</button>
         <button id="scNew" type="button" title="Start over with one cube">New scene</button>
       </div>
       <div class="note" id="scNote"></div>
@@ -1614,6 +1615,23 @@ try {
 } catch (e) { /* storage blocked */ }
 let showRock     = REF_STATES[refState].rock;     // reference rock visible?
 let showPlayer   = REF_STATES[refState].player;   // reference player visible?
+// Where each reference stands: world position (feet / base on pos z) and a turn about Z
+// in radians. View-only: stored under REFPOS_KEY, never in the scene, undo or exports.
+const REFPOS_KEY = KEY_PREFIX + "refpos";
+const REF_HOME = { rock: { pos: ROCK_OFFSET.slice(), rot: 0 }, player: { pos: PLAYER_OFFSET.slice(), rot: 0 } };
+let refXf = JSON.parse(JSON.stringify(REF_HOME));
+try {
+  const r = JSON.parse(localStorage.getItem(REFPOS_KEY));
+  for (const k of ["rock", "player"]) {
+    const v = r && r[k];
+    if (v && Array.isArray(v.pos) && v.pos.length === 3 && v.pos.every(isFinite) && isFinite(v.rot))
+      refXf[k] = { pos: v.pos.map(Number), rot: +v.rot };
+  }
+} catch (e) { /* none saved, or storage blocked */ }
+let refSel = null;          // "rock" | "player" while a reference is selected in Object mode
+const refShown = (k) => k === "rock" ? showRock : k === "player" ? showPlayer : false;
+const refName = (k) => k === "rock" ? "Rock" : "Player";
+function saveRefXf() { try { localStorage.setItem(REFPOS_KEY, JSON.stringify(refXf)); } catch (e) { /* ignore */ } }
 function setRefState(st) {
   refState = ((st % 4) + 4) % 4;
   showRock = REF_STATES[refState].rock; showPlayer = REF_STATES[refState].player;
@@ -1782,7 +1800,10 @@ function objs() {
 function activeObj() { return objs()[scene.active]; }
 const objById = (id) => objs().find(o => o.id === id);
 const objOff = (o) => v3.sub(o.pos, frameOff);       // object origin in the editing frame
-const objSelList = () => objs().filter(o => objSel.has(o.id) && !o.hidden);
+// While a reference is selected, no object is: commands that work on the selection
+// (Duplicate, Copy, Combine, Delete, Hide) see an empty list and do nothing.
+const objSelList = () => refSel ? [] : objs().filter(o => objSel.has(o.id) && !o.hidden);
+const objGizmoOn = () => !!refSel || objSelList().length > 0;
 // Run fn with `mesh` pointing at another mesh (the helpers all read the global).
 function withMesh(m, fn) {
   const saved = mesh;
@@ -2211,13 +2232,15 @@ function sceneFromJson(d, replace) {
 // Scale scales positions and meshes about it, Rotate turns them (whole objects, the
 // meshes are rotated in place). Snap (the ⌗ chip button): 0.125 / 15° / ×0.125.
 const objPivot = () => {
+  if (refSel) return v3.sub(refXf[refSel].pos, frameOff);
   const list = objSelList();
   if (!list.length) return null;
   const c = [0, 0, 0];
   for (const o of list) { const p = objOff(o); c[0] += p[0]; c[1] += p[1]; c[2] += p[2]; }
   return c.map(v => v / list.length);
 };
-function pickObject(sx, sy) {
+function pickObject(sx, sy) { return pickObjectT(sx, sy).i; }
+function pickObjectT(sx, sy) {
   const r = screenRay(sx, sy);
   let best = -1, bestT = Infinity;
   objs().forEach((o, i) => {
@@ -2229,9 +2252,18 @@ function pickObject(sx, sy) {
       if (d !== null && d < bestT) { bestT = d; best = i; }
     }
   });
-  return best;
+  return { i: best, t: bestT };
+}
+// Tap a reference (Object mode): it alone gets the gizmo (move, or turn about Z). Tap
+// an object or empty space to go back to the objects.
+function refTap(k) {
+  refSel = k;
+  if (gizmoMode === "scale") gizmoMode = "move";
+  toast(`${refName(k)} reference: drag to move${k === "player" ? ", ↻ to turn" : ""} (never exported)`);
+  meshDirty = true; updateUI();
 }
 function objTap(i) {
+  refSel = null;
   const o = objs()[i];
   if (i !== scene.active) { setActive(i, true); toast(`${o.name}` + (objSel.size > 1 ? ` (${objSel.size} selected)` : "")); return; }
   if (objSel.size > 1) {
@@ -2279,6 +2311,7 @@ function applyObjRotate(starts, c, a, ang) {
 }
 // After a whole-object edit: mirror, export grid, triangulation for each moved mesh.
 function objGestureEnd(g) {
+  if (g.ref) { saveRefXf(); meshDirty = true; updateUI(); return; }
   if (g.rotate || g.scale) for (const [id, st] of g.starts) {
     const o = objById(id); if (!o) continue;
     withMesh(o.mesh, () => {
@@ -2300,10 +2333,11 @@ function objScaleFactor(f) {
 }
 function objPointerDown(p) {
   const list = objSelList();
-  if (!list.length) return false;
+  if (!list.length && !refSel) return false;
   const c = objPivot();
-  const base = { kind: "axis", obj: true, starts: objStarts(list), before: snapshot(), moved: false,
-                 startX: p.x, startY: p.y, merge: -1, solo: -1 };
+  const base = { kind: "axis", obj: true, moved: false, startX: p.x, startY: p.y, merge: -1, solo: -1 };
+  if (refSel) Object.assign(base, { ref: refSel, refStart: JSON.parse(JSON.stringify(refXf[refSel])) });
+  else Object.assign(base, { starts: objStarts(list), before: snapshot() });
   const ra = rotateActive() ? pickRing(p.x, p.y) : -1;
   if (ra >= 0) {
     gesture = Object.assign(base, { rotate: true, axis: ra, p0: c, angle: 0, shown: 0 });
@@ -2315,7 +2349,7 @@ function objPointerDown(p) {
   const h = pickHandle(p.x, p.y);
   if (h < 0) return false;
   const dir = [0, 0, 0];
-  if (scaleActive()) {
+  if (scaleActive() && !refSel) {
     let sGrab;
     if (h < 3) {
       dir[h] = 1;
@@ -2345,8 +2379,11 @@ function objGestureMove(p) {
     g.lastRaw = raw;
     g.angle += d;
     g.shown = objSnap ? Math.round(g.angle / OBJ_ROT_STEP) * OBJ_ROT_STEP : g.angle;
-    if (!g.moved) { pushUndo(g.before); g.moved = true; }
-    applyObjRotate(g.starts, g.p0, g.axis, g.shown);
+    if (g.ref) { g.moved = true; refXf[g.ref].rot = g.refStart.rot + g.shown; placeRef(g.ref); }
+    else {
+      if (!g.moved) { pushUndo(g.before); g.moved = true; }
+      applyObjRotate(g.starts, g.p0, g.axis, g.shown);
+    }
   } else if (g.scale) {
     let f;
     if (g.axis < 3) {
@@ -2367,8 +2404,11 @@ function objGestureMove(p) {
     const a = g.axis;
     let delta = s - g.sGrab;
     if (objSnap) { const w0 = g.p0[a] + frameOff[a]; delta = Math.round((w0 + delta) / SNAP_STEP) * SNAP_STEP - w0; }
-    if (!g.moved) { pushUndo(g.before); g.moved = true; }
-    applyObjMove(g.starts, a, delta);
+    if (g.ref) { g.moved = true; refXf[g.ref].pos[a] = g.refStart.pos[a] + delta; placeRef(g.ref); }
+    else {
+      if (!g.moved) { pushUndo(g.before); g.moved = true; }
+      applyObjMove(g.starts, a, delta);
+    }
   }
   meshDirty = true;
   updateUI();
@@ -2377,6 +2417,12 @@ function objGestureMove(p) {
 function applyTypedObj(axis, scale, rotate) {
   const n = parseCoord($("roInput").value);
   if (n === null) { toast("Not a number"); return; }
+  if (refSel) {                                    // a reference: position, or degrees about Z
+    const x = refXf[refSel];
+    if (rotate) x.rot += n * Math.PI / 180; else x.pos[axis] = n;
+    placeRef(refSel); saveRefXf(); meshDirty = true; updateUI();
+    return;
+  }
   const list = objSelList();
   if (!list.length) return;
   const starts = objStarts(list), c = objPivot();
@@ -2542,8 +2588,41 @@ const gizmoGuide = makeBatch();   // thin line along the axis being dragged
 let meshDirty = true;
 
 // The rock goes up once, shifted by ROCK_OFFSET so it stands beside the cube.
-uploadBatch(rockBatch, GAME_ROCK.map((v, i) => (i % 6) < 3 ? v + ROCK_OFFSET[i % 6] : v));
-uploadBatch(playerBatch, buildPlayer().map((v, i) => (i % 6) < 3 ? v + PLAYER_OFFSET[i % 6] : v));
+// References: built about their own origin, then turned about Z and placed by refXf.
+// The placed copy is kept on the CPU too, for tap picking. Re-uploaded only when moved.
+const REF_SRC = { rock: GAME_ROCK, player: buildPlayer() }, refWorld = {};
+function placeRef(k) {
+  const { pos, rot } = refXf[k], c = Math.cos(rot), sn = Math.sin(rot), src = REF_SRC[k], out = new Array(src.length);
+  for (let i = 0; i < src.length; i += 6) {
+    const x = src[i], y = src[i+1];
+    out[i] = x * c - y * sn + pos[0]; out[i+1] = x * sn + y * c + pos[1]; out[i+2] = src[i+2] + pos[2];
+    out[i+3] = src[i+3]; out[i+4] = src[i+4]; out[i+5] = src[i+5];
+  }
+  refWorld[k] = out;
+  uploadBatch(k === "rock" ? rockBatch : playerBatch, out);
+}
+placeRef("rock"); placeRef("player");
+function resetRefs() {
+  refXf = JSON.parse(JSON.stringify(REF_HOME));
+  placeRef("rock"); placeRef("player");
+  saveRefXf();
+  toast("References back to their start spots");
+  updateUI();
+}
+// Nearest visible reference under the screen point: { k, t } or null.
+function pickRef(sx, sy) {
+  const r = screenRay(sx, sy);
+  let best = null;
+  for (const k of ["rock", "player"]) {
+    if (!refShown(k)) continue;
+    const W = refWorld[k], V = (i) => [W[i] - frameOff[0], W[i+1] - frameOff[1], W[i+2] - frameOff[2]];
+    for (let i = 0; i < W.length; i += 18) {
+      const d = rayTriangle(r.origin, r.dir, V(i), V(i + 6), V(i + 12));
+      if (d !== null && (!best || d < best.t)) best = { k, t: d };
+    }
+  }
+  return best;
+}
 
 // Ground grid on the XY plane at z = 0, with the X axis red and the Y axis green.
 // Fine lines every 0.25 near the origin, plus fainter 1-unit lines out to ±8 for scenes.
@@ -2938,12 +3017,12 @@ function updateGizmoSigns(p) {
 
 // Scale handles are used when the toggle is on AND 2+ verts are selected.
 // Object mode: whole objects, any count (one object scales / turns about its pivot).
-const scaleActive = () => gizmoMode === "scale" && (mode === "object" ? objSelList().length > 0 : selection().length >= 2);
+const scaleActive = () => gizmoMode === "scale" && (mode === "object" ? objSelList().length > 0 : selection().length >= 2);   // never for references
 // What the gizmo is acting on: "verts", "objects", or null (no gizmo).
 function gizmoTarget() {
   if (!overlayOn) return null;
   if (editMode() && selection().length) return "verts";
-  if (mode === "object" && objSelList().length) return "objects";
+  if (mode === "object" && objGizmoOn()) return "objects";
   return null;
 }
 // Pivot for scaling (and where the gizmo sits in Scale): the centroid of the selection
@@ -3471,10 +3550,10 @@ function boxSelect(x0, y0, x1, y1) {
 // release so the partner links match the new positions.
 // One undo per drag; no auto-merge; re-triangulation runs on release.
 const ROT_PX = 62, ROT_GRAB_PX = 14;
-const rotateActive = () => gizmoMode === "rotate" && (mode === "object" ? objSelList().length > 0 : selection().length >= 2);
+const rotateActive = () => gizmoMode === "rotate" && (mode === "object" ? objGizmoOn() : selection().length >= 2);
 const unitAxis = (a) => { const e = [0, 0, 0]; e[a] = 1; return e; };
 function ringLocked(a) {
-  if (mode === "object") return false;
+  if (mode === "object") return !!refSel && a !== 2;   // references only turn about Z
   const ax = axisIndex(mesh.mirror);
   return ax >= 0 && a !== ax && selection().every(i => mesh.partner[i] === i);
 }
@@ -3620,6 +3699,7 @@ function emptyTap(x, y, trulyEmpty) {
     return;
   }
   lastEmptyTap = trulyEmpty ? { t: now, x, y } : null;
+  if (mode === "object" && refSel) { refSel = null; meshDirty = true; updateUI(); }
   if (mode === "object" && objSel.size > 1) { objSel = new Set([activeObj().id]); meshDirty = true; updateUI(); }
   if (selection().length) { clearSelection(); meshDirty = true; updateUI(); }
 }
@@ -3632,9 +3712,10 @@ function handleTap(x, y) {
     return;
   }
   if (mode === "object") {
-    const i = pickObject(x, y);
-    if (i < 0) emptyTap(x, y, true);
-    else { lastEmptyTap = null; objTap(i); }
+    const o = pickObjectT(x, y), r = pickRef(x, y);
+    if (r && r.t < o.t) { lastEmptyTap = null; refTap(r.k); return; }
+    if (o.i < 0) emptyTap(x, y, true);
+    else { lastEmptyTap = null; objTap(o.i); }
     return;
   }
   if (editMode()) {
@@ -4312,6 +4393,7 @@ function updateSunMenu() {
 }
 
 function updateUI() {
+  if (refSel && (mode !== "object" || !refShown(refSel))) refSel = null;
   for (const b of document.querySelectorAll("[data-mode]")) b.classList.toggle("on", b.dataset.mode === mode);
   const rs = REF_STATES[refState];
   $("bRock").classList.toggle("on", refState !== 0);
@@ -4385,10 +4467,10 @@ function mirrorWarnings() {
 // The axis being dragged is underlined.
 // Object mode: the same chip for the selected objects (pivot in scene units; with
 // several, the centroid of their pivots). The ⌗ button toggles object snapping.
-const roKey = () => mode === "object" ? "obj:" + objSelList().map(o => o.id).join(",") : selection().join(",");
+const roKey = () => mode === "object" ? (refSel ? "ref:" + refSel + ":" : "obj:") + objSelList().map(o => o.id).join(",") : selection().join(",");
 function updateReadout() {
   const om = mode === "object";
-  const show = overlayOn && (om ? objSelList().length > 0 : editMode() && selection().length > 0);
+  const show = overlayOn && (om ? objGizmoOn() : editMode() && selection().length > 0);
   $("readout").classList.toggle("show", show);
   if (!show) { if (roEditing) closeCoordEdit(false); return; }
   if (roEditing && roEditing.key !== roKey()) closeCoordEdit(false);
@@ -4396,7 +4478,7 @@ function updateReadout() {
   const multi = om ? objSelList().length > 1 : selection().length > 1;
   const p = om ? v3.add(objPivot(), frameOff) : selCentroid(), act = gesture && gesture.kind === "axis" ? gesture.axis : -1;
   const locked = (a) => !om && selAxisLocked(a);
-  $("roScale").classList.toggle("hide", !(multi || om));
+  $("roScale").classList.toggle("hide", !(multi || om) || !!refSel);
   $("roScale").classList.toggle("on", scaleActive());
   $("roRotate").classList.toggle("hide", !(multi || om));
   $("roRotate").classList.toggle("on", rotateActive());
@@ -4451,8 +4533,9 @@ function axisLocked(v, a) {
 
 function openCoordEdit(a) {
   if (mode === "object") {                         // whole objects: never locked
-    if (!objSelList().length) return;
+    if (!objGizmoOn()) return;
     const rot = rotateActive(), sc = scaleActive();
+    if (rot && refSel && a !== 2) { toast("References only turn about Z"); return; }
     roEditing = { key: roKey(), axis: a, obj: true, rotate: rot, scale: sc };
     $("roEditLbl").textContent = rot ? "∠" + "XYZ"[a] + "°" : sc ? "×" + "XYZ"[a] : (objSelList().length > 1 ? "c" : "") + "XYZ"[a];
     $("roEditLbl").className = "xyz"[a];
@@ -4728,6 +4811,7 @@ $("fileIn").addEventListener("change", async () => {
 $("bExport").addEventListener("click", doExport);
 
 //----- Scene Panel Wiring -----||
+$("scRefs").addEventListener("click", resetRefs);
 $("bScene").addEventListener("click", () => { $("scenePanel").classList.toggle("show"); updateUI(); });
 $("scClose").addEventListener("click", () => { $("scenePanel").classList.remove("show"); updateUI(); });
 $("scCube").addEventListener("click", cmdAddCube);
@@ -5148,16 +5232,15 @@ function frame() {
   gl.drawArrays(gl.TRIANGLES, 0, faceBatch.count);
   gl.disable(gl.CULL_FACE);
   // 2c) Reference rock (display only): the game's colours, no edges, just like in game.
-  if (showRock) {
+  //     A selected reference is tinted yellow.
+  for (const [k, b] of [["rock", rockBatch], ["player", playerBatch]]) {
+    if (!refShown(k)) continue;
+    gl.uniform4f(U.tint, 1.0, 0.85, 0.1, overlayOn && refSel === k ? 0.35 : 0);
     gl.uniformMatrix4fv(U.mvp, false, world);
-    gl.bindVertexArray(rockBatch.vao);
-    gl.drawArrays(gl.TRIANGLES, 0, rockBatch.count);
+    gl.bindVertexArray(b.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, b.count);
   }
-  if (showPlayer) {
-    gl.uniformMatrix4fv(U.mvp, false, world);
-    gl.bindVertexArray(playerBatch.vao);
-    gl.drawArrays(gl.TRIANGLES, 0, playerBatch.count);
-  }
+  gl.uniform4f(U.tint, 0, 0, 0, 0);
   gl.disable(gl.POLYGON_OFFSET_FILL);
   gl.uniformMatrix4fv(U.mvp, false, mvpA);
 
@@ -5168,7 +5251,7 @@ function frame() {
   //    Object mode: only the selected objects' edges, in yellow (the active one brighter).
   if (mode === "object") {
     for (const o of scene.objects) {
-      if (o.hidden || !objSel.has(o.id)) continue;
+      if (o.hidden || !objSel.has(o.id) || refSel) continue;
       const b = o === act ? edgeBatch : objBatches(o).edge;
       gl.uniform4f(U.tint, 1.0, 0.85, 0.1, o === act ? 1 : 0.6);
       gl.uniformMatrix4fv(U.mvp, false, o === act ? mvpA : mvpAt(objOff(o)));

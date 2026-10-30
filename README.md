@@ -36,6 +36,14 @@ The **Rock** button cycles through four states: off (**Ref**), **Rock**, rock + 
 
 - The rock is the game's smallest rock, about 1.05 × 1.06 × 0.40 units.
 - The player is a blocky mannequin 1.80 tall, with its eyes at 1.70. It faces -Y (the Front view) and stands at (2.25, 0, 0), beside the rock.
+- **Moving them:** in Object mode, tap the rock or the player. It turns yellow and gets the gizmo.
+  - Drag a handle to move it. ⌗ snap applies.
+  - Tap X/Y/Z in the readout to type a position.
+  - The ↻ chip turns it about Z, so the player can face another way.
+  - Tap an object or empty space to go back to the objects.
+  - Each reference moves on its own. Hidden references ignore taps.
+  - Positions are remembered in the browser, not in the scene .json or undo.
+  - **Scene → Reset refs** puts both back at their start spots.
 - Both are display only: they are never selected, edited, combined, saved in the scene or exported.
 - Nothing in the code defines units in metres, so the player assumes 1 unit = 1 m.
 
