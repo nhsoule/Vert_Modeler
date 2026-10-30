@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="pofa-modeler-version" content="v17-header-export">
+<meta name="vert-modeler-version" content="v18-scene">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -170,6 +170,51 @@
               border-right: 1px solid #fff3; opacity: 0.45; touch-action: manipulation; }
   #roRotate.on { opacity: 1; color: #e0b43a; }
   #roRotate.hide { display: none; }
+  #roMerge.hide { display: none; }
+  /* Object mode: snap toggle for whole-object move / rotate / scale. Dim = free. */
+  #roSnap { background: none; border: 0; color: #e8e8ee; font: 600 12px ui-monospace, Menlo, Consolas, monospace;
+            padding: 4px 2px 4px 8px; border-left: 1px solid #fff3; opacity: 0.35; touch-action: manipulation; }
+  #roSnap.on { opacity: 1; color: #e0b43a; }
+  #roSnap.hide { display: none; }
+
+  /* ----- Scene Panel -----|| the object list (outliner) and the object actions */
+  #scenePanel {
+    display: none; position: absolute; z-index: 6;
+    left: 8px; top: calc(env(safe-area-inset-top) + 26px);
+    width: min(300px, calc(100% - 56px)); max-height: calc(100% - 40px); overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 8px; border-radius: 14px; box-sizing: border-box;
+    background: #1f2029f2; border: 1px solid #3a3d4c; box-shadow: 0 8px 24px #000a;
+    flex-direction: column; gap: 6px;
+  }
+  #scenePanel.show { display: flex; }
+  #scenePanel button {
+    min-height: 38px; border: 0; border-radius: 9px; background: #2a2c38; color: #e8e8ee;
+    font: inherit; font-size: 12px; touch-action: manipulation; padding: 0 6px;
+  }
+  #scenePanel button.on { background: #e0b43a; color: #16171d; }
+  #scenePanel button:disabled { opacity: 0.35; }
+  #scenePanel button:active { filter: brightness(1.3); }
+  .scHead { display: flex; gap: 6px; align-items: center; }
+  .scHead .ttl { flex: 1; font-weight: 600; font-size: 13px; padding-left: 4px; }
+  .scHead #scClose { width: 40px; min-width: 40px; padding: 0; font-size: 18px; }
+  #objList { display: flex; flex-direction: column; gap: 3px; max-height: 34vh; overflow-y: auto; }
+  .objRow { display: flex; gap: 3px; align-items: stretch; }
+  .objRow .eye, .objRow .ck { width: 36px; min-width: 36px; padding: 0; font-size: 15px; }
+  .objRow .nm { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                font: 12px ui-monospace, Menlo, Consolas, monospace !important; }
+  .objRow .nm small { color: #9a9db0; }
+  .objRow.sel .nm { box-shadow: inset 0 0 0 2px #e0b43a88; }
+  .objRow.active .nm { box-shadow: inset 0 0 0 2px #e0b43a; color: #fff; font-weight: 700 !important; }
+  .objRow.hid .nm { opacity: 0.45; }
+  .objRow .ck.on { background: #e0b43a; color: #16171d; }
+  .scGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+  #scenePanel .note { font-size: 11px; color: #9a9db0; text-align: center; }
+  #exportWhat {
+    flex: 1; min-height: 40px; background: #0d0e12; color: #fff; border: 1px solid #2c2e3a; border-radius: 8px;
+    font: 14px system-ui, sans-serif; padding: 0 6px;
+  }
+  #exportName:disabled { opacity: 0.5; }
   /* ----- View Buttons -----|| small, see-through, top-right, under the stats line's row */
   #views { position: absolute; right: 6px; top: calc(env(safe-area-inset-top) + 26px);
            display: flex; flex-direction: column; gap: 4px; }
@@ -288,12 +333,42 @@
       </div>
       <div class="note">Hold ↺↻↓↑ to sweep. Shade bakes this sun into the export.</div>
     </div>
+    <div id="scenePanel" aria-label="Scene">
+      <div class="scHead">
+        <span class="ttl" id="scTitle">Scene</span>
+        <button id="scClose" type="button" aria-label="Close">×</button>
+      </div>
+      <div id="objList"></div>
+      <div class="scGrid">
+        <button id="scCube" type="button" title="Add a 1-unit cube">+ Cube</button>
+        <button id="scPlaneV" type="button" title="Add a standing plane (one quad, two-sided): leaves, grass, signs">+ Plane ↑</button>
+        <button id="scPlaneH" type="button" title="Add a flat plane on the ground (one quad, two-sided)">+ Plane ▭</button>
+        <button id="scDup" type="button" title="Duplicate the selected objects (Ctrl+D)">Duplicate</button>
+        <button id="scCopy" type="button" title="Copy the selected objects, or the selected faces in Move/Select (Ctrl+C)">Copy</button>
+        <button id="scPaste" type="button" title="Paste as new objects (Ctrl+V)">Paste</button>
+        <button id="scCombine" type="button" title="Join the selected objects into the active one (Ctrl+J)">Combine</button>
+        <button id="scSeparate" type="button" title="Move the selected faces into a new object (P)">Separate</button>
+        <button id="scFaces" type="button" title="Copy the selected faces into a new object">Faces → new</button>
+        <button id="scTwo" type="button" title="Two-sided: export every face twice, front and back">Two-sided</button>
+        <button id="scSubdiv" type="button" title="Split every triangle of the active object into 4">Subdivide</button>
+        <button id="scRename" type="button" title="Rename the active object (its export name)">Rename</button>
+        <button id="scDelete" type="button" title="Delete the selected objects (Delete in Object mode)">Delete</button>
+        <button id="scDim" type="button" title="Dim the other objects while editing one">Dim others</button>
+        <button id="scHide" type="button" title="Hide / show the selected objects (H)">Hide</button>
+        <button id="scSave" type="button" title="Download the whole scene as a .json project">Save .json</button>
+        <button id="scOpen" type="button" title="Open a scene .json (replaces the scene) or add .h models">Open…</button>
+        <button id="scNew" type="button" title="Start over with one cube">New scene</button>
+      </div>
+      <div class="note" id="scNote"></div>
+    </div>
+    <input type="file" id="fileIn" multiple accept=".h,.hpp,.txt,.json,text/plain,application/json" hidden>
     <div id="boxSel"></div>
     <div id="readout">
       <button id="roScale" type="button" aria-label="Move / Scale" title="Switch the gizmo between Move and Scale (2+ verts)"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v2H6.4l4.3 4.3-1.4 1.4L5 6.4V10H3zm11 0h7v7h-2V6.4l-4.3 4.3-1.4-1.4L17.6 5H14zM9.3 13.3l1.4 1.4L6.4 19H10v2H3v-7h2v3.6zm5.4 0l4.3 4.3V14h2v7h-7v-2h3.6l-4.3-4.3z"/></svg></button>
       <button id="roRotate" type="button" aria-label="Rotate" title="Rotate the selection about its centre (2+ verts)"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a8 8 0 1 0 7.7 10.1l-1.9-.6A6 6 0 1 1 12 6c1.7 0 3.2.7 4.3 1.8L13.5 10.5H21V3l-3.3 3.3A8 8 0 0 0 12 4z"/></svg></button>
       <span class="ro x" id="roX" data-axis="0"></span><span class="ro y" id="roY" data-axis="1"></span><span class="ro z" id="roZ" data-axis="2"></span>
       <button id="roMerge" type="button" aria-label="Auto-merge on drag" title="Auto-merge: a vertex dragged flat onto its face (or straight onto its edge) dissolves on release"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h4.5l4.5 6 4.5-6H21v2h-3.5L13.3 12l4.2 5H21v2h-4.5L12 13l-4.5 6H3v-2h3.5l4.2-5-4.2-5H3z"/></svg></button>
+      <button id="roSnap" type="button" aria-label="Object snap" title="Object snap: move 0.125, turn 15°, scale in 0.125 steps">⌗ snap</button>
       <span id="roEdit">
         <span id="roEditLbl"></span>
         <input id="roInput" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
@@ -324,10 +399,11 @@
       <button id="bMirror"><span class="ic">⇋︎</span><span id="mirrorLabel">Mirror X</span></button>
       <button id="bSym"><span class="ic">⧓</span>Symm</button>
       <button id="bSelect" data-mode="select"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h4v2H5v2H3zm6 0h6v2H9zm8 0h4v4h-2V5h-2zM3 9h2v6H3zm16 0h2v6h-2zM3 17h2v2h2v2H3zm16 0h2v4h-4v-2h2zM9 19h6v2H9z"/></svg></span>Select</button>
+      <button id="bObject" data-mode="object" title="Object mode: select, move, rotate and scale whole objects (Tab)"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l9 5v10l-9 5-9-5V7zm0 2.3L5.2 8 12 11.7 18.8 8zM5 9.7v6.1l6 3.4v-6.2zm14 0l-6 3.3v6.2l6-3.4z"/></svg></span>Object</button>
       <button id="bBake" aria-haspopup="true" aria-expanded="false" title="Shade and sun direction"><span class="ic">☀︎</span>Shade</button>
       <button id="bImport"><span class="ic">⇩</span>Import</button>
       <button id="bExport"><span class="ic">⇪</span>Export</button>
-      <button id="bNew"><span class="ic">□︎</span>New</button>
+      <button id="bScene" aria-haspopup="true" title="Scene: the object list, add a cube or plane, copy, combine, save"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h4v4H3zm6 1h12v2H9zM3 10h4v4H3zm6 1h12v2H9zm-6 5h4v4H3zm6 1h12v2H9z"/></svg></span>Scene</button>
     </div>
   </div>
 </div>
@@ -338,17 +414,25 @@
     <button id="mCopy">Copy</button>
     <button id="mClose" class="alt">Close</button>
   </div>
+  <label>Export <select id="exportWhat">
+    <option value="active">This object</option>
+    <option value="each">Every visible object, separate</option>
+    <option value="merged">All visible, merged into one</option>
+  </select></label>
   <label>Name <input id="exportName" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" value="model"></label>
   <label class="chk"><input id="exportFloats" type="checkbox"> 9-float export (pos + color + normal)</label>
+  <div class="btnrow"><button id="mDownload" class="alt">Download .h</button></div>
   <textarea id="exportText" readonly spellcheck="false"></textarea>
 </div>
 <div id="importModal" class="modal">
   <div class="head">
-    <span>Import C++ array</span>
-    <button id="iGo">Import</button>
+    <span>Import</span>
+    <button id="iGo">Add</button>
+    <button id="iReplace" class="alt">Replace</button>
     <button id="iClose" class="alt">Cancel</button>
   </div>
-  <div class="note">Paste a 12-byte Vert export, or an older 6-float / 9-float array. Undo brings the old model back.</div>
+  <div class="note">Paste one or more 12-byte Vert exports (or older 6-float / 9-float arrays, or a scene .json). Add puts each model in the scene as a new object, where it was placed; Replace swaps the active object's mesh. Undo takes it back.</div>
+  <div class="btnrow"><button id="iFiles" class="alt">Choose files… (.h, .txt, .json)</button></div>
   <textarea id="importText" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="static const float model_verts[] = { ... };"></textarea>
 </div>
 <div id="palModal" class="modal">
@@ -394,10 +478,10 @@
 <script>
 "use strict";
 // =====================================================================================
-//  Vert Modeler v17 (the pofa modeler)
+//  Vert Modeler v18
 //  A tiny touch-first low-poly modeler. Every model starts as a cube; you can move
 //  vertices (with an X/Y/Z axis gizmo), split edges, and paint faces, with optional live
-//  mirror symmetry, then export a C++ array in exactly the format the pofa renderer
+//  mirror symmetry, then export a C++ array in exactly the format the game renderer
 //  uploads, and paste it back in later with Import. A game rock sits beside the model
 //  as a size reference (display only). Mirror never adds seam vertices on its own: the
 //  centre cut only appears where you split an edge that crosses the plane. Dissolve
@@ -413,6 +497,10 @@
 //  that 16-bit grid on every edit. An older 9-float export is still in the export
 //  window. Import accepts this header, the v16 packed export, and the old 6-float
 //  and 9-float arrays. Rotating several vertices turns them together about one centre.
+//  v18: a scene of several named objects (Scene panel + Object mode). Build a little
+//  environment out of separate models, then export each one on its own. Copy, paste,
+//  duplicate, combine and separate objects; Make Plane adds a single two-sided quad
+//  (leaves, grass); Import adds models as new objects at the place they came from.
 //
 //  Coordinates match the game: Z is up, X is left/right, Y is forward/back, and models
 //  sit with their base on z = 0. Rendering uses raw WebGL 2 (= OpenGL ES 3.0), so the
@@ -421,8 +509,9 @@
 
 
 //----- Constants -----||
-const SAVE_KEY      = "pofa-modeler-v2";  // localStorage key for autosave
-const OLD_SAVE_KEY  = "pofa-modeler-v1";  // v1 saves were Y-up; converted once on load
+const KEY_PREFIX    = "vert-modeler-";    // every localStorage key starts with this
+const SAVE_KEY      = KEY_PREFIX + "v2";  // autosave (holds the v3 scene format since v18)
+const OLD_SAVE_KEY  = KEY_PREFIX + "v1";  // v1 saves were Y-up; converted once on load
 const TOUCH_RADIUS  = 24;                 // CSS px: how close a tap must be to a vertex/edge
 const TAP_SLOP      = 8;                  // CSS px a finger may wiggle and still count as a tap
 const SNAP_STEP     = 0.125;              // grid snap size in model units
@@ -431,7 +520,7 @@ const FOV_Y         = 50 * Math.PI / 180; // vertical field of view (radians)
 const PLANE_TOL     = 1e-4;               // |coord| below this = vertex lies on the mirror plane
 const PAIR_TOL      = 1e-3;               // max distance when auto-pairing mirror partners
 const UP            = [0, 0, 1];          // Z-up world, like the game
-const ROCK_KEY      = "pofa-modeler-rock";// separate key: just the rock on/off preference
+const ROCK_KEY      = KEY_PREFIX + "rock";// separate key: just the rock on/off preference
 const ROCK_OFFSET   = [1.25, 0, 0];       // where the reference rock sits (+X, beside the cube)
 const GIZMO_PX      = 80;                 // CSS px: on-screen length of each axis handle
 const GIZMO_TIP_PX  = 30;                 // CSS px: grab radius around a handle's tip ball
@@ -443,9 +532,25 @@ const AXIS_COLORS   = [[0.95, 0.30, 0.30], [0.35, 0.85, 0.40], [0.35, 0.55, 1.00
 // The original fixed sun is normalize([0.3, 0.5, 0.8]) (up, from the back-right).
 // Shade's menu swings it; Reset puts this vector back. yaw 0 = light from +Y (back).
 const SUN_DEFAULT   = normalize3([0.3, 0.5, 0.8]);
-const SUN_KEY       = "pofa-modeler-sun";
+const SUN_KEY       = KEY_PREFIX + "sun";
 const SUN_PITCH_MAX = 80 * Math.PI / 180;
 const SUN_STEP      = 15 * Math.PI / 180;
+//----- Storage Key Migration -----||
+// Before v18 the keys had an older "<name>-modeler-" prefix. Copy any such save across
+// once (only when the new key is still empty), so nothing stored on a phone is lost.
+(function migrateStorageKeys() {
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+    for (const suffix of ["v1", "v2", "rock", "sun", "merge", "palettes"]) {
+      const key = KEY_PREFIX + suffix;
+      if (localStorage.getItem(key) !== null) continue;
+      const old = keys.find(k => k !== key && /^[a-z0-9]+-modeler-/.test(k) && k.endsWith("-modeler-" + suffix));
+      if (old) localStorage.setItem(key, localStorage.getItem(old));
+    }
+  } catch (e) { /* storage blocked */ }
+})();
+
 let sunYaw   = Math.atan2(SUN_DEFAULT[0], SUN_DEFAULT[1]);
 let sunPitch = Math.asin(Math.max(-1, Math.min(1, SUN_DEFAULT[2])));
 let sunDir   = SUN_DEFAULT.slice();
@@ -617,16 +722,13 @@ function mat4LookAt(eye, target, up) {
 //   partner   : [p0, p1, ...]                     (mirror partner per vertex: other index,
 //                                                  itself if it lies on the plane, -1 if none)
 //   mirror    : "x" | "y" | null                  (mirror axis; the plane is axis = 0)
-// Everything lives in this one object, so undo snapshots and autosave capture it all.
-let mesh = null;   // set by newModel("x") at startup, once everything below is defined
+// Since v18 the workspace is a scene of several objects (see "Scene" below); `mesh` is
+// always the ACTIVE object's mesh, so every edit tool still works on just this one.
+let mesh = null;   // set by newScene("x") at startup, once everything below is defined
 
 // New model: always the plain cube (8 verts, 12 tris), mirror on or off. With mirror on,
 // its corners pair up by position (each corner's reflection is another corner). Nothing
 // is cut along the plane: a centre cut only appears where you split a crossing edge.
-function newModel(mirror) {
-  mesh = makeCube(mirror);
-}
-
 function makeCube(mirror = null) {
   const h = 0.5; // unit cube: x,y from -0.5 to +0.5, z from 0 to 1 (base on the ground)
   const positions = [
@@ -664,6 +766,11 @@ function triNormal(t) {
 // Colour of triangle t as 0..1 floats, with baked light if "Shade" is on.
 function triColor(t) {
   const k = bakeOn ? bakeFactor(triNormal(t)) : 1;
+  return mesh.colors[t].map(c => Math.min(1, c * k));
+}
+// Same, lit as if the face pointed along n (a two-sided object's back face uses -normal).
+function triColorN(t, n) {
+  const k = bakeOn ? bakeFactor(n) : 1;
   return mesh.colors[t].map(c => Math.min(1, c * k));
 }
 
@@ -1263,7 +1370,7 @@ function mergeTarget(v, a) {
 
 function setMergeOn(on) {
   mergeOn = on;
-  try { localStorage.setItem("pofa-modeler-merge", on ? "1" : "0"); } catch (e) { /* ignore */ }
+  try { localStorage.setItem(KEY_PREFIX + "merge", on ? "1" : "0"); } catch (e) { /* ignore */ }
   toast(on ? "Auto-merge on: drag a vertex flat onto its face or edge to dissolve it" : "Auto-merge off");
   updateUI();
 }
@@ -1378,7 +1485,7 @@ function doExtrude() {
 
 
 //----- Reference Rock (display only) -----||
-// A straight port of the rock generator in pofa's src/render/render.cpp, render_init()
+// A straight port of the rock generator in the game's src/render/render.cpp, render_init()
 // (the P0/M0/T0 tables, jitter(), and the loop `for (uint32_t s = 0; s < ROCK_SHAPES; s++)`),
 // for shape s = 0: seed 1000, scale 1.0, the smallest rock in the game. Positions are game
 // world units (Z-up, base on z = 0), the same units the modeler edits and exports 1:1.
@@ -1440,18 +1547,17 @@ const ROCK_BOUNDS = (() => {
 
 
 //----- App State -----||
-let mode         = "move";  // "move" | "split" | "paint"
+let mode         = "move";  // "move" | "select" | "split" | "paint" | "object"
 let snapOn       = false;
 let bakeOn       = true;    // bake light into face colours (preview + export)
 let currentColor = DEFAULT_PALETTE[8].slice();   // RGB (0..1) that Paint uses
 let overlayOn    = true;    // false = clean preview: no dots, edges, gizmo, or mirror plane
-let modelName    = "model"; // C identifier used in the export
 let selected     = -1;      // primary selected vertex (the last one tapped), -1 = none
 let selExtra     = new Set(); // the other selected vertices (multi-select); empty if selected < 0
 let undoStack    = [];      // array of JSON snapshots of `mesh`
 let redoStack    = [];      // snapshots undone, cleared by the next new edit
 let mergeOn      = true;    // auto-merge on drag release (stored under MERGE_KEY)
-try { mergeOn = localStorage.getItem("pofa-modeler-merge") !== "0"; } catch (e) { /* storage blocked */ }
+try { mergeOn = localStorage.getItem(KEY_PREFIX + "merge") !== "0"; } catch (e) { /* storage blocked */ }
 let gizmoMode    = "move";  // "move", "scale" or "rotate" (scale/rotate need 2+ selected verts)
 // Move and Select both edit the selection with the gizmo; they differ in what a
 // one-finger drag on empty space does (Move: orbit; Select: box select).
@@ -1465,7 +1571,27 @@ const cam = { yaw: 0.6, pitch: 0.45, dist: 3.4, target: [0, 0, 0.5] };
 
 
 //----- Undo + Autosave -----||
-function snapshot() { return JSON.stringify(mesh); }
+// A snapshot is the whole scene (every object, the active one, the object selection),
+// so Undo also takes back object moves, combines, deletes and imports.
+function snapshot() {
+  objs();
+  return JSON.stringify({ s: 3, name: scene.name, active: scene.active, sel: [...objSel], objects: scene.objects });
+}
+function restore(snap) {
+  const d = JSON.parse(snap);
+  if (d && d.s === 3 && Array.isArray(d.objects) && d.objects.length) {
+    scene = { name: d.name || "scene", active: Math.min(Math.max(0, d.active | 0), d.objects.length - 1), objects: d.objects };
+    mesh = scene.objects[scene.active].mesh;
+    objSel = new Set((d.sel || []).filter(id => scene.objects.some(o => o.id === id)));
+    objSel.add(scene.objects[scene.active].id);
+  } else {                                         // a bare mesh (older snapshot shape)
+    mesh = d;
+    scene.objects[scene.active].mesh = d;
+  }
+  sceneVersion++;
+  meshDirty = true;
+  syncFrame();
+}
 
 function pushUndo(snap = snapshot()) {
   undoStack.push(snap);
@@ -1478,7 +1604,7 @@ function undo() {
   if (!undoStack.length) return;
   redoStack.push(snapshot());
   if (redoStack.length > UNDO_LIMIT) redoStack.shift();
-  mesh = JSON.parse(undoStack.pop());
+  restore(undoStack.pop());
   if (selection().some(i => i >= vertCount())) clearSelection();
   meshChanged();
 }
@@ -1488,14 +1614,14 @@ function redo() {
   // Push straight onto the undo stack. pushUndo() would clear redo.
   undoStack.push(snapshot());
   if (undoStack.length > UNDO_LIMIT) undoStack.shift();
-  mesh = JSON.parse(redoStack.pop());
+  restore(redoStack.pop());
   if (selection().some(i => i >= vertCount())) clearSelection();
   meshChanged();
 }
 
 function save() {
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 2, mesh, currentColor, snapOn, bakeOn, modelName }));
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 3, scene: sceneData(), currentColor, snapOn, bakeOn }));
   } catch (e) { /* storage full or blocked (private mode): ignore */ }
 }
 
@@ -1528,20 +1654,31 @@ function load() {
         d = { v: 2, mesh: old.mesh, currentColor: old.currentColor, snapOn: old.snapOn };
       }
     }
-    if (!d || d.v !== 2) return;
-    if (validMesh(d.mesh)) {
+    if (!d || (d.v !== 2 && d.v !== 3)) return;
+    if (d.v === 3) {
+      const list = d.scene && readSceneObjects(d.scene.objects);
+      if (list) {
+        const a = Math.min(Math.max(0, d.scene.active | 0), list.length - 1);
+        scene = { name: cIdent(d.scene.name || "scene"), active: a, objects: list };
+        mesh = list[a].mesh;
+        objSel = new Set([list[a].id]);
+        frameOff = list[a].pos.slice();            // the camera starts on the active object
+        sceneVersion++;
+      }
+    } else if (validMesh(d.mesh)) {               // v2: one model -> a scene of one object
       upgradeColors(d.mesh);
       mesh = d.mesh;
       if (mesh.mirror !== "x" && mesh.mirror !== "y") mesh.mirror = null;
       // Always re-pair twins from positions instead of trusting the saved partner list:
       // an older save can carry a stale or empty list, and then twins silently don't move.
       pairMirror(mesh);
+      scene.objects[scene.active].mesh = mesh;
+      if (typeof d.modelName === "string") scene.objects[scene.active].name = cIdent(d.modelName);
     }
     if (Number.isInteger(d.currentColor)) currentColor = DEFAULT_PALETTE[d.currentColor & 15].slice();
     else if (Array.isArray(d.currentColor) && d.currentColor.length === 3) currentColor = d.currentColor;
     snapOn = false;                                // Snap has no button any more (v14): always off
     if (typeof d.bakeOn === "boolean") bakeOn = d.bakeOn;
-    if (typeof d.modelName === "string") modelName = cIdent(d.modelName);
   } catch (e) { /* corrupt save: start fresh */ }
 }
 
@@ -1552,6 +1689,703 @@ function meshChanged() {
   meshDirty = true;
   save();
   updateUI();
+}
+
+
+//----- Scene (several objects) -----||
+// The workspace is a list of objects. Each one is its own mesh (the same struct as
+// `mesh`) plus a pivot position in the scene:
+//   { id, name, pos: [x, y, z], hidden, twoSided, mesh }
+// Mesh coordinates are LOCAL, relative to the pivot, so Mirror, Symm, the export frame
+// and every edit tool work exactly as they did for the single model. Rotating or scaling
+// a whole object is baked into its vertices about the pivot; only the position is kept
+// as a live transform. The active object's mesh is `mesh` (objs() writes it back).
+// Editing frame: the camera, picking and every vertex tool work in the active object's
+// local coordinates. frameOff is that frame's origin in the scene (the active object's
+// pos); other objects, the grid and the rock are drawn shifted by (their pos - frameOff).
+// Switching objects moves frameOff and shifts cam.target the opposite way, so the view
+// doesn't jump.
+let scene = { name: "scene", active: 0, objects: [] };
+let objSel = new Set();          // ids of the selected objects (always includes the active one)
+let frameOff = [0, 0, 0];
+let sceneVersion = 0;            // bumped when another object's mesh or the list changes
+let dimOthers = true;            // dim the other objects while editing one
+let objSnap = true;              // Object mode: move 0.125, rotate 15°, scale 0.125 steps
+let objClipboard = null;         // Copy: JSON list of objects (also kept in localStorage)
+let swapDepth = 0;               // > 0 while withMesh() has swapped `mesh` out
+try {
+  dimOthers = localStorage.getItem(KEY_PREFIX + "dim") !== "0";
+  objSnap = localStorage.getItem(KEY_PREFIX + "objsnap") !== "0";
+} catch (e) { /* storage blocked */ }
+const OBJ_ROT_STEP = 15 * Math.PI / 180;
+
+const newObjId = () => "o" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+function objs() {
+  const o = scene.objects[scene.active];
+  if (o && !swapDepth) o.mesh = mesh;
+  return scene.objects;
+}
+function activeObj() { return objs()[scene.active]; }
+const objById = (id) => objs().find(o => o.id === id);
+const objOff = (o) => v3.sub(o.pos, frameOff);       // object origin in the editing frame
+const objSelList = () => objs().filter(o => objSel.has(o.id) && !o.hidden);
+// Run fn with `mesh` pointing at another mesh (the helpers all read the global).
+function withMesh(m, fn) {
+  const saved = mesh;
+  mesh = m; swapDepth++;
+  try { return fn(); } finally { mesh = saved; swapDepth--; }
+}
+// Point the active slot at index i (mesh follows). Call before anything that uses objs().
+function pointActive(i) { scene.active = i; mesh = scene.objects[i].mesh; }
+
+function uniqueObjName(base, self = null) {
+  base = cIdent(base);
+  const taken = (n) => objs().some(o => o !== self && o.name === n);
+  if (!taken(base)) return base;
+  const root = base.replace(/_\d+$/, "") || "model";
+  let n = 2;
+  while (taken(root + "_" + n)) n++;
+  return root + "_" + n;
+}
+function makeObject(name, m, pos = [0, 0, 0], unique = true) {
+  return { id: newObjId(), name: unique ? uniqueObjName(name) : cIdent(name), pos: pos.slice(),
+           hidden: false, twoSided: false, mesh: m };
+}
+
+function newScene(mirror = "x") {
+  const o = makeObject("model", makeCube(mirror), [0, 0, 0], false);
+  cam.target = v3.add(cam.target, frameOff);       // keep looking at the same place
+  frameOff = [0, 0, 0];
+  scene = { name: "scene", active: 0, objects: [o] };
+  mesh = o.mesh;
+  objSel = new Set([o.id]);
+  sceneVersion++;
+  clearSelection();
+}
+
+// Keep the editing frame on the active object (runs every frame, and on switches).
+function syncFrame() {
+  const o = scene.objects[scene.active];
+  if (!o) return;
+  const d = v3.sub(o.pos, frameOff);
+  if (!d[0] && !d[1] && !d[2]) return;
+  cam.target = v3.sub(cam.target, d);
+  frameOff = o.pos.slice();
+  meshDirty = true;
+}
+
+function setActive(i, keepSel = false) {
+  objs();
+  if (i < 0 || i >= scene.objects.length) return;
+  pointActive(i);
+  const o = scene.objects[i];
+  o.hidden = false;
+  if (keepSel) objSel.add(o.id); else objSel = new Set([o.id]);
+  clearSelection();
+  if (roEditing) closeCoordEdit(false);
+  lastWarn = { nv: mesh.mirror ? unpairedCount() : 0, nt: mesh.mirror ? foldedTriCount() : 0 };
+  sceneVersion++;
+  meshDirty = true;
+  syncFrame();
+  updateUI();
+}
+
+// Plain data for saving: no partner lists (they're rebuilt from positions on load).
+function sceneData() {
+  return { name: scene.name, active: scene.active, objects: objs().map(o => ({
+    id: o.id, name: o.name, pos: o.pos, hidden: o.hidden, twoSided: o.twoSided,
+    mesh: { positions: o.mesh.positions, tris: o.mesh.tris, colors: o.mesh.colors, mirror: o.mesh.mirror } })) };
+}
+// The .json project file: the scene plus the light, so it opens looking the same.
+function projectData() {
+  return { format: "vert-modeler-scene", v: 1, bakeOn, sun: sunDir.slice(), ...sceneData() };
+}
+
+// Validate a saved / pasted list of objects. Returns fresh objects or null.
+function readSceneObjects(list) {
+  if (!Array.isArray(list)) return null;
+  const out = [];
+  for (const r of list) {
+    if (!r || !validMesh(r.mesh)) continue;
+    const m = { positions: r.mesh.positions.map(Number), tris: r.mesh.tris.slice(),
+                colors: r.mesh.colors.map(c => Array.isArray(c) ? c.slice(0, 3) : c), partner: [],
+                mirror: r.mesh.mirror === "x" || r.mesh.mirror === "y" ? r.mesh.mirror : null };
+    if (m.positions.some(v => !isFinite(v))) continue;
+    upgradeColors(m);
+    pairMirror(m);
+    const pos = Array.isArray(r.pos) && r.pos.length === 3 && r.pos.every(v => isFinite(v)) ? r.pos.map(Number) : [0, 0, 0];
+    out.push({ id: typeof r.id === "string" ? r.id : newObjId(), name: cIdent(r.name || "model"), pos,
+               hidden: !!r.hidden, twoSided: !!r.twoSided, mesh: m });
+  }
+  const ids = new Set(), names = new Set();
+  for (const o of out) {
+    if (ids.has(o.id)) o.id = newObjId();
+    ids.add(o.id);
+    let n = o.name, k = 2;
+    while (names.has(n)) n = o.name + "_" + k++;
+    o.name = n; names.add(n);
+  }
+  return out.length ? out : null;
+}
+
+function boundsOf(m) {
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < m.positions.length; i += 3)
+    for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], m.positions[i+k]); hi[k] = Math.max(hi[k], m.positions[i+k]); }
+  return isFinite(lo[0]) ? { lo, hi } : { lo: [0, 0, 0], hi: [0, 0, 0] };
+}
+// How far to shift copies along +X so they sit just beside the originals (grid steps).
+function besideOffset(list) {
+  let lo = Infinity, hi = -Infinity;
+  for (const o of list) { const b = boundsOf(o.mesh); lo = Math.min(lo, b.lo[0] + o.pos[0]); hi = Math.max(hi, b.hi[0] + o.pos[0]); }
+  const w = isFinite(lo) ? hi - lo : 0;
+  return Math.max(SNAP_STEP * 2, Math.ceil((w + SNAP_STEP) / SNAP_STEP) * SNAP_STEP);
+}
+// Where a new object goes: under the orbit target, on the ground, on the grid.
+function spawnPos() {
+  const t = v3.add(cam.target, frameOff);
+  return [Math.round(t[0] / SNAP_STEP) * SNAP_STEP, Math.round(t[1] / SNAP_STEP) * SNAP_STEP, 0];
+}
+
+// Mirror after a whole-object rotate / scale / combine: keep it if every vertex still has
+// a twin, else try the other axis, else turn it off (no red "unpaired" dots).
+function keepMirrorIfSymmetric(m) {
+  if (!m.mirror) { pairMirror(m); return; }
+  if (!pairMirror(m)) return;
+  m.mirror = m.mirror === "x" ? "y" : "x";
+  if (!pairMirror(m)) return;
+  m.mirror = null;
+  pairMirror(m);
+}
+// Import: guess a mirror axis from the shape (X first, then Y, else off).
+function detectMirror(m) {
+  for (const ax of ["x", "y"]) { m.mirror = ax; if (!pairMirror(m)) return; }
+  m.mirror = null;
+  pairMirror(m);
+}
+
+// A new mesh made of some triangles of m (vertices compacted, colours kept).
+function extractTris(m, list) {
+  const remap = new Map(), positions = [], tris = [], colors = [];
+  for (const t of list) {
+    for (let k = 0; k < 3; k++) {
+      const v = m.tris[t*3 + k];
+      if (!remap.has(v)) { remap.set(v, positions.length / 3); positions.push(m.positions[v*3], m.positions[v*3+1], m.positions[v*3+2]); }
+      tris.push(remap.get(v));
+    }
+    colors.push(m.colors[t].slice());
+  }
+  return { positions, tris, colors, partner: [], mirror: m.mirror };
+}
+
+// Several objects -> one mesh in the frame of `origin` (scene coordinates). Positions are
+// baked: each part's verts shift by (its pos - origin). If every part is two-sided the
+// result is two-sided too; otherwise the two-sided parts get real back faces (their own
+// copies of the verts, reversed winding) so the result still looks the same.
+function mergeMeshes(origin, list) {
+  const allTwo = list.every(o => o.twoSided);
+  const positions = [], tris = [], colors = [];
+  for (const o of list) {
+    const m = o.mesh, off = v3.sub(o.pos, origin), n = m.positions.length / 3;
+    const addVerts = () => {
+      const base = positions.length / 3;
+      for (let i = 0; i < n; i++) positions.push(m.positions[i*3] + off[0], m.positions[i*3+1] + off[1], m.positions[i*3+2] + off[2]);
+      return base;
+    };
+    const base = addVerts();
+    for (const v of m.tris) tris.push(v + base);
+    for (const c of m.colors) colors.push(c.slice());
+    if (o.twoSided && !allTwo) {
+      const back = addVerts();
+      for (let t = 0; t < m.tris.length / 3; t++) {
+        tris.push(back + m.tris[t*3], back + m.tris[t*3+2], back + m.tris[t*3+1]);
+        colors.push(m.colors[t].slice());
+      }
+    }
+  }
+  const out = { positions, tris, colors, partner: [], mirror: list[0].mesh.mirror };
+  keepMirrorIfSymmetric(out);
+  return { mesh: out, twoSided: allTwo };
+}
+
+// Make Plane: one quad (2 triangles), 1 x 1 unit. "up" stands on the ground facing -Y
+// (toward the Front view); "flat" lies on z = 0 facing up. Two-sided by default, so
+// leaves and grass show from both sides; editable like any mesh (split, extrude, Subdivide).
+function makePlane(kind = "up", mirror = "x") {
+  const h = 0.5;
+  const positions = kind === "flat"
+    ? [-h, -h, 0,   h, -h, 0,   h, h, 0,   -h, h, 0]     // normal +Z
+    : [-h, 0, 0,    h, 0, 0,    h, 0, 1,   -h, 0, 1];    // normal -Y
+  const tris = [0, 1, 2, 0, 2, 3];
+  const col = DEFAULT_PALETTE.find(c => c[1] > c[0] * 1.3 && c[1] > c[2] * 1.3) || DEFAULT_PALETTE[6];
+  const m = { positions, tris, colors: [col.slice(), col.slice()], partner: [], mirror };
+  pairMirror(m);
+  return m;
+}
+
+// Subdivide: every edge gets a midpoint, every triangle becomes 4 (same colour).
+function subdivideMesh() {
+  const mid = new Map(), P = mesh.positions;
+  const midOf = (a, b) => {
+    const key = a < b ? a + "," + b : b + "," + a;
+    if (!mid.has(key)) {
+      mid.set(key, P.length / 3);
+      P.push((P[a*3] + P[b*3]) / 2, (P[a*3+1] + P[b*3+1]) / 2, (P[a*3+2] + P[b*3+2]) / 2);
+    }
+    return mid.get(key);
+  };
+  const tris = [], colors = [];
+  for (let t = 0; t < triCount(); t++) {
+    const [a, b, c] = [mesh.tris[t*3], mesh.tris[t*3+1], mesh.tris[t*3+2]];
+    const ab = midOf(a, b), bc = midOf(b, c), ca = midOf(c, a);
+    tris.push(a, ab, ca,  ab, b, bc,  ca, bc, c,  ab, bc, ca);
+    for (let k = 0; k < 4; k++) colors.push(mesh.colors[t].slice());
+  }
+  mesh.tris = tris; mesh.colors = colors;
+  pairMirror(mesh);
+}
+
+//----- Scene: Commands -----||
+// Each command is one undo step. New objects become active and selected; adding,
+// pasting and duplicating switch to Object mode so the gizmo is ready to place them.
+function addObjects(list, toObjectMode = true) {
+  objs();
+  for (const o of list) { o.name = uniqueObjName(o.name); scene.objects.push(o); }
+  const last = scene.objects.length - 1;
+  pointActive(last);
+  setActive(last);
+  objSel = new Set(list.map(o => o.id));
+  if (toObjectMode) mode = "object";
+  overlayOn = true;
+  meshChanged();
+}
+function cmdAddCube() {
+  pushUndo();
+  addObjects([makeObject("cube", makeCube("x"), spawnPos())]);
+  toast("Added a cube");
+}
+function cmdAddPlane(kind) {
+  pushUndo();
+  const o = makeObject(kind === "flat" ? "ground" : "plane", makePlane(kind), spawnPos());
+  o.twoSided = true;
+  addObjects([o]);
+  toast(kind === "flat" ? "Added a flat plane (two-sided)" : "Added a standing plane (two-sided)");
+}
+function cmdDuplicate() {
+  const list = objSelList();
+  if (!list.length) return;
+  pushUndo();
+  const dx = besideOffset(list);
+  const copies = list.map(o => { const c = JSON.parse(JSON.stringify(o)); c.id = newObjId(); c.pos[0] += dx; c.hidden = false; return c; });
+  addObjects(copies);
+  toast(`Duplicated ${copies.length > 1 ? copies.length + " objects" : copies[0].name}`);
+}
+// Copy: the selected faces (Move/Select with whole faces selected), else the selected objects.
+function cmdCopy() {
+  const o = activeObj();
+  let list, what;
+  const R = editMode() ? coveredTris() : [];
+  if (R.length) {
+    const m = extractTris(mesh, R);
+    list = [{ name: o.name + "_part", pos: o.pos, twoSided: o.twoSided, mesh: m }];
+    what = `${R.length} face${R.length > 1 ? "s" : ""}`;
+  } else {
+    list = objSelList().map(x => ({ name: x.name, pos: x.pos, twoSided: x.twoSided, mesh: x.mesh }));
+    what = list.length > 1 ? `${list.length} objects` : list[0] ? list[0].name : "";
+  }
+  if (!list.length) return;
+  objClipboard = JSON.stringify(list);
+  try { localStorage.setItem(KEY_PREFIX + "clipboard", objClipboard); } catch (e) { /* too big or blocked */ }
+  toast(`Copied ${what} (Ctrl+V or Paste adds ${list.length > 1 ? "them" : "it"})`);
+  updateUI();
+}
+function clipboardText() {
+  if (objClipboard) return objClipboard;
+  try { return localStorage.getItem(KEY_PREFIX + "clipboard"); } catch (e) { return null; }
+}
+function cmdPaste() {
+  let list = null;
+  try { list = readSceneObjects(JSON.parse(clipboardText())); } catch (e) { list = null; }
+  if (!list) { toast("Nothing copied yet"); return; }
+  pushUndo();
+  const dx = besideOffset(list);
+  for (const o of list) { o.id = newObjId(); o.pos[0] += dx; o.hidden = false; }
+  addObjects(list);
+  toast(`Pasted ${list.length > 1 ? list.length + " objects" : list[0].name}`);
+}
+function cmdCombine() {
+  const list = objSelList();
+  if (list.length < 2) { toast("Combine: select 2 or more objects (Object mode: tap each one, or tick them in Scene)"); return; }
+  pushUndo();
+  const tgt = activeObj(), others = list.filter(o => o !== tgt);
+  const r = mergeMeshes(tgt.pos, [tgt, ...others]);
+  scene.objects = scene.objects.filter(o => !others.includes(o));
+  tgt.mesh = r.mesh; tgt.twoSided = r.twoSided;
+  pointActive(scene.objects.indexOf(tgt));
+  objSel = new Set([tgt.id]);
+  clearSelection();
+  sceneVersion++;
+  meshChanged();
+  toast(`Combined ${list.length} objects into ${tgt.name}: ${triCount()} tris` + (r.twoSided || !list.some(o => o.twoSided) ? "" : " (two-sided parts got real back faces)"));
+}
+// Separate (move) or Faces → new (copy): the faces whose corners are all selected.
+function cmdSeparate(keep) {
+  const label = keep ? "Faces → new" : "Separate";
+  if (!editMode()) { toast(`${label}: select the faces' corners in Move or Select first`); return; }
+  const R = coveredTris();
+  if (!R.length) { toast(`${label}: no face has all its corners selected`); return; }
+  if (!keep && R.length === triCount()) { toast("That's the whole object: use Duplicate instead"); return; }
+  pushUndo();
+  const o = activeObj(), set = new Set(R);
+  const part = extractTris(mesh, R);
+  keepMirrorIfSymmetric(part);
+  if (!keep) {
+    const rest = extractTris(mesh, [...Array(triCount()).keys()].filter(t => !set.has(t)));
+    keepMirrorIfSymmetric(rest);
+    mesh = rest; o.mesh = rest;
+  }
+  const n = makeObject(o.name + "_part", part, o.pos);
+  n.twoSided = o.twoSided;
+  sceneVersion++;
+  addObjects([n]);
+  toast(`${keep ? "Copied" : "Separated"} ${R.length} face${R.length > 1 ? "s" : ""} into ${n.name}`);
+}
+function cmdTwoSided() {
+  const o = activeObj();
+  pushUndo();
+  const on = !o.twoSided;
+  for (const x of objSelList()) x.twoSided = on;
+  o.twoSided = on;
+  sceneVersion++;
+  meshChanged();
+  toast(on ? "Two-sided: the export adds a reversed copy of every face (back faces)" : "One-sided");
+}
+function cmdSubdivide() {
+  if (triCount() > 20000) { toast("Too many triangles to subdivide"); return; }
+  pushUndo();
+  clearSelection();
+  subdivideMesh();
+  meshChanged();
+  toast(`Subdivided ${activeObj().name}: ${triCount()} tris`);
+}
+function cmdRename() {
+  const o = activeObj();
+  const n = prompt("Object name (the export uses it for <name>_verts):", o.name);
+  if (n === null || !n.trim()) return;
+  pushUndo();
+  o.name = uniqueObjName(n, o);
+  save(); updateUI();
+}
+function cmdDelete() {
+  const list = objSelList();
+  if (!list.length) return;
+  if (list.length >= scene.objects.length) { toast("Can't delete every object (New scene starts over)"); return; }
+  pushUndo();
+  const ids = new Set(list.map(o => o.id));
+  objs();
+  scene.objects = scene.objects.filter(o => !ids.has(o.id));
+  let i = scene.objects.findIndex(o => !o.hidden);
+  if (i < 0) i = 0;
+  pointActive(i);
+  setActive(i);
+  sceneVersion++;
+  meshChanged();
+  toast(`Deleted ${list.length > 1 ? list.length + " objects" : list[0].name}`);
+}
+function cmdToggleHidden(i) {
+  const o = objs()[i];
+  if (!o) return;
+  if (o.hidden) o.hidden = false;
+  else if (i === scene.active) {
+    const j = scene.objects.findIndex((x, k) => k !== i && !x.hidden);
+    if (j < 0) { toast("Can't hide the only visible object"); return; }
+    o.hidden = true;
+    objSel.delete(o.id);
+    setActive(j);
+  } else { o.hidden = true; objSel.delete(o.id); }
+  sceneVersion++;
+  save(); updateUI();
+}
+function cmdHideSelected() {
+  const list = objSelList();
+  if (list.length === 1 && list[0] === activeObj()) { cmdToggleHidden(scene.active); return; }
+  for (const o of list) if (o !== activeObj()) { o.hidden = true; objSel.delete(o.id); }
+  sceneVersion++; save(); updateUI();
+}
+function cmdNewScene() {
+  if (!confirm("Start a new scene with one cube? (You can still Undo.)")) return;
+  pushUndo();
+  newScene(mesh.mirror || "x");
+  meshChanged();
+}
+function downloadText(filename, text, type = "text/plain") {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
+function cmdSaveJson() {
+  downloadText(cIdent(scene.name) + ".json", JSON.stringify(projectData()), "application/json");
+  toast(`Saving ${cIdent(scene.name)}.json (${scene.objects.length} objects)`);
+}
+// A scene .json (project file or autosave). replace: the whole scene; else its objects are added.
+function sceneFromJson(d, replace) {
+  const src = d && (d.objects ? d : d.scene);
+  const list = src && readSceneObjects(src.objects);
+  if (!list) throw new Error("no objects in that .json");
+  if (replace) {
+    const a = Math.min(Math.max(0, src.active | 0), list.length - 1);
+    scene = { name: cIdent(src.name || "scene"), active: a, objects: list };
+    pointActive(a);
+    if (typeof d.bakeOn === "boolean") bakeOn = d.bakeOn;
+    if (Array.isArray(d.sun) && d.sun.length === 3 && d.sun.every(isFinite)) adoptSun(d.sun);
+    setActive(a);
+    return list.length;
+  }
+  for (const o of list) o.id = newObjId();
+  addObjects(list);
+  return list.length;
+}
+
+//----- Scene: Object Mode (pick, gizmo on whole objects) -----||
+// Tap an object to add it to the selection and make it active; tap a selected one to
+// make it active; tap the active one again to drop it from the selection. Tap empty
+// space to keep just the active object (double tap: clean preview, as everywhere).
+// The gizmo sits on the centroid of the selected pivots: Move slides the objects,
+// Scale scales positions and meshes about it, Rotate turns them (whole objects, the
+// meshes are rotated in place). Snap (the ⌗ chip button): 0.125 / 15° / ×0.125.
+const objPivot = () => {
+  const list = objSelList();
+  if (!list.length) return null;
+  const c = [0, 0, 0];
+  for (const o of list) { const p = objOff(o); c[0] += p[0]; c[1] += p[1]; c[2] += p[2]; }
+  return c.map(v => v / list.length);
+};
+function pickObject(sx, sy) {
+  const r = screenRay(sx, sy);
+  let best = -1, bestT = Infinity;
+  objs().forEach((o, i) => {
+    if (o.hidden) return;
+    const off = objOff(o), P = o.mesh.positions, T = o.mesh.tris;
+    const V = (v) => [P[v*3] + off[0], P[v*3+1] + off[1], P[v*3+2] + off[2]];
+    for (let t = 0; t < T.length; t += 3) {
+      const d = rayTriangle(r.origin, r.dir, V(T[t]), V(T[t+1]), V(T[t+2]));
+      if (d !== null && d < bestT) { bestT = d; best = i; }
+    }
+  });
+  return best;
+}
+function objTap(i) {
+  const o = objs()[i];
+  if (i !== scene.active) { setActive(i, true); toast(`${o.name}` + (objSel.size > 1 ? ` (${objSel.size} selected)` : "")); return; }
+  if (objSel.size > 1) {
+    objSel.delete(o.id);
+    const next = [...objSel].pop();
+    setActive(scene.objects.findIndex(x => x.id === next), true);
+    return;
+  }
+  toast(`${o.name}: ${triCount()} tris`);
+}
+function objStarts(list) {
+  return new Map(list.map(o => [o.id, { pos: o.pos.slice(), positions: o.mesh.positions.slice(),
+    sym: !!o.mesh.mirror && o.mesh.partner.every(p => p >= 0) }]));
+}
+function applyObjMove(starts, a, delta) {
+  for (const [id, st] of starts) { const o = objById(id); if (!o) continue; o.pos = st.pos.slice(); o.pos[a] = st.pos[a] + delta; }
+}
+function applyObjScale(starts, c, axes, f) {
+  const cw = v3.add(c, frameOff);
+  for (const [id, st] of starts) {
+    const o = objById(id); if (!o) continue;
+    o.pos = st.pos.slice();
+    for (const k of axes) o.pos[k] = cw[k] + (st.pos[k] - cw[k]) * f;
+    const P = o.mesh.positions;
+    for (let i = 0; i < P.length; i += 3) for (const k of axes) P[i+k] = st.positions[i+k] * f;
+  }
+  sceneVersion++;
+}
+function applyObjRotate(starts, c, a, ang) {
+  const cw = v3.add(c, frameOff), i1 = (a + 1) % 3, i2 = (a + 2) % 3, cs = Math.cos(ang), sn = Math.sin(ang);
+  for (const [id, st] of starts) {
+    const o = objById(id); if (!o) continue;
+    const x = st.pos[i1] - cw[i1], y = st.pos[i2] - cw[i2];
+    o.pos = st.pos.slice();
+    o.pos[i1] = cw[i1] + x * cs - y * sn;
+    o.pos[i2] = cw[i2] + x * sn + y * cs;
+    const P = o.mesh.positions, S = st.positions;
+    for (let i = 0; i < P.length; i += 3) {
+      const u = S[i+i1], v = S[i+i2];
+      P[i+i1] = u * cs - v * sn;
+      P[i+i2] = u * sn + v * cs;
+    }
+  }
+  sceneVersion++;
+}
+// After a whole-object edit: mirror, export grid, triangulation for each moved mesh.
+function objGestureEnd(g) {
+  if (g.rotate || g.scale) for (const [id, st] of g.starts) {
+    const o = objById(id); if (!o) continue;
+    withMesh(o.mesh, () => {
+      if (st.sym) keepMirrorIfSymmetric(mesh); else pairMirror(mesh);
+      snapPositionsToExportGrid();
+      retriangulate();
+    });
+  }
+  sceneVersion++;
+  syncFrame();
+  meshDirty = true;
+  save();
+  updateUI();
+}
+function objScaleFactor(f) {
+  if (!isFinite(f)) f = 1;
+  if (objSnap) f = Math.round(f / SCALE_STEP) * SCALE_STEP;
+  return Math.max(objSnap ? SCALE_STEP : SCALE_MIN, f);
+}
+function objPointerDown(p) {
+  const list = objSelList();
+  if (!list.length) return false;
+  const c = objPivot();
+  const base = { kind: "axis", obj: true, starts: objStarts(list), before: snapshot(), moved: false,
+                 startX: p.x, startY: p.y, merge: -1, solo: -1 };
+  const ra = rotateActive() ? pickRing(p.x, p.y) : -1;
+  if (ra >= 0) {
+    gesture = Object.assign(base, { rotate: true, axis: ra, p0: c, angle: 0, shown: 0 });
+    gesture.useScreen = Math.abs(v3.dot(screenRay(p.x, p.y).dir, unitAxis(ra))) < 0.15;
+    gesture.lastRaw = ringAngle(gesture, p.x, p.y);
+    updateUI();
+    return true;
+  }
+  const h = pickHandle(p.x, p.y);
+  if (h < 0) return false;
+  const dir = [0, 0, 0];
+  if (scaleActive()) {
+    let sGrab;
+    if (h < 3) {
+      dir[h] = 1;
+      const s = axisParam(screenRay(p.x, p.y), c, dir);
+      sGrab = s === null || Math.abs(s) < 1e-6 ? gizmoSign[h] * GIZMO_PX * worldPerPx(project(c).depth) : s;
+    } else {
+      const sc = project(c);
+      sGrab = Math.max(4, Math.hypot(p.x - sc.x, p.y - sc.y));
+    }
+    gesture = Object.assign(base, { scale: true, axis: h, p0: c, dir, sGrab, factor: 1 });
+  } else {
+    dir[h] = 1;
+    const s = axisParam(screenRay(p.x, p.y), c, dir);
+    gesture = Object.assign(base, { axis: h, p0: c, dir, sGrab: s === null ? 0 : s });
+  }
+  updateUI();
+  return true;
+}
+function objGestureMove(p) {
+  const g = gesture;
+  if (!g.moved && Math.hypot(p.x - g.startX, p.y - g.startY) < 3) return;
+  if (g.rotate) {
+    const raw = ringAngle(g, p.x, p.y);
+    let d = raw - g.lastRaw;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    g.lastRaw = raw;
+    g.angle += d;
+    g.shown = objSnap ? Math.round(g.angle / OBJ_ROT_STEP) * OBJ_ROT_STEP : g.angle;
+    if (!g.moved) { pushUndo(g.before); g.moved = true; }
+    applyObjRotate(g.starts, g.p0, g.axis, g.shown);
+  } else if (g.scale) {
+    let f;
+    if (g.axis < 3) {
+      const s = axisParam(screenRay(p.x, p.y), g.p0, g.dir);
+      if (s === null) return;
+      f = s / g.sGrab;
+    } else {
+      const sc = project(g.p0);
+      f = Math.hypot(p.x - sc.x, p.y - sc.y) / g.sGrab;
+    }
+    f = objScaleFactor(f);
+    if (!g.moved) { pushUndo(g.before); g.moved = true; }
+    g.factor = f;
+    applyObjScale(g.starts, g.p0, g.axis < 3 ? [g.axis] : [0, 1, 2], f);
+  } else {
+    const s = axisParam(screenRay(p.x, p.y), g.p0, g.dir);
+    if (s === null) return;
+    const a = g.axis;
+    let delta = s - g.sGrab;
+    if (objSnap) { const w0 = g.p0[a] + frameOff[a]; delta = Math.round((w0 + delta) / SNAP_STEP) * SNAP_STEP - w0; }
+    if (!g.moved) { pushUndo(g.before); g.moved = true; }
+    applyObjMove(g.starts, a, delta);
+  }
+  meshDirty = true;
+  updateUI();
+}
+// Typed value in Object mode: position of the pivot (scene units), degrees, or a factor.
+function applyTypedObj(axis, scale, rotate) {
+  const n = parseCoord($("roInput").value);
+  if (n === null) { toast("Not a number"); return; }
+  const list = objSelList();
+  if (!list.length) return;
+  const starts = objStarts(list), c = objPivot();
+  if (rotate) {
+    if (Math.abs(n) < 1e-9) return;
+    pushUndo(); applyObjRotate(starts, c, axis, n * Math.PI / 180);
+  } else if (scale) {
+    let f = n;
+    if (f < SCALE_MIN) { f = SCALE_MIN; toast(`Scale clamped to ${SCALE_MIN} (no zero or negative scale)`); }
+    if (Math.abs(f - 1) < 1e-9) return;
+    pushUndo(); applyObjScale(starts, c, [axis], f);
+  } else {
+    const cur = c[axis] + frameOff[axis];
+    if (Math.abs(cur - n) < 1e-9) return;
+    pushUndo(); applyObjMove(starts, axis, n - cur);
+  }
+  objGestureEnd({ rotate, scale, starts });
+}
+
+//----- Scene: Panel -----||
+function renderScenePanel() {
+  const el = $("objList");
+  el.textContent = "";
+  objs().forEach((o, i) => {
+    const row = document.createElement("div");
+    row.className = "objRow" + (i === scene.active ? " active" : "") + (objSel.has(o.id) ? " sel" : "") + (o.hidden ? " hid" : "");
+    const eye = document.createElement("button");
+    eye.className = "eye"; eye.type = "button";
+    eye.textContent = o.hidden ? "○" : "◉";
+    eye.title = o.hidden ? "Show" : "Hide";
+    eye.addEventListener("click", () => cmdToggleHidden(i));
+    const nm = document.createElement("button");
+    nm.className = "nm"; nm.type = "button";
+    nm.textContent = o.name + " ";
+    const small = document.createElement("small");
+    small.textContent = (o.mesh.tris.length / 3) + "▵" + (o.twoSided ? " ×2" : "");
+    nm.appendChild(small);
+    nm.title = "Make active (edit this one)";
+    nm.addEventListener("click", () => setActive(i));
+    const ck = document.createElement("button");
+    ck.className = "ck" + (objSel.has(o.id) ? " on" : ""); ck.type = "button";
+    ck.textContent = objSel.has(o.id) ? "✓" : "";
+    ck.title = "Select (for Combine, Duplicate, Copy, Export)";
+    ck.addEventListener("click", () => {
+      if (i === scene.active) { if (objSel.size > 1) objTap(i); }
+      else if (objSel.has(o.id)) objSel.delete(o.id);
+      else { o.hidden = false; objSel.add(o.id); sceneVersion++; }
+      updateUI();
+    });
+    row.append(eye, nm, ck);
+    el.appendChild(row);
+  });
+  const sel = objSelList().length, faces = editMode() ? selection().length >= 3 : false;
+  $("scTitle").textContent = `Scene · ${scene.objects.length} object${scene.objects.length > 1 ? "s" : ""}`;
+  $("scCombine").disabled = sel < 2;
+  $("scSeparate").disabled = !faces;
+  $("scFaces").disabled = !faces;
+  $("scPaste").disabled = !clipboardText();
+  $("scDelete").disabled = sel >= scene.objects.length;
+  $("scTwo").classList.toggle("on", !!activeObj().twoSided);
+  $("scDim").classList.toggle("on", dimOthers);
+  const tris = scene.objects.reduce((n, o) => n + (o.hidden ? 0 : o.mesh.tris.length / 3 * (o.twoSided ? 2 : 1)), 0);
+  $("scNote").textContent = `Active: ${activeObj().name} · ${sel} selected · ${tris} tris visible`;
 }
 
 
@@ -1602,12 +2436,13 @@ in vec3 vColor;
 uniform bool uRoundPoints;
 uniform bool uRing;
 uniform float uAlpha;
+uniform vec4 uTint;          // mix toward rgb by a (dims other objects, highlights selections)
 out vec4 fragColor;
 void main() {
   // Points are squares by default; throw away the corners to get round dots.
   if (uRoundPoints && length(gl_PointCoord - 0.5) > 0.5) discard;
   if (uRing && length(gl_PointCoord - 0.5) < 0.3) discard;    // hollow ring ("will merge")
-  fragColor = vec4(vColor, uAlpha);
+  fragColor = vec4(mix(vColor, uTint.rgb, uTint.a), uAlpha);
 }`);
 
 const U = {
@@ -1616,6 +2451,7 @@ const U = {
   round: gl.getUniformLocation(prog, "uRoundPoints"),
   ring:  gl.getUniformLocation(prog, "uRing"),
   alpha: gl.getUniformLocation(prog, "uAlpha"),
+  tint:  gl.getUniformLocation(prog, "uTint"),
 };
 
 // A "draw batch" = one VAO + one VBO + a vertex count. The preview is pos3 + color3
@@ -1654,30 +2490,83 @@ let meshDirty = true;
 uploadBatch(rockBatch, GAME_ROCK.map((v, i) => (i % 6) < 3 ? v + ROCK_OFFSET[i % 6] : v));
 
 // Ground grid on the XY plane at z = 0, with the X axis red and the Y axis green.
+// Fine lines every 0.25 near the origin, plus fainter 1-unit lines out to ±8 for scenes.
 (function buildGrid() {
-  const d = [], n = 8, s = 0.25, e = n * s, g = [0.24, 0.25, 0.31];
+  const d = [], n = 8, s = 0.25, e = n * s, g = [0.24, 0.25, 0.31], G = [0.19, 0.2, 0.25], E = 8;
+  for (let i = -E; i <= E; i++) {
+    if (i === 0) continue;
+    d.push(i, -E, 0, ...G,  i, E, 0, ...G);
+    d.push(-E, i, 0, ...G,  E, i, 0, ...G);
+  }
   for (let i = -n; i <= n; i++) {
     const cy = i === 0 ? [0.35, 0.8, 0.4] : g;   // line along Y (x = i*s); green at x = 0
     const cx = i === 0 ? [0.9, 0.3, 0.3] : g;    // line along X (y = i*s); red at y = 0
-    d.push(i*s, -e, 0, ...cy,  i*s, e, 0, ...cy);
-    d.push(-e, i*s, 0, ...cx,  e, i*s, 0, ...cx);
+    const ee = i === 0 ? E : e;
+    d.push(i*s, -ee, 0, ...cy,  i*s, ee, 0, ...cy);
+    d.push(-ee, i*s, 0, ...cx,  ee, i*s, 0, ...cx);
   }
   uploadBatch(gridBatch, d);
 })();
 
+// Face and edge vertex data for any mesh (the active one or another object). A two-sided
+// object also gets its back faces (reversed winding, lit with the flipped normal) and is
+// drawn with back-face culling, so each side shows its own shade, like the export.
+function meshFaceData(m, twoSided) {
+  return withMesh(m, () => {
+    const faces = [];
+    for (let t = 0; t < triCount(); t++) {
+      const c = triColor(t);
+      for (let k = 0; k < 3; k++) faces.push(...getVert(mesh.tris[t*3 + k]), ...c);
+    }
+    if (twoSided) for (let t = 0; t < triCount(); t++) {
+      const c = triColorN(t, v3.scale(triNormal(t), -1));
+      for (const k of [0, 2, 1]) faces.push(...getVert(mesh.tris[t*3 + k]), ...c);
+    }
+    return faces;
+  });
+}
+function meshEdgeData(m) {
+  return withMesh(m, () => {
+    const lines = [];
+    for (const [a, b] of uniqueEdges()) lines.push(...getVert(a), 0.08, 0.08, 0.1,  ...getVert(b), 0.08, 0.08, 0.1);
+    return lines;
+  });
+}
+
+// GPU batches of the other objects, rebuilt only when the scene, the bake or the sun changed.
+const objGpu = new Map();   // object id -> { face, edge, key }
+let objGpuPruned = -1;
+function objBatches(o) {
+  let g = objGpu.get(o.id);
+  if (!g) { g = { face: makeBatch(), edge: makeBatch(), key: "" }; objGpu.set(o.id, g); }
+  const key = sceneVersion + "|" + bakeOn + "|" + sunDir.join(",");
+  if (g.key !== key) {
+    uploadBatch(g.face, meshFaceData(o.mesh, o.twoSided));
+    uploadBatch(g.edge, meshEdgeData(o.mesh));
+    g.key = key;
+  }
+  return g;
+}
+function pruneObjGpu() {
+  if (objGpuPruned === sceneVersion) return;
+  objGpuPruned = sceneVersion;
+  const live = new Set(scene.objects.map(o => o.id));
+  for (const [id, g] of objGpu) if (!live.has(id)) {
+    for (const b of [g.face, g.edge]) { gl.deleteBuffer(b.vbo); gl.deleteVertexArray(b.vao); }
+    objGpu.delete(id);
+  }
+}
+// viewProj * translate(off): draws something whose coordinates are relative to off.
+function mvpAt(off) {
+  if (!off[0] && !off[1] && !off[2]) return viewProj;
+  return mat4Multiply(viewProj, new Float32Array([1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  off[0], off[1], off[2], 1]));
+}
+
 // Turn the mesh into GPU vertex data. Faces are "un-indexed": every triangle gets its
 // own 3 vertices so it can carry its own colour (exactly what the export produces).
 function rebuildBuffers() {
-  const faces = [];
-  for (let t = 0; t < triCount(); t++) {
-    const c = triColor(t);
-    for (let k = 0; k < 3; k++) faces.push(...getVert(mesh.tris[t*3 + k]), ...c);
-  }
-  uploadBatch(faceBatch, faces);
-
-  const lines = [];
-  for (const [a, b] of uniqueEdges()) lines.push(...getVert(a), 0.08, 0.08, 0.1,  ...getVert(b), 0.08, 0.08, 0.1);
-  uploadBatch(edgeBatch, lines);
+  uploadBatch(faceBatch, meshFaceData(mesh, activeObj().twoSided));
+  uploadBatch(edgeBatch, meshEdgeData(mesh));
 
   // Dot colours: selected = yellow, its mirror partner = orange,
   // unpaired (mirror on but no twin) = red, everything else = white.
@@ -1687,7 +2576,7 @@ function rebuildBuffers() {
   const twinsOfSel = new Set(selection().map(i => mesh.partner[i]));
   const vis = vertVisibility();
   const hiddenDots = [], shownDots = [], rings = [];
-  for (let i = 0; i < (mode === "paint" ? 0 : vertCount()); i++) {
+  for (let i = 0; i < (mode === "paint" || mode === "object" ? 0 : vertCount()); i++) {
     if (mergeVerts.has(i)) { rings.push(...getVert(i), 0.3, 0.9, 1.0); continue; }
     let c = [0.95, 0.95, 1.0];
     if (ax >= 0 && mesh.partner[i] < 0) c = [1.0, 0.35, 0.3];
@@ -1701,7 +2590,7 @@ function rebuildBuffers() {
 
   // Mirror plane: a quad on axis = 0, a bit bigger than the model on the other two axes.
   const plane = [];
-  if (ax >= 0) {
+  if (ax >= 0 && mode !== "object") {
     const o = [0, 1, 2].filter(k => k !== ax);    // the two axes the plane spans
     let lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
     for (let i = 0; i < vertCount(); i++) {
@@ -1992,7 +2881,15 @@ function updateGizmoSigns(p) {
 }
 
 // Scale handles are used when the toggle is on AND 2+ verts are selected.
-const scaleActive = () => gizmoMode === "scale" && selection().length >= 2;
+// Object mode: whole objects, any count (one object scales / turns about its pivot).
+const scaleActive = () => gizmoMode === "scale" && (mode === "object" ? objSelList().length > 0 : selection().length >= 2);
+// What the gizmo is acting on: "verts", "objects", or null (no gizmo).
+function gizmoTarget() {
+  if (!overlayOn) return null;
+  if (editMode() && selection().length) return "verts";
+  if (mode === "object" && objSelList().length) return "objects";
+  return null;
+}
 // Pivot for scaling (and where the gizmo sits in Scale): the centroid of the selection
 // plus the mirror twins of selected verts, so it's always on the plane for a mirrored
 // model and a scale along the mirror axis stays symmetric.
@@ -2004,10 +2901,12 @@ function scaleCentroid() {
   return set.size ? c.map(v => v / set.size) : null;
 }
 const gizmoPivot = () => gesture && gesture.kind === "axis" && (gesture.scale || gesture.rotate) ? gesture.p0
+                       : mode === "object" ? objPivot()
                        : scaleActive() || gizmoMode === "rotate" && selection().length >= 2 ? scaleCentroid() : selCentroid();
 
 function gizmoHandles() {
-  if (!overlayOn || !editMode() || !selection().length) return [];
+  const tgt = gizmoTarget();
+  if (!tgt) return [];
   const p = gizmoPivot(), s0 = project(p);
   if (!s0) return [];
   updateGizmoSigns(p);
@@ -2018,7 +2917,7 @@ function gizmoHandles() {
     const tipW = p.slice(); tipW[a] += L * gizmoSign[a];
     const s1 = project(tipW);
     const visible = !!s1 && Math.hypot(s1.x - s0.x, s1.y - s0.y) > 14;
-    out.push({ axis: a, sign: gizmoSign[a], tipW, s0, s1, visible, locked: ax === a && selAxisLocked(a) });
+    out.push({ axis: a, sign: gizmoSign[a], tipW, s0, s1, visible, locked: tgt === "verts" && ax === a && selAxisLocked(a) });
   }
   return out;
 }
@@ -2143,12 +3042,15 @@ canvas.addEventListener("pointerdown", (e) => {
   // Second finger: switch to pinch/pan, whatever was happening (a dot that was about
   // to be toggled is forgotten, so two fingers never change the selection).
   if (pointers.size === 2) {
-    if (gesture && gesture.kind === "axis" && gesture.moved) { mergeVerts = new Set(); meshChanged(); }
+    if (gesture && gesture.kind === "axis" && gesture.moved) {
+      if (gesture.obj) objGestureEnd(gesture);
+      else { mergeVerts = new Set(); meshChanged(); }
+    }
     if (gesture && gesture.kind === "paint" && gesture.changed) {
       // The second finger came right after the first (a two-finger orbit that started a
       // hair early): take back the dab. Otherwise keep the stroke painted so far.
       if (!gesture.far && performance.now() - gesture.t0 < PAINT_GRACE_MS) {
-        mesh = JSON.parse(gesture.before); undoStack.pop(); meshDirty = true; updateUI();
+        restore(gesture.before); undoStack.pop(); meshDirty = true; updateUI();
       } else meshChanged();
     }
     $("boxSel").style.display = "none";
@@ -2189,6 +3091,8 @@ canvas.addEventListener("pointerdown", (e) => {
   }
 
   gesture = { kind: "pending", startX: p.x, startY: p.y, lastX: p.x, lastY: p.y };
+  // Object mode: a gizmo handle grabs the selected objects; anything else is a tap or orbit.
+  if (mode === "object" && overlayOn) { objPointerDown(p); return; }
 
   // In clean preview nothing is grabbed on touch-down: the tap (on release) restores the
   // overlay, and a drag just orbits.
@@ -2298,6 +3202,8 @@ canvas.addEventListener("pointermove", (e) => {
     return;
   }
 
+  if (gesture.kind === "axis" && gesture.obj) { objGestureMove(p); return; }
+
   if (gesture.kind === "axis" && gesture.rotate) {
     if (!gesture.moved && Math.hypot(p.x - gesture.startX, p.y - gesture.startY) < 3) return;
     const raw = ringAngle(gesture, p.x, p.y);
@@ -2396,6 +3302,13 @@ function endPointer(e) {
     } else handleTap(gesture.startX, gesture.startY);
   }
   const wasAxis = gesture.kind === "axis";
+  if (wasAxis && gesture.obj) {
+    const g = gesture;
+    gesture = null;
+    if (g.moved) objGestureEnd(g);
+    updateUI();
+    return;
+  }
   if (wasAxis && gesture.rotate && gesture.moved) pairMirror(mesh);
   if (wasAxis && gesture.merge >= 0 && mergeOn) {
     // Released in range: dissolve it (and its twin). Same undo step as the drag.
@@ -2502,9 +3415,10 @@ function boxSelect(x0, y0, x1, y1) {
 // release so the partner links match the new positions.
 // One undo per drag; no auto-merge; re-triangulation runs on release.
 const ROT_PX = 62, ROT_GRAB_PX = 14;
-const rotateActive = () => gizmoMode === "rotate" && selection().length >= 2;
+const rotateActive = () => gizmoMode === "rotate" && (mode === "object" ? objSelList().length > 0 : selection().length >= 2);
 const unitAxis = (a) => { const e = [0, 0, 0]; e[a] = 1; return e; };
 function ringLocked(a) {
+  if (mode === "object") return false;
   const ax = axisIndex(mesh.mirror);
   return ax >= 0 && a !== ax && selection().every(i => mesh.partner[i] === i);
 }
@@ -2520,7 +3434,7 @@ function ringPoints(a) {
   return out;
 }
 function pickRing(sx, sy) {
-  if (!overlayOn || !editMode() || !rotateActive()) return -1;
+  if (!gizmoTarget() || !rotateActive()) return -1;
   let best = -1, bestD = ROT_GRAB_PX;
   for (let a = 0; a < 3; a++) {
     if (ringLocked(a)) continue;
@@ -2650,6 +3564,7 @@ function emptyTap(x, y, trulyEmpty) {
     return;
   }
   lastEmptyTap = trulyEmpty ? { t: now, x, y } : null;
+  if (mode === "object" && objSel.size > 1) { objSel = new Set([activeObj().id]); meshDirty = true; updateUI(); }
   if (selection().length) { clearSelection(); meshDirty = true; updateUI(); }
 }
 
@@ -2658,6 +3573,12 @@ function handleTap(x, y) {
     lastEmptyTap = null;
     if (mode === "paint" && paintAt(x, y)) return;
     setOverlay(true);                       // model, dot, edge, or empty: show it again
+    return;
+  }
+  if (mode === "object") {
+    const i = pickObject(x, y);
+    if (i < 0) emptyTap(x, y, true);
+    else { lastEmptyTap = null; objTap(i); }
     return;
   }
   if (editMode()) {
@@ -2707,6 +3628,24 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if ((e.key === "f" || e.key === "F") && !mod && !e.altKey) recenter();
+  //----- Scene Shortcuts -----||
+  const k = e.key.toLowerCase();
+  if (mod && !e.altKey && !e.shiftKey) {
+    if (k === "c") { e.preventDefault(); cmdCopy(); return; }
+    if (k === "v") { e.preventDefault(); cmdPaste(); return; }
+    if (k === "d") { e.preventDefault(); cmdDuplicate(); return; }
+    if (k === "j") { e.preventDefault(); cmdCombine(); return; }
+  }
+  if (mod || e.altKey) return;
+  if (e.key === "Tab") {
+    e.preventDefault();
+    mode = mode === "object" ? "move" : "object";
+    overlayOn = true; meshDirty = true; updateUI();
+    return;
+  }
+  if (k === "p" && editMode()) cmdSeparate(false);
+  if (k === "h" && mode === "object") cmdHideSelected();
+  if ((e.key === "Delete" || e.key === "Backspace") && mode === "object") { e.preventDefault(); cmdDelete(); }
 });
 
 
@@ -2848,13 +3787,29 @@ function lightingComment() {
 // setup and octDecode stay in the renderer. 3 verts per triangle, CCW from outside.
 // The face's outward unit normal is octahedral-encoded and repeated on all 3 corners.
 // Shade on writes the baked colour into rgba; Shade off writes the raw palette colour.
-function buildExportPacked() {
-  const name = cIdent(modelName);
-  const nVerts = triCount() * 3;
+//
+// Scene objects (v18): each object exports on its own, in its LOCAL coordinates (its
+// pivot is the model origin), so a model looks the same wherever it stood in the scene.
+// If the pivot isn't at the scene origin, a "placed at" comment records it and Import
+// puts the object back there. Two-sided objects: after the front triangles, every
+// triangle is written again reversed (a, c, b) with the flipped normal (and colour lit
+// from that side), so back-face culling in the game shows both sides. That doubles
+// the vertex count; the comment says so.
+function exportComments(o) {
+  const L = [];
+  if (o.twoSided) L.push(`// two-sided: the second half repeats every triangle reversed, normal flipped (back faces)`);
+  if (o.pos.some(v => Math.abs(v) > 1e-9))
+    L.push(`// placed at (${o.pos.map(v => +v.toFixed(6)).join(", ")}) in the scene: the pivot, model origin (Import puts it back)`);
+  return L;
+}
+function buildExportPacked(o = activeObj()) {
+  return withMesh(o.mesh, () => {
+  const name = cIdent(o.name), two = !!o.twoSided;
+  const nTris = triCount() * (two ? 2 : 1), nVerts = nTris * 3;
   const frame = modelFrame();
   const L = [];
   L.push(`#pragma once`);
-  L.push(`// ${name}: ${triCount()} triangles, ${nVerts} verts, ${nVerts * 12} bytes (exported from Vert Modeler)`);
+  L.push(`// ${name}: ${nTris} triangles, ${nVerts} verts, ${nVerts * 12} bytes (exported from Vert Modeler)`);
   L.push(`//----- Vert -----||`);
   L.push(`// 12 bytes, stride 12, no padding. 3 verts per triangle, CCW seen from outside.`);
   L.push(`//   pos  int16x3 @0, GL_SHORT normalized: -32767..32767 maps to -1..1`);
@@ -2862,6 +3817,7 @@ function buildExportPacked() {
   L.push(`//   rgba uint8x4 @8, GL_UNSIGNED_BYTE normalized (alpha is 255)`);
   L.push(`// The same face normal is stored on all 3 corners of a triangle.`);
   L.push(`// lighting ${lightingComment()}`);
+  L.push(...exportComments(o));
   L.push(`#include "vert.h"`);
   L.push(`//----- ${name} -----||`);
   L.push(`// Recover world units. aPos is the normalized GL_SHORT (pos/32767, in -1..1):`);
@@ -2879,22 +3835,33 @@ function buildExportPacked() {
       L.push(`    { { ${q.join(", ")} }, { ${nrm.join(", ")} }, { ${c[0]}, ${c[1]}, ${c[2]}, 255 } },`);
     }
   }
+  if (two) for (let t = 0; t < triCount(); t++) {          // back faces
+    const n = v3.scale(triNormal(t), -1);
+    const c = triColorN(t, n).map(colorByte), nrm = octEncode(n);
+    for (const k of [0, 2, 1]) {
+      const q = quantizePos(getVert(mesh.tris[t*3 + k]), frame);
+      L.push(`    { { ${q.join(", ")} }, { ${nrm.join(", ")} }, { ${c[0]}, ${c[1]}, ${c[2]}, 255 } },`);
+    }
+  }
   L.push(`};`);
   L.push(`static const int ${name}_vert_count = ${nVerts};`);
   L.push(``);
   return L.join("\n") + "\n";
+  });
 }
 
 // Secondary option: the v15 9-float layout (pos3 + color3 + normal3).
-function buildExportFloats() {
-  const name = cIdent(modelName);
-  const nVerts = triCount() * 3;
+function buildExportFloats(o = activeObj()) {
+  return withMesh(o.mesh, () => {
+  const name = cIdent(o.name), two = !!o.twoSided;
+  const nTris = triCount() * (two ? 2 : 1), nVerts = nTris * 3;
   const L = [];
-  L.push(`// ${name}: ${triCount()} triangles, ${nVerts} verts (exported from Vert Modeler)`);
+  L.push(`// ${name}: ${nTris} triangles, ${nVerts} verts (exported from Vert Modeler)`);
   L.push(`// layout per vertex: pos3 (x, y, z in Z-up world units) + color3 (r, g, b in 0..1) + normal3 (nx, ny, nz, unit, outward)`);
   L.push(`//   ${EXPORT_FLOATS} floats, stride ${EXPORT_FLOATS}*sizeof(float); 3 verts per triangle, CCW seen from outside`);
   L.push(`//   normal3 is the face normal, repeated on the triangle's 3 vertices`);
   L.push(`//   base sits on z = 0; lighting ${lightingComment()}`);
+  L.push(...exportComments(o));
   L.push(`// usage: mesh_upload(&g_mesh, ${name}_verts, ${name}_vert_count);`);
   L.push(`static const float ${name}_verts[] = {`);
   for (let t = 0; t < triCount(); t++) {
@@ -2904,15 +3871,41 @@ function buildExportFloats() {
       L.push(`    ${p.map(f4).join(", ")},  ${c.map(f3).join(", ")},  ${n.map(f4).join(", ")},`);
     }
   }
+  if (two) for (let t = 0; t < triCount(); t++) {          // back faces
+    const n = v3.scale(triNormal(t), -1), c = triColorN(t, n);
+    for (const k of [0, 2, 1]) {
+      const p = getVert(mesh.tris[t*3 + k]);
+      L.push(`    ${p.map(f4).join(", ")},  ${c.map(f3).join(", ")},  ${n.map(f4).join(", ")},`);
+    }
+  }
   L.push(`};`);
   L.push(`static const int ${name}_vert_count = ${nVerts};`);
   L.push(``);
   return L.join("\n") + "\n";
+  });
 }
 
+// What the export window exports: the active object, every visible object (one model
+// each, back to back), or every visible object merged into one model (scene coordinates,
+// named after the scene).
+function exportTargets() {
+  const what = $("exportWhat") ? $("exportWhat").value : "active";
+  if (what === "each") return objs().filter(o => !o.hidden);
+  if (what === "merged") {
+    const vis = objs().filter(o => !o.hidden);
+    const r = mergeMeshes([0, 0, 0], vis);
+    return [{ name: cIdent(scene.name), pos: [0, 0, 0], twoSided: r.twoSided, mesh: r.mesh }];
+  }
+  return [activeObj()];
+}
 function buildExport() {
   const floats = $("exportFloats") && $("exportFloats").checked;
-  return floats ? buildExportFloats() : buildExportPacked();
+  return exportTargets().map(o => floats ? buildExportFloats(o) : buildExportPacked(o)).join("\n");
+}
+function syncExportName() {
+  const w = $("exportWhat").value;
+  $("exportName").disabled = w === "each";
+  $("exportName").value = w === "merged" ? scene.name : w === "each" ? "(each object's own name)" : activeObj().name;
 }
 
 // Clipboard API needs a secure context (https or localhost); file:// may refuse,
@@ -2941,7 +3934,8 @@ function toast(msg) {
 }
 
 async function doExport() {
-  $("exportName").value = modelName;
+  $("exportWhat").value = "active";
+  syncExportName();
   $("exportFloats").checked = false;             // the 12-byte Vert is the default
   const text = buildExport();
   $("exportText").value = text;
@@ -2953,7 +3947,7 @@ async function doExport() {
 
 //----- Import -----||
 // Paste text from a previous export and get an editable mesh back.
-//  1. Name: "<name>_verts" -> modelName.
+//  1. Name: "<name>_verts" -> the object's name.
 //  2. Which file? Auto-detected, packed first (its GLSL and attrib calls contain
 //     extra numbers that must not be read as vertices):
 //       12-byte Vert  — a v17 header (#include "vert.h"), a v16 export ("struct Vert",
@@ -3010,7 +4004,23 @@ function parsePacked(text) {
   if (nums.length < 18 || nums.length % 18)
     throw new Error("12-byte export needs whole triangles of Vert { pos, nrm, rgba }.");
   const lighting = /baked into colors/.test(text) ? "baked" : /not baked/.test(text) ? "flat" : null;
-  return { name: nameMatch ? nameMatch[1] : null, nums, lighting, sun: parseSunVector(text), stride: 6, kind: "packed" };
+  return { name: nameMatch ? nameMatch[1] : null, nums, lighting, sun: parseSunVector(text), stride: 6, kind: "packed", placed: parsePlaced(text) };
+}
+
+// "// placed at (x, y, z)" from a v18 scene export: where the object's pivot stood.
+function parsePlaced(text) {
+  const m = text.match(/placed at\s*\(\s*([-+0-9.eE]+)\s*,\s*([-+0-9.eE]+)\s*,\s*([-+0-9.eE]+)\s*\)/);
+  if (!m) return null;
+  const v = [m[1], m[2], m[3]].map(Number);
+  return v.every(isFinite) ? v : null;
+}
+// Several models pasted (or one file holding several): split at each "#pragma once",
+// or failing that at each "// name: N triangles" header line.
+function splitExports(text) {
+  let cuts = [...text.matchAll(/^[ \t]*#pragma once/gm)].map(m => m.index);
+  if (cuts.length < 2) cuts = [...text.matchAll(/^\/\/ [A-Za-z_][A-Za-z0-9_]*: \d+ triangles/gm)].map(m => m.index);
+  if (cuts.length < 2) return [text];
+  return cuts.map((c, i) => text.slice(i ? c : 0, i + 1 < cuts.length ? cuts[i + 1] : text.length));
 }
 
 function parseExport(text) {
@@ -3036,7 +4046,7 @@ function parseExport(text) {
   if (!stride || nums.length < perTri) throw new Error("Need at least one triangle (" + (perTri || 18) + " numbers), found " + nums.length + ".");
   if (nums.length % perTri) throw new Error(nums.length + " numbers isn't a whole number of triangles (" + stride + " per vertex, 3 vertices each).");
   const lighting = /baked into colors/.test(text) ? "baked" : /not baked/.test(text) ? "flat" : null;
-  return { name: nameMatch ? nameMatch[1] : null, nums, lighting, sun: parseSunVector(text), stride, kind: stride === 9 ? "float9" : "float6" };
+  return { name: nameMatch ? nameMatch[1] : null, nums, lighting, sun: parseSunVector(text), stride, kind: stride === 9 ? "float9" : "float6", placed: parsePlaced(text) };
 }
 
 function importMesh(nums, mirror, lighting = null, light = null, stride = 6) {
@@ -3062,10 +4072,11 @@ function importMesh(nums, mirror, lighting = null, light = null, stride = 6) {
   }
   const tris = [], rgb = [];
   const perTri = stride * 3;
+  let degenerate = 0;
   for (let t = 0; t < nums.length / perTri; t++) {
     const base = t * perTri;
     const idx = [0, 1, 2].map(k => weld(nums.slice(base + k*stride, base + k*stride + 3)));
-    if (idx[0] === idx[1] || idx[1] === idx[2] || idx[0] === idx[2]) continue;   // degenerate
+    if (idx[0] === idx[1] || idx[1] === idx[2] || idx[0] === idx[2]) { degenerate++; continue; }   // degenerate
     tris.push(...idx);
     // Triangle colour = average of its 3 vertex colours (they're equal in our exports).
     // Colour stays at offset 3 for both the old 6-float layout and pos+color+normal.
@@ -3076,6 +4087,38 @@ function importMesh(nums, mirror, lighting = null, light = null, stride = 6) {
     }));
   }
   if (!tris.length) throw new Error("Every triangle was degenerate (zero area).");
+
+  // Two-sided files repeat each triangle reversed (a back face). Welded, that's the same
+  // three corners in the opposite order. If EVERY triangle has such a twin, the backs are
+  // dropped and the object is marked two-sided (the export writes them again). If only
+  // some do (e.g. a combined model with leaf planes), the backs stay as faces with their
+  // own copies of the corners, so front and back don't share edges.
+  const cyc = (a, b, c) => a <= b && a <= c ? a + "," + b + "," + c : b <= a && b <= c ? b + "," + c + "," + a : c + "," + a + "," + b;
+  const open = new Map(), backs = new Set(), backOf = new Map();
+  for (let t = 0; t < tris.length / 3; t++) {
+    const a = tris[t*3], b = tris[t*3+1], c = tris[t*3+2];
+    const f = open.get(cyc(a, c, b));
+    if (f && f.length) { backOf.set(f.pop(), t); backs.add(t); continue; }
+    const k = cyc(a, b, c);
+    if (!open.has(k)) open.set(k, []);
+    open.get(k).push(t);
+  }
+  let twoSided = false, backRgb = null;
+  if (backs.size && backs.size * 2 === tris.length / 3) {
+    twoSided = true;
+    const keepT = [], keepC = [], keepB = [];
+    for (let t = 0; t < tris.length / 3; t++) if (!backs.has(t)) { keepT.push(tris[t*3], tris[t*3+1], tris[t*3+2]); keepC.push(rgb[t]); keepB.push(rgb[backOf.get(t)]); }
+    tris.length = 0; tris.push(...keepT);
+    rgb.length = 0; rgb.push(...keepC);
+    backRgb = keepB;
+  } else if (backs.size) {
+    const copy = new Map();
+    for (const t of backs) for (let k = 0; k < 3; k++) {
+      const v = tris[t*3 + k];
+      if (!copy.has(v)) { copy.set(v, positions.length / 3); positions.push(positions[v*3], positions[v*3+1], positions[v*3+2]); }
+      tris[t*3 + k] = copy.get(v);
+    }
+  }
   const m = { positions, tris, colors: [], partner: [], mirror };
 
   const normal = (t) => {
@@ -3086,7 +4129,18 @@ function importMesh(nums, mirror, lighting = null, light = null, stride = 6) {
   const nT = tris.length / 3;
   // Un-bake with the FILE's sun, not whatever the menu is pointing at right now.
   const L = (light && light.length === 3) ? light : SUN_DEFAULT;
-  const unbaked = rgb.map((c, t) => { const k = bakeFactorFor(normal(t), L); return c.map(v => v / k); });
+  // Two-sided: one colour has to give back BOTH baked bytes (front and back are lit
+  // differently), so take the middle of the range that rounds to both, if there is one.
+  const H = 0.5 / 255;
+  const unbaked = rgb.map((c, t) => {
+    const k = bakeFactorFor(normal(t), L);
+    if (!backRgb) return c.map(v => v / k);
+    const kb = bakeFactorFor(v3.scale(normal(t), -1), L);
+    return c.map((v, i) => {
+      const lo = Math.max((v - H) / k, (backRgb[t][i] - H) / kb), hi = Math.min((v + H) / k, (backRgb[t][i] + H) / kb);
+      return lo < hi ? (lo + hi) / 2 : v / k;
+    });
+  });
   let useBaked = lighting === "baked";
   if (lighting === null) {
     // Guess: count faces whose colour is a palette colour under each reading.
@@ -3096,7 +4150,7 @@ function importMesh(nums, mirror, lighting = null, light = null, stride = 6) {
   }
   m.colors = (useBaked ? unbaked : rgb).map(c => c.slice());
   pairMirror(m);
-  return { mesh: m, baked: useBaked, dropped: nums.length / perTri - nT, light: L };
+  return { mesh: m, baked: useBaked, dropped: degenerate, light: L, twoSided };
 }
 
 function openImport() {
@@ -3105,30 +4159,82 @@ function openImport() {
   setTimeout(() => $("importText").focus(), 50);
 }
 
-function doImport(text) {
-  let parsed, res;
+// how = "add": every model becomes a new object (at its "placed at" spot, else the
+// origin), mirror guessed from its shape; a scene .json adds its objects.
+// how = "replace": the first model replaces the active object's mesh (the old v17
+// behaviour, mirror kept); any others are added; a scene .json replaces the scene.
+// input: one text, or a list of texts (one per file). One undo step for all of it.
+function doImport(input, how = "add") {
+  const texts = Array.isArray(input) ? input : [input];
+  const chunks = [], jsons = [], errors = [];
+  for (const t of texts) {
+    const s = String(t || "").trim();
+    if (!s) continue;
+    if (s[0] === "{") { try { jsons.push(JSON.parse(s)); } catch (e) { errors.push("bad .json: " + e.message); } }
+    else chunks.push(...splitExports(s));
+  }
+  const models = [];
+  for (const c of chunks) {
+    try {
+      const parsed = parseExport(c);
+      const keepMirror = how === "replace" && !models.length;
+      const res = importMesh(parsed.nums, keepMirror ? mesh.mirror : null, parsed.lighting, parsed.sun || SUN_DEFAULT.slice(), parsed.stride);
+      if (!keepMirror) detectMirror(res.mesh);
+      models.push({ parsed, res });
+    } catch (e) { errors.push(e.message); }
+  }
+  if (!models.length && !jsons.length) { toast("Import failed: " + (errors[0] || "nothing to import")); return false; }
+  pushUndo();                                      // the old scene, so Undo brings it back
   try {
-    parsed = parseExport(text);
-    const fileSun = parsed.sun || SUN_DEFAULT.slice();
-    res = importMesh(parsed.nums, mesh.mirror, parsed.lighting, fileSun, parsed.stride);
-  } catch (e) { toast("Import failed: " + e.message); return false; }
-  pushUndo();                                      // the old model, so Undo brings it back
-  mesh = res.mesh;
-  bakeOn = res.baked;
-  if (res.baked) adoptSun(res.light);          // preview sun matches the light that was baked in
-  if (parsed.name) modelName = cIdent(parsed.name);
+    for (const d of jsons) sceneFromJson(d, how === "replace");
+  } catch (e) { errors.push(e.message); }
+  const baked = models.find(m => m.res.baked);
+  if (models.length) {
+    if (baked) { bakeOn = true; adoptSun(baked.res.light); }   // preview sun matches the baked light
+    else if (how === "replace") bakeOn = false;
+  }
+  const added = [];
+  let colours = 0;
+  models.forEach(({ parsed, res }, i) => {
+    colours += addToImportedPalette(res.mesh.colors);
+    if (how === "replace" && i === 0) {
+      const o = activeObj();
+      mesh = res.mesh; o.mesh = res.mesh;
+      o.twoSided = res.twoSided;
+      if (parsed.name) o.name = uniqueObjName(parsed.name, o);
+      if (parsed.placed) o.pos = parsed.placed;
+      sceneVersion++;
+      return;
+    }
+    const o = makeObject(parsed.name || "model", res.mesh, parsed.placed || [0, 0, 0]);
+    o.twoSided = res.twoSided;
+    added.push(o);
+  });
   clearSelection();
-  meshChanged();
-  const notes = [`${vertCount()} verts, ${triCount()} tris`];
-  if (parsed.kind === "packed") notes.push("12-byte Vert");
-  else if (parsed.kind === "float9") notes.push("converted from 9-float");
-  else notes.push("converted from 6-float");
-  const added = addToImportedPalette(mesh.colors);
-  if (added) notes.push(`${added} new colour${added > 1 ? "s" : ""} added to the "Imported" palette`);
-  if (res.dropped) notes.push(`${res.dropped} zero-area tris dropped`);
-  if (mesh.mirror && unpairedCount()) notes.push(`${unpairedCount()} verts have no mirror twin`);
-  toast(`Imported ${modelName}: ` + notes.join(", "));
+  if (added.length) addObjects(added);
+  else { sceneVersion++; meshChanged(); }
+  const notes = [];
+  if (models.length === 1) {
+    const { parsed, res } = models[0];
+    notes.push(`${res.mesh.positions.length / 3} verts, ${res.mesh.tris.length / 3} tris`);
+    notes.push(parsed.kind === "packed" ? "12-byte Vert" : parsed.kind === "float9" ? "converted from 9-float" : "converted from 6-float");
+    if (res.twoSided) notes.push("two-sided");
+    if (parsed.placed) notes.push("placed where it was");
+    if (res.dropped) notes.push(`${res.dropped} zero-area tris dropped`);
+  } else if (models.length) notes.push(`${models.length} models`);
+  if (jsons.length) notes.push(`${jsons.length} scene file${jsons.length > 1 ? "s" : ""}`);
+  if (colours) notes.push(`${colours} new colour${colours > 1 ? "s" : ""} added to the "Imported" palette`);
+  if (errors.length) notes.push(`${errors.length} skipped (${errors[0]})`);
+  const nm = models.length === 1 ? (how === "replace" ? activeObj().name : added[0].name) : "";
+  toast(`Imported ${nm}${nm ? ": " : ""}` + notes.join(", "));
   return true;
+}
+// Files from the picker: .json scenes and .h / .txt models, all in one undo step.
+let fileMode = "add";
+async function importFiles(files, how) {
+  const texts = [];
+  for (const f of files) texts.push(await f.text());
+  return doImport(texts, how);
 }
 
 
@@ -3169,6 +4275,10 @@ function updateUI() {
   // View snaps stay up in the clean preview and with nothing selected.
   $("palette").classList.toggle("show", mode === "paint");
   renderPalette();
+  const scOpen = $("scenePanel").classList.contains("show");
+  $("bScene").classList.toggle("open", scOpen);
+  $("bScene").setAttribute("aria-expanded", scOpen ? "true" : "false");
+  if (scOpen) renderScenePanel();
 
   if (selected >= vertCount()) selected = -1;       // e.g. after a test or tool shrank the mesh
   if (selected < 0) selExtra.clear();
@@ -3184,10 +4294,18 @@ function updateUI() {
 function updateStats() {
   const el = $("stats");
   el.classList.toggle("hide", !overlayOn);
-  const tris = triCount(), verts = tris * 3, bytes = verts * 12;
-  const n = (x) => x.toLocaleString("en-US");
+  const o = activeObj(), n = (x) => x.toLocaleString("en-US");
+  if (mode === "object") {                         // Object mode: the whole scene
+    const vis = scene.objects.filter(x => !x.hidden);
+    const t = vis.reduce((s, x) => s + x.mesh.tris.length / 3 * (x.twoSided ? 2 : 1), 0);
+    const nSel = objSelList().length;
+    el.textContent = `${o.name} · ${scene.objects.length} object${scene.objects.length > 1 ? "s" : ""} · ${n(t)} tris · ${n(t * 36)} B` +
+                     (nSel > 1 ? ` · ${nSel} selected` : "");
+    return;
+  }
+  const tris = triCount() * (o.twoSided ? 2 : 1), verts = tris * 3, bytes = verts * 12;
   const nSel = selection().length;
-  el.textContent = `${n(verts)} verts · ${n(tris)} tris · ${n(bytes)} B  (${n(vertCount())} unique)` +
+  el.textContent = `${o.name} · ${n(verts)} verts · ${n(tris)} tris · ${n(bytes)} B  (${n(vertCount())} unique)` +
                    (nSel > 1 ? ` · ${nSel} selected` : "");
 }
 
@@ -3205,22 +4323,30 @@ function mirrorWarnings() {
 
 // Live X / Y / Z chip at the bottom of the view while a vertex is selected in Move mode.
 // The axis being dragged is underlined.
+// Object mode: the same chip for the selected objects (pivot in scene units; with
+// several, the centroid of their pivots). The ⌗ button toggles object snapping.
+const roKey = () => mode === "object" ? "obj:" + objSelList().map(o => o.id).join(",") : selection().join(",");
 function updateReadout() {
-  const show = overlayOn && editMode() && selection().length > 0;
+  const om = mode === "object";
+  const show = overlayOn && (om ? objSelList().length > 0 : editMode() && selection().length > 0);
   $("readout").classList.toggle("show", show);
   if (!show) { if (roEditing) closeCoordEdit(false); return; }
-  if (roEditing && roEditing.key !== selection().join(",")) closeCoordEdit(false);
+  if (roEditing && roEditing.key !== roKey()) closeCoordEdit(false);
   // One vertex: its position. Several: their centroid (shown with a "c" prefix).
-  const multi = selection().length > 1;
-  const p = selCentroid(), act = gesture && gesture.kind === "axis" ? gesture.axis : -1;
-  $("roScale").classList.toggle("hide", !multi);
+  const multi = om ? objSelList().length > 1 : selection().length > 1;
+  const p = om ? v3.add(objPivot(), frameOff) : selCentroid(), act = gesture && gesture.kind === "axis" ? gesture.axis : -1;
+  const locked = (a) => !om && selAxisLocked(a);
+  $("roScale").classList.toggle("hide", !(multi || om));
   $("roScale").classList.toggle("on", scaleActive());
-  $("roRotate").classList.toggle("hide", !multi);
+  $("roRotate").classList.toggle("hide", !(multi || om));
   $("roRotate").classList.toggle("on", rotateActive());
+  $("roMerge").classList.toggle("hide", om);
+  $("roSnap").classList.toggle("hide", !om);
+  $("roSnap").classList.toggle("on", objSnap);
   if (rotateActive()) {                            // Rotate: live angle per axis, degrees
     const g = gesture && gesture.kind === "axis" && gesture.rotate ? gesture : null;
     ["roX", "roY", "roZ"].forEach((id, a) => {
-      const el = $(id), deg = g && g.axis === a ? g.angle * 180 / Math.PI : 0;
+      const el = $(id), deg = g && g.axis === a ? (g.obj ? g.shown : g.angle) * 180 / Math.PI : 0;
       el.textContent = "∠" + "XYZ"[a] + " " + deg.toFixed(1) + "°";
       el.classList.toggle("act", !!g && g.axis === a);
       el.classList.toggle("locked", ringLocked(a));
@@ -3235,13 +4361,13 @@ function updateReadout() {
       const f = g && (g.axis === a || g.axis === 3) ? g.factor : 1;
       el.textContent = "×" + "XYZ"[a] + " " + f.toFixed(3);
       el.classList.toggle("act", !!g && (g.axis === a || g.axis === 3));
-      el.classList.toggle("locked", selAxisLocked(a));
+      el.classList.toggle("locked", locked(a));
       el.style.display = roEditing ? "none" : "";
       return;
     }
     el.textContent = (multi ? "c" : "") + "XYZ"[a] + " " + (Math.abs(p[a]) < 5e-5 ? 0 : p[a]).toFixed(3);
     el.classList.toggle("act", a === act);
-    el.classList.toggle("locked", selAxisLocked(a));
+    el.classList.toggle("locked", locked(a));
     el.style.display = roEditing ? "none" : "";
   });
 }
@@ -3264,6 +4390,20 @@ function axisLocked(v, a) {
 }
 
 function openCoordEdit(a) {
+  if (mode === "object") {                         // whole objects: never locked
+    if (!objSelList().length) return;
+    const rot = rotateActive(), sc = scaleActive();
+    roEditing = { key: roKey(), axis: a, obj: true, rotate: rot, scale: sc };
+    $("roEditLbl").textContent = rot ? "∠" + "XYZ"[a] + "°" : sc ? "×" + "XYZ"[a] : (objSelList().length > 1 ? "c" : "") + "XYZ"[a];
+    $("roEditLbl").className = "xyz"[a];
+    const v = objPivot()[a] + frameOff[a];
+    $("roInput").value = rot ? "0" : sc ? "1" : String(+(Math.abs(v) < 5e-5 ? 0 : v).toFixed(4));
+    $("roEdit").classList.add("show");
+    updateReadout();
+    $("roInput").focus();
+    $("roInput").select();
+    return;
+  }
   if (!selection().length) return;
   if (!rotateActive() && selAxisLocked(a)) { toast(`${"XYZ"[a]} is locked to the mirror plane (0)`); return; }
   if (rotateActive()) {                            // type an angle in degrees
@@ -3309,10 +4449,15 @@ function parseCoord(text) {
 
 function closeCoordEdit(apply) {
   if (!roEditing) return;
-  const { key, axis, scale, rotate } = roEditing;
+  const { key, axis, scale, rotate, obj } = roEditing;
   roEditing = null;                                // first, so blur can't run this twice
   $("roEdit").classList.remove("show");
   if (document.activeElement === $("roInput")) $("roInput").blur();
+  if (obj) {
+    if (apply && key === roKey()) applyTypedObj(axis, scale, rotate);
+    updateUI();
+    return;
+  }
   if (apply && rotate && key === selection().join(",") && selection().length >= 2) {
     const n = parseCoord($("roInput").value);
     if (n === null) toast("Not a number");
@@ -3508,18 +4653,66 @@ $("bRock").addEventListener("click", () => {
 $("bImport").addEventListener("click", openImport);
 $("iClose").addEventListener("click", () => $("importModal").classList.remove("show"));
 $("iGo").addEventListener("click", () => {
-  if (doImport($("importText").value)) $("importModal").classList.remove("show");
+  if (doImport($("importText").value, "add")) $("importModal").classList.remove("show");
+});
+$("iReplace").addEventListener("click", () => {
+  if (doImport($("importText").value, "replace")) $("importModal").classList.remove("show");
+});
+$("iFiles").addEventListener("click", () => { fileMode = "add"; $("fileIn").click(); });
+$("fileIn").addEventListener("change", async () => {
+  const files = [...$("fileIn").files];
+  $("fileIn").value = "";
+  if (!files.length) return;
+  if (await importFiles(files, fileMode)) $("importModal").classList.remove("show");
 });
 $("bExport").addEventListener("click", doExport);
-$("bNew").addEventListener("click", () => {
-  if (!confirm("Start a new model? (You can still Undo.)")) return;
-  pushUndo(); newModel(mesh.mirror); clearSelection(); meshChanged();
+
+//----- Scene Panel Wiring -----||
+$("bScene").addEventListener("click", () => { $("scenePanel").classList.toggle("show"); updateUI(); });
+$("scClose").addEventListener("click", () => { $("scenePanel").classList.remove("show"); updateUI(); });
+$("scCube").addEventListener("click", cmdAddCube);
+$("scPlaneV").addEventListener("click", () => cmdAddPlane("up"));
+$("scPlaneH").addEventListener("click", () => cmdAddPlane("flat"));
+$("scDup").addEventListener("click", cmdDuplicate);
+$("scCopy").addEventListener("click", cmdCopy);
+$("scPaste").addEventListener("click", cmdPaste);
+$("scCombine").addEventListener("click", cmdCombine);
+$("scSeparate").addEventListener("click", () => cmdSeparate(false));
+$("scFaces").addEventListener("click", () => cmdSeparate(true));
+$("scTwo").addEventListener("click", cmdTwoSided);
+$("scSubdiv").addEventListener("click", cmdSubdivide);
+$("scRename").addEventListener("click", cmdRename);
+$("scDelete").addEventListener("click", cmdDelete);
+$("scHide").addEventListener("click", cmdHideSelected);
+$("scDim").addEventListener("click", () => {
+  dimOthers = !dimOthers;
+  try { localStorage.setItem(KEY_PREFIX + "dim", dimOthers ? "1" : "0"); } catch (e) { /* ignore */ }
+  updateUI();
+});
+$("scSave").addEventListener("click", cmdSaveJson);
+$("scOpen").addEventListener("click", () => { fileMode = "replace"; $("fileIn").click(); });
+$("scNew").addEventListener("click", cmdNewScene);
+$("roSnap").addEventListener("click", () => {
+  objSnap = !objSnap;
+  try { localStorage.setItem(KEY_PREFIX + "objsnap", objSnap ? "1" : "0"); } catch (e) { /* ignore */ }
+  toast(objSnap ? "Object snap: move 0.125, turn 15°, scale ×0.125 steps" : "Object snap off");
+  updateUI();
 });
 
 $("exportName").addEventListener("input", () => {
-  modelName = cIdent($("exportName").value);
+  const w = $("exportWhat").value, v = cIdent($("exportName").value);
+  if (w === "merged") scene.name = v;
+  else if (w === "active") { const o = activeObj(); o.name = uniqueObjName(v, o); }
   $("exportText").value = buildExport();
   save();
+  updateUI();
+});
+$("exportWhat").addEventListener("change", () => { syncExportName(); $("exportText").value = buildExport(); });
+$("mDownload").addEventListener("click", () => {
+  const floats = $("exportFloats").checked, list = exportTargets();
+  list.forEach((o, i) => setTimeout(() =>
+    downloadText(cIdent(o.name) + ".h", floats ? buildExportFloats(o) : buildExportPacked(o)), i * 300));
+  toast(list.length > 1 ? `Downloading ${list.length} files` : `Downloading ${cIdent(list[0].name)}.h`);
 });
 $("exportFloats").addEventListener("change", () => { $("exportText").value = buildExport(); });
 $("mClose").addEventListener("click", () => $("modal").classList.remove("show"));
@@ -3534,7 +4727,7 @@ $("mCopy").addEventListener("click", async () => {
 // survive New / Import and are shared by every model. The built-in palette ("default")
 // is not stored: it's always there as a fallback, read-only, and can't be deleted.
 //   { v: 1, active: "<id>", list: [ { id, name, colors: [[r,g,b] 0..1, ...] }, ... ] }
-const PAL_KEY = "pofa-modeler-palettes";
+const PAL_KEY = KEY_PREFIX + "palettes";
 const BUILTIN = { id: "default", name: "PICO-8 (built-in)", colors: DEFAULT_PALETTE, builtin: true };
 let palStore = { v: 1, active: "default", list: [] };
 let palEditMode = false;
@@ -3850,6 +5043,7 @@ function frame() {
   updateCamera();
   // The dots' grey/white look depends on the camera too, so rebuild when the view moved.
   if (!meshDirty && visCache.key.split("|")[0] !== [cam.yaw, cam.pitch, cam.dist, ...cam.target, viewW, viewH].join(",")) meshDirty = true;
+  if (!(gesture && gesture.obj)) syncFrame();      // the frame follows the active object
   if (meshDirty) rebuildBuffers();
 
   gl.viewport(0, 0, canvas.width, canvas.height);
@@ -3860,28 +5054,70 @@ function frame() {
   gl.uniformMatrix4fv(U.mvp, false, viewProj);
   gl.uniform1f(U.alpha, 1);
   gl.uniform1i(U.round, 0);
+  gl.uniform4f(U.tint, 0, 0, 0, 0);
+  pruneObjGpu();
+  const act = activeObj(), offA = objOff(act), world = mvpAt(v3.scale(frameOff, -1));
 
-  // 1) Ground grid
+  // 1) Ground grid (scene origin)
+  gl.uniformMatrix4fv(U.mvp, false, world);
   gl.bindVertexArray(gridBatch.vao);
   gl.drawArrays(gl.LINES, 0, gridBatch.count);
 
   // 2) Faces, pushed slightly back in depth so the edge lines on top don't flicker.
   //    No back-face culling: faces stay visible even if a drag turns one inside-out.
+  //    Two-sided objects are the exception: their back faces are real, so they cull.
   gl.enable(gl.POLYGON_OFFSET_FILL);
   gl.polygonOffset(1, 1);
+  // 2a) The other objects, dimmed while you edit one (Scene > Dim others).
+  if (overlayOn && dimOthers && mode !== "object") gl.uniform4f(U.tint, 0.086, 0.09, 0.114, 0.5);
+  for (const o of scene.objects) {
+    if (o === act || o.hidden) continue;
+    const g = objBatches(o);
+    gl.uniformMatrix4fv(U.mvp, false, mvpAt(objOff(o)));
+    if (o.twoSided) gl.enable(gl.CULL_FACE);
+    gl.bindVertexArray(g.face.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, g.face.count);
+    gl.disable(gl.CULL_FACE);
+  }
+  gl.uniform4f(U.tint, 0, 0, 0, 0);
+  // 2b) The active object.
+  const mvpA = mvpAt(offA);
+  gl.uniformMatrix4fv(U.mvp, false, mvpA);
+  if (act.twoSided) gl.enable(gl.CULL_FACE);
   gl.bindVertexArray(faceBatch.vao);
   gl.drawArrays(gl.TRIANGLES, 0, faceBatch.count);
-  // 2b) Reference rock (display only): the game's colours, no edges, just like in game.
+  gl.disable(gl.CULL_FACE);
+  // 2c) Reference rock (display only): the game's colours, no edges, just like in game.
   if (showRock) {
+    gl.uniformMatrix4fv(U.mvp, false, world);
     gl.bindVertexArray(rockBatch.vao);
     gl.drawArrays(gl.TRIANGLES, 0, rockBatch.count);
   }
   gl.disable(gl.POLYGON_OFFSET_FILL);
+  gl.uniformMatrix4fv(U.mvp, false, mvpA);
 
   // Clean preview: stop here, so only the model (+ grid and rock) shows.
   if (!overlayOn) { gl.bindVertexArray(null); requestAnimationFrame(frame); return; }
 
   // 3) Edges (depth tested, so hidden edges stay hidden). Paint: a faint wireframe.
+  //    Object mode: only the selected objects' edges, in yellow (the active one brighter).
+  if (mode === "object") {
+    for (const o of scene.objects) {
+      if (o.hidden || !objSel.has(o.id)) continue;
+      const b = o === act ? edgeBatch : objBatches(o).edge;
+      gl.uniform4f(U.tint, 1.0, 0.85, 0.1, o === act ? 1 : 0.6);
+      gl.uniformMatrix4fv(U.mvp, false, o === act ? mvpA : mvpAt(objOff(o)));
+      gl.bindVertexArray(b.vao);
+      gl.drawArrays(gl.LINES, 0, b.count);
+    }
+    gl.uniform4f(U.tint, 0, 0, 0, 0);
+    gl.uniformMatrix4fv(U.mvp, false, viewProj);
+    gl.disable(gl.DEPTH_TEST);
+    drawGizmo();
+    gl.bindVertexArray(null);
+    requestAnimationFrame(frame);
+    return;
+  }
   if (mode === "paint") {
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.uniform1f(U.alpha, 0.22);
@@ -3921,6 +5157,7 @@ function frame() {
   }
 
   // 6) Move gizmo on the selected vertex (on top of everything, like the dots).
+  gl.uniformMatrix4fv(U.mvp, false, viewProj);
   drawGizmo();
 
   gl.bindVertexArray(null);
@@ -3963,7 +5200,7 @@ function drawRotateRings() {
 }
 
 function drawGizmo() {
-  if (overlayOn && editMode() && rotateActive()) { drawRotateRings(); return; }
+  if (gizmoTarget() && rotateActive()) { drawRotateRings(); return; }
   const hs = gizmoHandles();
   if (!hs.length) return;
   const p = gizmoPivot(), scaling = scaleActive();
@@ -4025,7 +5262,7 @@ function drawGizmo() {
 
 
 //----- Start -----||
-newModel("x");   // default: mirror X on
+newScene("x");   // default: one cube, mirror X on
 palLoad();
 load();
 if (snapPositionsToExportGrid()) save();       // older saves land on the same grid the game uses
