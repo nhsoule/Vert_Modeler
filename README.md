@@ -30,6 +30,23 @@ A scene holds several named objects. You can build a small environment to get a 
 - **Planes:** one quad, two-sided by default, so they work for grass, leaves and signs. Subdivide splits them.
 - **Autosave:** the whole scene is saved in the browser. `examples/diorama.json` is a sample scene: a ground tile, trees and rocks.
 
+## Prisms (v21)
+
+- **+ Prism** (Scene panel, next to + Cube / + Plane) adds a prism with the fewest
+  triangles; the picker beside it sets the shape (remembered):
+  - **▲ Roof, 3 sides** (default): 6 verts, **8 triangles** (2 cap tris + 3 quad sides),
+    so the export is 8 triangles / 24 verts.
+  - **◣ Ramp wedge**: a right-angle wedge, also 8 triangles (no mirror).
+  - **4, 5, 6 or 8 sides**: 2(N-2) + 2N triangles (6 sides = 20).
+- The cross-section faces the Front view and runs 1 unit along Y, flat on z = 0. It edits
+  like any mesh (move, extrude, split, paint...).
+- Dragging a vertex exactly onto a neighbour it shares an edge with (use snap or type the
+  value) now merges the two, and the triangles that lost their area go away. So pulling a
+  cube's top-front corners onto the back ones gives a clean 6-vert / 8-tri wedge instead of
+  12 triangles with 4 zero-area slivers.
+- The export also skips any triangle that is still zero-area (three corners on a line) and
+  notes `// N zero-area triangles skipped`; normal models export byte-for-byte as before.
+
 ## Size references
 
 The **Rock** button cycles through four states: off (**Ref**), **Rock**, rock + player (**Both**), **Player**, then back to off. The button label shows the state, the setting is remembered, and the references show in every mode.

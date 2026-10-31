@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="vert-modeler-version" content="v20-move-refs">
+<meta name="vert-modeler-version" content="v21-prism">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -209,6 +209,10 @@
   .objRow.hid .nm { opacity: 0.45; }
   .objRow .ck.on { background: #e0b43a; color: #16171d; }
   .scGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+  #scPrismKind {
+    grid-column: span 2; min-height: 38px; border: 0; border-radius: 9px; background: #2a2c38; color: #e8e8ee;
+    font: inherit; font-size: 12px; padding: 0 6px;
+  }
   #scenePanel .note { font-size: 11px; color: #9a9db0; text-align: center; }
   #exportWhat {
     flex: 1; min-height: 40px; background: #0d0e12; color: #fff; border: 1px solid #2c2e3a; border-radius: 8px;
@@ -343,6 +347,15 @@
         <button id="scCube" type="button" title="Add a 1-unit cube">+ Cube</button>
         <button id="scPlaneV" type="button" title="Add a standing plane (one quad, two-sided): leaves, grass, signs">+ Plane ↑</button>
         <button id="scPlaneH" type="button" title="Add a flat plane on the ground (one quad, two-sided)">+ Plane ▭</button>
+        <button id="scPrism" type="button" title="Add a prism with the fewest triangles (pick the shape on the right)">+ Prism</button>
+        <select id="scPrismKind" aria-label="Prism shape" title="Prism shape for + Prism">
+          <option value="3">▲ Roof, 3 sides (8 tris)</option>
+          <option value="ramp">◣ Ramp wedge (8 tris)</option>
+          <option value="4">4 sides (12 tris)</option>
+          <option value="5">⬟ 5 sides (16 tris)</option>
+          <option value="6">⬢ 6 sides (20 tris)</option>
+          <option value="8">8 sides (28 tris)</option>
+        </select>
         <button id="scDup" type="button" title="Duplicate the selected objects (Ctrl+D)">Duplicate</button>
         <button id="scCopy" type="button" title="Copy the selected objects, or the selected faces in Move/Select (Ctrl+C)">Copy</button>
         <button id="scPaste" type="button" title="Paste as new objects (Ctrl+V)">Paste</button>
@@ -1628,7 +1641,9 @@ try {
       refXf[k] = { pos: v.pos.map(Number), rot: +v.rot };
   }
 } catch (e) { /* none saved, or storage blocked */ }
-let refSel = null;          // "rock" | "player" while a reference is selected in Object mode
+let refSel = null;
+let prismKind = "3";        // + Prism shape: "3".."8" sides or "ramp" (remembered)
+try { const k = localStorage.getItem(KEY_PREFIX + "prism"); if (k && /^([3-8]|ramp)$/.test(k)) prismKind = k; } catch (e) { /* blocked */ }          // "rock" | "player" while a reference is selected in Object mode
 const refShown = (k) => k === "rock" ? showRock : k === "player" ? showPlayer : false;
 const refName = (k) => k === "rock" ? "Rock" : "Player";
 function saveRefXf() { try { localStorage.setItem(REFPOS_KEY, JSON.stringify(refXf)); } catch (e) { /* ignore */ } }
@@ -1755,8 +1770,50 @@ function load() {
 }
 
 // Call after any edit: snap positions onto the export grid, rebuild GPU buffers, save.
+//----- Weld (drag a vertex onto its neighbour) -----||
+// Any edge whose two ends sit on the same spot (after the export-grid snap) is collapsed:
+// the two corners become one vertex and the triangles that lose their area go away, as do
+// any back-to-back "fin" pairs the collapse leaves. So pulling a cube's top-front corners
+// onto the top-back ones gives a clean 6-vertex, 8-triangle wedge, not 12 triangles with
+// 4 zero-area ones. Only connected vertices weld: separate pieces that touch (e.g. the
+// unwelded back faces of a combined two-sided part) are left alone. Returns true if any.
+function weldZeroEdges() {
+  const T = mesh.tris, n = vertCount(), root = Array.from({ length: n }, (_, i) => i);
+  const find = (i) => { while (root[i] !== i) i = root[i] = root[root[i]]; return i; };
+  let any = false;
+  for (let t = 0; t < T.length; t += 3) for (let k = 0; k < 3; k++) {
+    const a = T[t + k], b = T[t + (k + 1) % 3];
+    if (a === b) continue;
+    if (mesh.positions[a*3] !== mesh.positions[b*3] || mesh.positions[a*3+1] !== mesh.positions[b*3+1] ||
+        mesh.positions[a*3+2] !== mesh.positions[b*3+2]) continue;
+    const ra = find(a), rb = find(b);
+    if (ra !== rb) { root[Math.max(ra, rb)] = Math.min(ra, rb); any = true; }
+  }
+  if (!any) return false;
+  const tris = [], colors = [], seen = new Map();
+  const cyc = (a, b, c) => a <= b && a <= c ? a + "," + b + "," + c : b <= a && b <= c ? b + "," + c + "," + a : c + "," + a + "," + b;
+  for (let t = 0; t < T.length / 3; t++) {
+    const a = find(T[t*3]), b = find(T[t*3+1]), c = find(T[t*3+2]);
+    if (a === b || b === c || a === c) continue;
+    const back = seen.get(cyc(a, c, b));
+    if (back && back.length) { const u = back.pop(); tris[u*3] = -1; continue; }   // fin: drop both
+    const k = cyc(a, b, c);
+    if (!seen.has(k)) seen.set(k, []);
+    seen.get(k).push(tris.length / 3);
+    tris.push(a, b, c); colors.push(mesh.colors[t]);
+  }
+  const keepT = [], keepC = [];
+  for (let t = 0; t < tris.length / 3; t++) if (tris[t*3] >= 0) { keepT.push(tris[t*3], tris[t*3+1], tris[t*3+2]); keepC.push(colors[t]); }
+  const used = new Set(keepT), remap = new Map(), positions = [];
+  for (let i = 0; i < n; i++) if (used.has(i)) { remap.set(i, positions.length / 3); positions.push(...getVert(i)); }
+  mesh = { positions, tris: keepT.map(i => remap.get(i)), colors: keepC, partner: [], mirror: mesh.mirror };
+  pairMirror(mesh);
+  return true;
+}
+
 function meshChanged() {
   snapPositionsToExportGrid();                     // what you model is what the 12-byte export stores
+  if (weldZeroEdges()) { clearSelection(); toast("Merged corners that met: zero-area faces removed"); }
   retriangulate();                                 // flat faces: best-shaped triangles
   meshDirty = true;
   save();
@@ -1998,6 +2055,40 @@ function makePlane(kind = "up", mirror = "x") {
   return m;
 }
 
+// Make Prism: the fewest triangles for the shape. The cross-section lies in the XZ plane
+// (the Front view shows it) and runs 1 unit along Y. "3".."8": a regular polygon with a
+// flat bottom on z = 0, 1 unit wide; "ramp": a right-angle wedge 1 x 1 (high side at -X).
+// 2N verts: each cap is a fan of N - 2 triangles, each side a quad of 2, so a triangular
+// prism is 8 triangles and an N-sided one 2(N - 2) + 2N. Mirror X except for the ramp.
+function prismSection(kind) {
+  if (kind === "ramp") return [[-0.5, 0], [0.5, 0], [-0.5, 1]];
+  const n = Math.max(3, Math.min(12, parseInt(kind, 10) || 3)), pts = [];
+  for (let k = 0; k < n; k++) {
+    const a = -Math.PI / 2 + Math.PI / n + 2 * Math.PI * k / n;   // k = 0 and n-1 make the flat bottom
+    pts.push([Math.cos(a), Math.sin(a)]);
+  }
+  const xs = pts.map(q => q[0]), zs = pts.map(q => q[1]);
+  const w = Math.max(...xs) - Math.min(...xs), z0 = Math.min(...zs);
+  return pts.map(([x, z]) => [Math.abs(x / w) < 1e-12 ? 0 : x / w, (z - z0) / w]);   // 1 wide, base on z = 0
+}
+function makePrism(kind = "3") {
+  const sec = prismSection(kind), n = sec.length, h = 0.5;   // CCW seen from the front (-Y)
+  const positions = [];
+  for (const [x, z] of sec) positions.push(x, -h, z);        // 0..n-1   front cap (y = -0.5)
+  for (const [x, z] of sec) positions.push(x,  h, z);        // n..2n-1  back cap  (y = +0.5)
+  const tris = [];
+  for (let k = 1; k + 1 < n; k++) tris.push(0, k, k + 1);                  // front, faces -Y
+  for (let k = 1; k + 1 < n; k++) tris.push(n, n + k + 1, n + k);          // back, faces +Y
+  for (let k = 0; k < n; k++) {                                            // sides: quad f_k, b_k, b_k+1, f_k+1
+    const j = (k + 1) % n, f0 = k, f1 = j, b0 = n + k, b1 = n + j;
+    tris.push(f0, b0, b1,  f0, b1, f1);
+  }
+  const m = { positions, tris, colors: Array.from({ length: tris.length / 3 }, () => DEFAULT_PALETTE[6].slice()),
+              partner: [], mirror: kind === "ramp" ? null : "x" };
+  pairMirror(m);
+  return m;
+}
+
 // Subdivide: every edge gets a midpoint, every triangle becomes 4 (same colour).
 function subdivideMesh() {
   const mid = new Map(), P = mesh.positions;
@@ -2038,6 +2129,13 @@ function cmdAddCube() {
   pushUndo();
   addObjects([makeObject("cube", makeCube("x"), spawnPos())]);
   toast("Added a cube");
+}
+function cmdAddPrism(kind = prismKind) {
+  pushUndo();
+  const m = makePrism(kind), n = m.positions.length / 6;
+  addObjects([makeObject(kind === "ramp" ? "ramp" : "prism", m, spawnPos())]);
+  toast(kind === "ramp" ? `Added a ramp wedge: ${m.tris.length / 3} triangles`
+                        : `Added ${n === 8 ? "an" : "a"} ${n}-sided prism: ${m.tris.length / 3} triangles`);
 }
 function cmdAddPlane(kind) {
   pushUndo();
@@ -3942,8 +4040,8 @@ function exportComments(o) {
 function buildExportPacked(o = activeObj()) {
   return withMesh(o.mesh, () => {
   const name = cIdent(o.name), two = !!o.twoSided;
-  const nTris = triCount() * (two ? 2 : 1), nVerts = nTris * 3;
-  const frame = modelFrame();
+  const frame = modelFrame(), keep = exportTriList(frame);
+  const nTris = keep.length * (two ? 2 : 1), nVerts = nTris * 3;
   const L = [];
   L.push(`#pragma once`);
   L.push(`// ${name}: ${nTris} triangles, ${nVerts} verts, ${nVerts * 12} bytes (exported from Vert Modeler)`);
@@ -3955,6 +4053,7 @@ function buildExportPacked(o = activeObj()) {
   L.push(`// The same face normal is stored on all 3 corners of a triangle.`);
   L.push(`// lighting ${lightingComment()}`);
   L.push(...exportComments(o));
+  L.push(...zeroAreaNote(triCount() - keep.length));
   L.push(`#include "vert.h"`);
   L.push(`//----- ${name} -----||`);
   L.push(`// Recover world units. aPos is the normalized GL_SHORT (pos/32767, in -1..1):`);
@@ -3964,7 +4063,7 @@ function buildExportPacked(o = activeObj()) {
   L.push(`static const float ${name}_offset[3] = { ${frame.offset.map(fmtFloat).join(", ")} };`);
   L.push(`static const float ${name}_scale = ${fmtFloat(frame.scale)};`);
   L.push(`static const Vert ${name}_verts[] = {`);
-  for (let t = 0; t < triCount(); t++) {
+  for (const t of keep) {
     const c = triColor(t).map(colorByte);
     const nrm = octEncode(triNormal(t));
     for (let k = 0; k < 3; k++) {
@@ -3972,7 +4071,7 @@ function buildExportPacked(o = activeObj()) {
       L.push(`    { { ${q.join(", ")} }, { ${nrm.join(", ")} }, { ${c[0]}, ${c[1]}, ${c[2]}, 255 } },`);
     }
   }
-  if (two) for (let t = 0; t < triCount(); t++) {          // back faces
+  if (two) for (const t of keep) {                         // back faces
     const n = v3.scale(triNormal(t), -1);
     const c = triColorN(t, n).map(colorByte), nrm = octEncode(n);
     for (const k of [0, 2, 1]) {
@@ -3987,11 +4086,25 @@ function buildExportPacked(o = activeObj()) {
   });
 }
 
+// Triangles with real area in the export (12-byte grid): a triangle whose 3 corners are on
+// one line or one spot is skipped, so it can't reach the game as a sliver with a junk normal.
+function exportTriList(frame) {
+  const out = [];
+  for (let t = 0; t < triCount(); t++) {
+    const [a, b, c] = [0, 1, 2].map(k => quantizePos(getVert(mesh.tris[t*3 + k]), frame));
+    const u = v3.sub(b, a), w = v3.sub(c, a), x = v3.cross(u, w);
+    if (x[0] || x[1] || x[2]) out.push(t);
+  }
+  return out;
+}
+const zeroAreaNote = (n) => n ? [`// ${n} zero-area triangle${n > 1 ? "s" : ""} skipped`] : [];
+
 // Secondary option: the v15 9-float layout (pos3 + color3 + normal3).
 function buildExportFloats(o = activeObj()) {
   return withMesh(o.mesh, () => {
   const name = cIdent(o.name), two = !!o.twoSided;
-  const nTris = triCount() * (two ? 2 : 1), nVerts = nTris * 3;
+  const keep = exportTriList(modelFrame());
+  const nTris = keep.length * (two ? 2 : 1), nVerts = nTris * 3;
   const L = [];
   L.push(`// ${name}: ${nTris} triangles, ${nVerts} verts (exported from Vert Modeler)`);
   L.push(`// layout per vertex: pos3 (x, y, z in Z-up world units) + color3 (r, g, b in 0..1) + normal3 (nx, ny, nz, unit, outward)`);
@@ -3999,16 +4112,17 @@ function buildExportFloats(o = activeObj()) {
   L.push(`//   normal3 is the face normal, repeated on the triangle's 3 vertices`);
   L.push(`//   base sits on z = 0; lighting ${lightingComment()}`);
   L.push(...exportComments(o));
+  L.push(...zeroAreaNote(triCount() - keep.length));
   L.push(`// usage: mesh_upload(&g_mesh, ${name}_verts, ${name}_vert_count);`);
   L.push(`static const float ${name}_verts[] = {`);
-  for (let t = 0; t < triCount(); t++) {
+  for (const t of keep) {
     const c = triColor(t), n = triNormal(t);
     for (let k = 0; k < 3; k++) {
       const p = getVert(mesh.tris[t*3 + k]);
       L.push(`    ${p.map(f4).join(", ")},  ${c.map(f3).join(", ")},  ${n.map(f4).join(", ")},`);
     }
   }
-  if (two) for (let t = 0; t < triCount(); t++) {          // back faces
+  if (two) for (const t of keep) {                         // back faces
     const n = v3.scale(triNormal(t), -1), c = triColorN(t, n);
     for (const k of [0, 2, 1]) {
       const p = getVert(mesh.tris[t*3 + k]);
@@ -4815,6 +4929,12 @@ $("scRefs").addEventListener("click", resetRefs);
 $("bScene").addEventListener("click", () => { $("scenePanel").classList.toggle("show"); updateUI(); });
 $("scClose").addEventListener("click", () => { $("scenePanel").classList.remove("show"); updateUI(); });
 $("scCube").addEventListener("click", cmdAddCube);
+$("scPrism").addEventListener("click", () => cmdAddPrism(prismKind));
+$("scPrismKind").value = prismKind;
+$("scPrismKind").addEventListener("change", (e) => {
+  prismKind = e.target.value;
+  try { localStorage.setItem(KEY_PREFIX + "prism", prismKind); } catch (err) { /* ignore */ }
+});
 $("scPlaneV").addEventListener("click", () => cmdAddPlane("up"));
 $("scPlaneH").addEventListener("click", () => cmdAddPlane("flat"));
 $("scDup").addEventListener("click", cmdDuplicate);
