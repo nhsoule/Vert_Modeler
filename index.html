@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="vert-modeler-version" content="v21-prism">
+<meta name="vert-modeler-version" content="v22-shapes">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -178,7 +178,7 @@
   #roSnap.hide { display: none; }
 
   /* ----- Scene Panel -----|| the object list (outliner) and the object actions */
-  #scenePanel {
+  #scenePanel, #shapesPanel {
     display: none; position: absolute; z-index: 6;
     left: 8px; top: calc(env(safe-area-inset-top) + 26px);
     width: min(300px, calc(100% - 56px)); max-height: calc(100% - 40px); overflow-y: auto;
@@ -187,14 +187,14 @@
     background: #1f2029f2; border: 1px solid #3a3d4c; box-shadow: 0 8px 24px #000a;
     flex-direction: column; gap: 6px;
   }
-  #scenePanel.show { display: flex; }
-  #scenePanel button {
+  #scenePanel.show, #shapesPanel.show { display: flex; }
+  #scenePanel button, #shapesPanel button {
     min-height: 38px; border: 0; border-radius: 9px; background: #2a2c38; color: #e8e8ee;
     font: inherit; font-size: 12px; touch-action: manipulation; padding: 0 6px;
   }
-  #scenePanel button.on { background: #e0b43a; color: #16171d; }
-  #scenePanel button:disabled { opacity: 0.35; }
-  #scenePanel button:active { filter: brightness(1.3); }
+  #scenePanel button.on, #shapesPanel button.on { background: #e0b43a; color: #16171d; }
+  #scenePanel button:disabled, #shapesPanel button:disabled { opacity: 0.35; }
+  #scenePanel button:active, #shapesPanel button:active { filter: brightness(1.3); }
   .scHead { display: flex; gap: 6px; align-items: center; }
   .scHead .ttl { flex: 1; font-weight: 600; font-size: 13px; padding-left: 4px; }
   .scHead #scClose { width: 40px; min-width: 40px; padding: 0; font-size: 18px; }
@@ -209,11 +209,23 @@
   .objRow.hid .nm { opacity: 0.45; }
   .objRow .ck.on { background: #e0b43a; color: #16171d; }
   .scGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
-  #scPrismKind {
-    grid-column: span 2; min-height: 38px; border: 0; border-radius: 9px; background: #2a2c38; color: #e8e8ee;
-    font: inherit; font-size: 12px; padding: 0 6px;
+  .scHead #scShapes, .scHead #shToScene { padding: 0 12px; font-weight: 600; }
+  .scHead #scShapes { background: #3a3220; color: #e0b43a; }
+  .scHead #shClose { width: 40px; min-width: 40px; padding: 0; font-size: 18px; }
+  /* ----- Shapes Drawer -----|| one tile per primitive, its options as chips underneath */
+  .shGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+  #shapesPanel button.tile {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    min-height: 66px; font-size: 12px; font-weight: 600;
   }
-  #scenePanel .note { font-size: 11px; color: #9a9db0; text-align: center; }
+  #shapesPanel button.tile.wide { flex-direction: row; justify-content: flex-start; gap: 12px; min-height: 52px; padding: 0 12px; }
+  #shapesPanel button.tile.wide small { margin-left: auto; }
+  .tile svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; flex: none; }
+  .tile small { color: #9a9db0; font-size: 10px; font-weight: 400; }
+  .shBox { display: flex; flex-direction: column; gap: 4px; padding: 4px; border-radius: 11px; background: #ffffff08; }
+  .chips { display: flex; gap: 3px; }
+  #shapesPanel .chips button { flex: 1; min-width: 0; min-height: 34px; padding: 0; font-size: 13px; }
+  #scenePanel .note, #shapesPanel .note { font-size: 11px; color: #9a9db0; text-align: center; }
   #exportWhat {
     flex: 1; min-height: 40px; background: #0d0e12; color: #fff; border: 1px solid #2c2e3a; border-radius: 8px;
     font: 14px system-ui, sans-serif; padding: 0 6px;
@@ -340,22 +352,11 @@
     <div id="scenePanel" aria-label="Scene">
       <div class="scHead">
         <span class="ttl" id="scTitle">Scene</span>
+        <button id="scShapes" type="button" title="Shapes: add a cube, plane, prism or pyramid (Shift+A)">＋ Shapes</button>
         <button id="scClose" type="button" aria-label="Close">×</button>
       </div>
       <div id="objList"></div>
       <div class="scGrid">
-        <button id="scCube" type="button" title="Add a 1-unit cube">+ Cube</button>
-        <button id="scPlaneV" type="button" title="Add a standing plane (one quad, two-sided): leaves, grass, signs">+ Plane ↑</button>
-        <button id="scPlaneH" type="button" title="Add a flat plane on the ground (one quad, two-sided)">+ Plane ▭</button>
-        <button id="scPrism" type="button" title="Add a prism with the fewest triangles (pick the shape on the right)">+ Prism</button>
-        <select id="scPrismKind" aria-label="Prism shape" title="Prism shape for + Prism">
-          <option value="3">▲ Roof, 3 sides (8 tris)</option>
-          <option value="ramp">◣ Ramp wedge (8 tris)</option>
-          <option value="4">4 sides (12 tris)</option>
-          <option value="5">⬟ 5 sides (16 tris)</option>
-          <option value="6">⬢ 6 sides (20 tris)</option>
-          <option value="8">8 sides (28 tris)</option>
-        </select>
         <button id="scDup" type="button" title="Duplicate the selected objects (Ctrl+D)">Duplicate</button>
         <button id="scCopy" type="button" title="Copy the selected objects, or the selected faces in Move/Select (Ctrl+C)">Copy</button>
         <button id="scPaste" type="button" title="Paste as new objects (Ctrl+V)">Paste</button>
@@ -374,6 +375,32 @@
         <button id="scNew" type="button" title="Start over with one cube">New scene</button>
       </div>
       <div class="note" id="scNote"></div>
+    </div>
+    <div id="shapesPanel" aria-label="Shapes">
+      <div class="scHead">
+        <span class="ttl">Shapes</span>
+        <button id="shToScene" type="button" title="Back to the object list">☰ Scene</button>
+        <button id="shClose" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="shGrid">
+        <button id="scCube" class="tile" type="button" title="Add a 1-unit cube">
+          <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4 27 9.5v13L16 28 5 22.5v-13zM5 9.5 16 15l11-5.5M16 15v13"/></svg>Cube<small>12▵</small></button>
+        <button id="scPlaneV" class="tile" type="button" title="Add a standing plane (one quad, two-sided): leaves, grass, signs">
+          <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M9 6h14v20H9z"/><path d="M4 26h24" stroke-dasharray="2 2"/></svg>Plane ↑<small>2▵ · 2-sided</small></button>
+        <button id="scPlaneH" class="tile" type="button" title="Add a flat plane on the ground (one quad, two-sided)">
+          <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21 11 12h18l-8 9z"/></svg>Plane ▭<small>2▵ · 2-sided</small></button>
+      </div>
+      <div class="shBox">
+        <button id="scPrism" class="tile wide" type="button" title="Add a prism with the fewest triangles (shape below)">
+          <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 25 11 11l17 3-7 14zM11 11l10 17M4 25h17"/></svg>Prism<small id="shPrismInfo"></small></button>
+        <div class="chips" id="prismChips" role="group" aria-label="Prism shape"></div>
+      </div>
+      <div class="shBox">
+        <button id="scPyramid" class="tile wide" type="button" title="Add a pyramid with the fewest triangles (sides below)">
+          <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4 4 23l9 5 15-6zM16 4l-3 24M4 23l24-1" /></svg>Pyramid<small id="shPyrInfo"></small></button>
+        <div class="chips" id="pyramidChips" role="group" aria-label="Pyramid sides"></div>
+      </div>
+      <div class="note">Tap a shape to add it at the view centre (it becomes the active object). Shift+A opens this.</div>
     </div>
     <input type="file" id="fileIn" multiple accept=".h,.hpp,.txt,.json,text/plain,application/json" hidden>
     <div id="boxSel"></div>
@@ -417,7 +444,7 @@
       <button id="bBake" aria-haspopup="true" aria-expanded="false" title="Shade and sun direction"><span class="ic">☀︎</span>Shade</button>
       <button id="bImport"><span class="ic">⇩</span>Import</button>
       <button id="bExport"><span class="ic">⇪</span>Export</button>
-      <button id="bScene" aria-haspopup="true" title="Scene: the object list, add a cube or plane, copy, combine, save"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h4v4H3zm6 1h12v2H9zM3 10h4v4H3zm6 1h12v2H9zm-6 5h4v4H3zm6 1h12v2H9z"/></svg></span>Scene</button>
+      <button id="bScene" aria-haspopup="true" title="Scene: the object list, copy, combine, save; ＋ Shapes adds a cube, plane, prism or pyramid"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h4v4H3zm6 1h12v2H9zM3 10h4v4H3zm6 1h12v2H9zm-6 5h4v4H3zm6 1h12v2H9z"/></svg></span>Scene</button>
     </div>
   </div>
 </div>
@@ -1491,7 +1518,7 @@ function doExtrude() {
   if (!editMode() || selection().length < 3) return;
   const before = snapshot(), v0 = vertCount(), t0 = triCount();
   const r = extrudeSelection();
-  if (typeof r === "string") { mesh = JSON.parse(before); toast("Can't extrude: " + r); return; }
+  if (typeof r === "string") { restore(before); toast("Can't extrude: " + r); return; }
   pushUndo(before);
   clearSelection();
   for (const v of r.cap) toggleSelect(v);
@@ -1642,8 +1669,12 @@ try {
   }
 } catch (e) { /* none saved, or storage blocked */ }
 let refSel = null;
-let prismKind = "3";        // + Prism shape: "3".."8" sides or "ramp" (remembered)
-try { const k = localStorage.getItem(KEY_PREFIX + "prism"); if (k && /^([3-8]|ramp)$/.test(k)) prismKind = k; } catch (e) { /* blocked */ }          // "rock" | "player" while a reference is selected in Object mode
+let prismKind = "3";        // Shapes drawer: prism shape, "3".."8" sides or "ramp" (remembered)
+let pyramidSides = 4;       // Shapes drawer: pyramid sides (remembered)
+try {
+  const k = localStorage.getItem(KEY_PREFIX + "prism"); if (k && /^([3-8]|ramp)$/.test(k)) prismKind = k;
+  const n = parseInt(localStorage.getItem(KEY_PREFIX + "pyramid"), 10); if (n >= 3 && n <= 32) pyramidSides = n;
+} catch (e) { /* blocked */ }          // "rock" | "player" while a reference is selected in Object mode
 const refShown = (k) => k === "rock" ? showRock : k === "player" ? showPlayer : false;
 const refName = (k) => k === "rock" ? "Rock" : "Player";
 function saveRefXf() { try { localStorage.setItem(REFPOS_KEY, JSON.stringify(refXf)); } catch (e) { /* ignore */ } }
@@ -2089,6 +2120,31 @@ function makePrism(kind = "3") {
   return m;
 }
 
+// Make Pyramid: an N-sided base on z = 0 and one apex 1 unit up, with the fewest
+// triangles: the base is a fan of N - 2, plus N sides, so 2N - 2 triangles and N + 1 verts.
+// The base has a flat edge facing -Y (the Front view) and is 1 unit wide in X (a 4-sided
+// one is a 1 x 1 square), its centre and the apex on the Z axis. Mirror X (it's symmetric).
+const PYRAMID_SIDES = [3, 4, 5, 6, 8, 12, 16];
+function makePyramid(n = 4) {
+  n = Math.max(3, Math.min(32, n | 0));
+  const pts = [];
+  for (let k = 0; k < n; k++) {
+    const a = -Math.PI / 2 + Math.PI / n + 2 * Math.PI * k / n;   // CCW seen from above
+    pts.push([Math.cos(a), Math.sin(a)]);
+  }
+  const xs = pts.map(q => q[0]), w = Math.max(...xs) - Math.min(...xs);
+  const positions = [];
+  for (const [x, y] of pts) positions.push(Math.abs(x / w) < 1e-12 ? 0 : x / w, y / w, 0);
+  positions.push(0, 0, 1);                                     // apex = vertex n
+  const tris = [];
+  for (let k = 1; k + 1 < n; k++) tris.push(0, k + 1, k);      // base, faces -Z
+  for (let k = 0; k < n; k++) tris.push(k, (k + 1) % n, n);    // sides, outward
+  const m = { positions, tris, colors: Array.from({ length: tris.length / 3 }, () => DEFAULT_PALETTE[6].slice()),
+              partner: [], mirror: "x" };
+  pairMirror(m);
+  return m;
+}
+
 // Subdivide: every edge gets a midpoint, every triangle becomes 4 (same colour).
 function subdivideMesh() {
   const mid = new Map(), P = mesh.positions;
@@ -2136,6 +2192,12 @@ function cmdAddPrism(kind = prismKind) {
   addObjects([makeObject(kind === "ramp" ? "ramp" : "prism", m, spawnPos())]);
   toast(kind === "ramp" ? `Added a ramp wedge: ${m.tris.length / 3} triangles`
                         : `Added ${n === 8 ? "an" : "a"} ${n}-sided prism: ${m.tris.length / 3} triangles`);
+}
+function cmdAddPyramid(n = pyramidSides) {
+  pushUndo();
+  const m = makePyramid(n);
+  addObjects([makeObject("pyramid", m, spawnPos())]);
+  toast(`Added ${n === 8 ? "an" : "a"} ${n}-sided pyramid: ${m.tris.length / 3} triangles`);
 }
 function cmdAddPlane(kind) {
   pushUndo();
@@ -4531,10 +4593,11 @@ function updateUI() {
   // View snaps stay up in the clean preview and with nothing selected.
   $("palette").classList.toggle("show", mode === "paint");
   renderPalette();
-  const scOpen = $("scenePanel").classList.contains("show");
-  $("bScene").classList.toggle("open", scOpen);
-  $("bScene").setAttribute("aria-expanded", scOpen ? "true" : "false");
+  const scOpen = $("scenePanel").classList.contains("show"), shOpen = $("shapesPanel").classList.contains("show");
+  $("bScene").classList.toggle("open", scOpen || shOpen);
+  $("bScene").setAttribute("aria-expanded", scOpen || shOpen ? "true" : "false");
   if (scOpen) renderScenePanel();
+  if (shOpen) renderShapes();
 
   if (selected >= vertCount()) selected = -1;       // e.g. after a test or tool shrank the mesh
   if (selected < 0) selExtra.clear();
@@ -4869,7 +4932,7 @@ function doSymm() {
   if (sign < 0) flipMesh(ax);
   const ok = symmetrize();
   if (sign < 0) flipMesh(ax);
-  if (!ok) { mesh = JSON.parse(before); toast(`Nothing on the ${sign < 0 ? "−" : "+"}${name} side to copy`); return; }
+  if (!ok) { restore(before); toast(`Nothing on the ${sign < 0 ? "−" : "+"}${name} side to copy`); return; }
   pairMirror(mesh);
   pushUndo(before); clearSelection(); meshChanged();
   const from = (sign < 0 ? "−" : "+") + name, to = (sign < 0 ? "+" : "−") + name;
@@ -4926,15 +4989,53 @@ $("bExport").addEventListener("click", doExport);
 
 //----- Scene Panel Wiring -----||
 $("scRefs").addEventListener("click", resetRefs);
-$("bScene").addEventListener("click", () => { $("scenePanel").classList.toggle("show"); updateUI(); });
+//----- Shapes Drawer -----||
+// Scene and Shapes share the spot under the Scene button: the Scene panel's "＋ Shapes"
+// tab swaps to the drawer and its "☰ Scene" tab swaps back. Chips pick a prism shape or
+// pyramid side count (remembered); tapping the tile adds that shape.
+const PRISM_CHIPS = [["3", "▲", "Roof, 3 sides"], ["ramp", "◣", "Ramp wedge"], ["4", "4", "4 sides"],
+                     ["5", "5", "5 sides"], ["6", "6", "6 sides"], ["8", "8", "8 sides"]];
+function openDrawer(which) {          // "scene", "shapes" or null (close)
+  $("scenePanel").classList.toggle("show", which === "scene");
+  $("shapesPanel").classList.toggle("show", which === "shapes");
+  updateUI();
+}
+function renderShapes() {
+  for (const b of $("prismChips").children) b.classList.toggle("on", b.dataset.v === prismKind);
+  for (const b of $("pyramidChips").children) b.classList.toggle("on", +b.dataset.v === pyramidSides);
+  const pt = prismKind === "ramp" ? 8 : 4 * +prismKind - 4;
+  $("shPrismInfo").textContent = `${prismKind === "ramp" ? "ramp" : prismKind + " sides"} · ${pt}▵`;
+  $("shPyrInfo").textContent = `${pyramidSides} sides · ${2 * pyramidSides - 2}▵`;
+}
+function remember(key, v) { try { localStorage.setItem(KEY_PREFIX + key, String(v)); } catch (e) { /* ignore */ } }
+for (const [v, label, title] of PRISM_CHIPS) {
+  const b = document.createElement("button");
+  b.type = "button"; b.dataset.v = v; b.textContent = label; b.title = `${title} (${v === "ramp" ? 8 : 4 * +v - 4} triangles)`;
+  b.addEventListener("click", () => { prismKind = v; remember("prism", v); renderShapes(); });
+  $("prismChips").appendChild(b);
+}
+for (const n of PYRAMID_SIDES) {
+  const b = document.createElement("button");
+  b.type = "button"; b.dataset.v = n; b.textContent = n; b.title = `${n} sides (${2 * n - 2} triangles)`;
+  b.addEventListener("click", () => { pyramidSides = n; remember("pyramid", n); renderShapes(); });
+  $("pyramidChips").appendChild(b);
+}
+$("scShapes").addEventListener("click", () => openDrawer("shapes"));
+$("shToScene").addEventListener("click", () => openDrawer("scene"));
+$("shClose").addEventListener("click", () => openDrawer(null));
+$("scPyramid").addEventListener("click", () => cmdAddPyramid(pyramidSides));
+document.addEventListener("keydown", (e) => {     // Shift+A: Shapes (as in Blender's Add menu)
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+  if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === "a")
+    openDrawer($("shapesPanel").classList.contains("show") ? null : "shapes");
+});
+$("bScene").addEventListener("click", () => {
+  const any = $("scenePanel").classList.contains("show") || $("shapesPanel").classList.contains("show");
+  openDrawer(any ? null : "scene");
+});
 $("scClose").addEventListener("click", () => { $("scenePanel").classList.remove("show"); updateUI(); });
 $("scCube").addEventListener("click", cmdAddCube);
 $("scPrism").addEventListener("click", () => cmdAddPrism(prismKind));
-$("scPrismKind").value = prismKind;
-$("scPrismKind").addEventListener("change", (e) => {
-  prismKind = e.target.value;
-  try { localStorage.setItem(KEY_PREFIX + "prism", prismKind); } catch (err) { /* ignore */ }
-});
 $("scPlaneV").addEventListener("click", () => cmdAddPlane("up"));
 $("scPlaneH").addEventListener("click", () => cmdAddPlane("flat"));
 $("scDup").addEventListener("click", cmdDuplicate);
