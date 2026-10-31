@@ -30,10 +30,27 @@ A scene holds several named objects. You can build a small environment to get a 
 - **Planes:** one quad, two-sided by default, so they work for grass, leaves and signs. Subdivide splits them.
 - **Autosave:** the whole scene is saved in the browser. `examples/diorama.json` is a sample scene: a ground tile, trees and rocks.
 
+## Shapes drawer (v22)
+
+- All the primitives live in their own **Shapes** drawer: open **Scene** and tap the gold
+  **＋ Shapes** tab in its header (or press **Shift+A**); **☰ Scene** switches back, × closes.
+- Tiles: **Cube**, **Plane ↑** (standing), **Plane ▭** (ground), **Prism** and **Pyramid**.
+  The chips under Prism and Pyramid pick the shape / number of sides (remembered); tapping
+  a tile adds that shape at the view centre as the active object. The drawer stays open so
+  you can add several.
+
+## Pyramids (v22)
+
+- **Pyramid** with 3, 4 (default), 5, 6, 8, 12 or 16 sides (12 and 16 read as a cone).
+- Fewest triangles: the base is a fan of N - 2 plus N sides, so **2N - 2 triangles** and
+  N + 1 verts (4 sides = 6 triangles / 18 export verts; 3 = 4, 6 = 10, 8 = 14, 16 = 30).
+- Base on z = 0, 1 unit wide in X (a 4-sided one is a 1 x 1 square), apex 1 unit up,
+  mirrored on X. Edits like any mesh.
+
 ## Prisms (v21)
 
-- **+ Prism** (Scene panel, next to + Cube / + Plane) adds a prism with the fewest
-  triangles; the picker beside it sets the shape (remembered):
+- **Prism** (Shapes drawer) adds a prism with the fewest triangles; the chips set the
+  shape (remembered):
   - **▲ Roof, 3 sides** (default): 6 verts, **8 triangles** (2 cap tris + 3 quad sides),
     so the export is 8 triangles / 24 verts.
   - **◣ Ramp wedge**: a right-angle wedge, also 8 triangles (no mirror).
