@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="vert-modeler-version" content="v23-palette">
+<meta name="vert-modeler-version" content="v24-biome-filter">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -257,6 +257,38 @@
                   background: #1f2029a0; color: #e8e8eecc; font: 600 11px ui-monospace, Menlo, Consolas, monospace;
                   touch-action: manipulation; }
   #views button:active { background: #e0b43a; color: #16171d; }
+  #views { align-items: flex-end; }
+  /* ----- Biome Filter -----|| button under the view buttons, its name always shown */
+  #views #biomeBtn { margin-top: 4px; font-size: 14px; }
+  #views #biomeBtn.on { box-shadow: inset 0 0 0 2px #8ec8ff; }
+  #biomeName { font: 600 10px ui-monospace, Menlo, Consolas, monospace; color: #fff;
+               text-shadow: 0 0 3px #000, 0 0 2px #000; white-space: nowrap; text-align: right;
+               pointer-events: none; margin-top: -2px; }
+  #biomeMenu {
+    display: none; position: absolute; z-index: 6;
+    right: 46px; top: calc(env(safe-area-inset-top) + 26px);
+    width: min(232px, calc(100% - 60px));
+    padding: 8px; border-radius: 14px;
+    background: #1f2029f2; border: 1px solid #3a3d4c;
+    box-shadow: 0 8px 24px #000a;
+    flex-direction: column; gap: 6px;
+  }
+  #biomeMenu.show { display: flex; }
+  #biomeMenu button {
+    min-height: 34px; border: 0; border-radius: 9px; background: #2a2c38; color: #e8e8ee;
+    font: inherit; font-size: 12px; touch-action: manipulation; padding: 0 6px;
+  }
+  #biomeMenu button.on { background: #e0b43a; color: #16171d; font-weight: 600; }
+  #biomeMenu button:active { filter: brightness(1.3); }
+  .biomeHead { display: flex; gap: 6px; align-items: center; }
+  .biomeHead span { flex: 1; font-size: 13px; font-weight: 600; color: #e8e8ee; padding-left: 4px; }
+  .biomeHead #biomeClose { width: 34px; min-width: 34px; padding: 0; font-size: 18px; }
+  #biomeList { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  #biomeList button { display: flex; align-items: center; gap: 6px; text-align: left; min-width: 0; }
+  #biomeList i { width: 12px; height: 12px; border-radius: 50%; flex: none; border: 1px solid #fff6; }
+  #biomeRead { font: 10.5px/1.4 ui-monospace, Menlo, Consolas, monospace; color: #b9bccb;
+               white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; background: #16171d; border-radius: 8px; padding: 6px; }
+  #biomeMenu .note { font-size: 11px; color: #9a9db0; text-align: center; }
   #toolbar button.open { box-shadow: inset 0 0 0 2px #8ec8ff; }
 
   /* Sun menu: opens from Shade, sits under the stats line and clear of the view buttons. */
@@ -341,6 +373,15 @@
       <button data-view="top"    title="Top: from +Z, looking down">T</button>
       <button data-view="bottom" title="Bottom: from −Z, looking up">D</button>
       <button data-view="iso"    title="Iso: front-right, from above">I</button>
+      <button id="biomeBtn" type="button" title="Biome screen filter (viewport preview only, never exported)" aria-haspopup="true">◑</button>
+      <div id="biomeName">None</div>
+    </div>
+    <div id="biomeMenu" aria-label="Biome filter">
+      <div class="biomeHead"><span>Biome filter</span><button id="biomeClose" type="button" title="Close">×</button></div>
+      <div id="biomeList"></div>
+      <div id="biomeRead"></div>
+      <button id="biomeCopy" type="button" title="Copy this biome's values as JSON">Copy values</button>
+      <div class="note">Preview only: exports never include it.</div>
     </div>
     <div id="sunMenu" aria-label="Sun">
       <div class="sunHead">
@@ -667,6 +708,99 @@ function bakeRGBFor(n, L, b) {
   const d = Math.max(0, n[0]*L[0] + n[1]*L[1] + n[2]*L[2]);
   return [b.amb[0] + b.sun[0] * d, b.amb[1] + b.sun[1] * d, b.amb[2] + b.sun[2] * d];
 }
+//----- Biome Filters -----||
+// A per-biome screen filter, the same one the game applies as the last step of its
+// fragment shader, so the numbers here can be copied straight into the game:
+//   c = mix(c, c * tint, strength);  c = mix(luma(c), c, saturation) * brightness
+// and fog fades toward fogRgb with fogDensity (0..1; 0.6 = the normal fog).
+// Viewport only: the CPU bake never sees it, so exports are unchanged.
+// fogRgb null (None) = the sky's horizon colour, i.e. the plain lighting preset.
+const BIOME_FILTERS = [
+  { id: "none",     name: "None",      tint: [1.00, 1.00, 1.00], strength: 0.00, saturation: 1.00, brightness: 1.00, fogRgb: null,               fogDensity: 0.60 },
+  { id: "meadow",   name: "Meadow",    tint: [0.96, 1.00, 0.78], strength: 0.12, saturation: 1.08, brightness: 1.03, fogRgb: [0.90, 0.95, 0.80], fogDensity: 0.45 },
+  { id: "forest",   name: "Forest",    tint: [0.70, 0.92, 0.72], strength: 0.20, saturation: 0.95, brightness: 0.94, fogRgb: [0.56, 0.72, 0.60], fogDensity: 0.65 },
+  { id: "swamp",    name: "Swamp",     tint: [0.66, 0.74, 0.46], strength: 0.25, saturation: 0.78, brightness: 0.90, fogRgb: [0.46, 0.54, 0.36], fogDensity: 0.90 },
+  { id: "desert",   name: "Desert",    tint: [1.00, 0.82, 0.64], strength: 0.20, saturation: 1.15, brightness: 1.05, fogRgb: [0.98, 0.86, 0.70], fogDensity: 0.50 },
+  { id: "snow",     name: "Snow",      tint: [0.84, 0.92, 1.00], strength: 0.20, saturation: 0.85, brightness: 1.08, fogRgb: [0.90, 0.94, 1.00], fogDensity: 0.70 },
+  { id: "cave",     name: "Cave",      tint: [0.56, 0.62, 0.90], strength: 0.25, saturation: 0.80, brightness: 0.72, fogRgb: [0.10, 0.11, 0.22], fogDensity: 0.80 },
+  { id: "volcanic", name: "Volcanic",  tint: [1.00, 0.56, 0.40], strength: 0.22, saturation: 1.10, brightness: 0.92, fogRgb: [0.42, 0.18, 0.16], fogDensity: 0.70 },
+  { id: "beach",    name: "Beach",     tint: [0.82, 0.98, 1.00], strength: 0.12, saturation: 1.10, brightness: 1.06, fogRgb: [0.86, 0.95, 0.98], fogDensity: 0.40 },
+  { id: "crystal",  name: "Crystal",   tint: [0.82, 0.68, 1.00], strength: 0.20, saturation: 1.12, brightness: 1.02, fogRgb: [0.72, 0.62, 0.96], fogDensity: 0.60 },
+];
+const BIOME_KEY = KEY_PREFIX + "biome";
+const BIOME_FADE_MS = 700;               // the game blends over 2-3 s; a short preview here
+let biome = "none";
+let biomeFade = null;                    // { from: resolved values, id, t0 } while blending
+const biomeById = (id) => BIOME_FILTERS.find(b => b.id === id) || BIOME_FILTERS[0];
+// Numbers the shader uses; None's fog becomes the horizon colour, haze 0 = sky untouched.
+function biomeResolve(id, hor) {
+  const b = biomeById(id);
+  return { tint: b.tint, strength: b.strength, sat: b.saturation, bright: b.brightness,
+           fog: b.fogRgb || hor, density: b.fogDensity, haze: b.fogRgb ? 1 : 0 };
+}
+const lerpN = (a, b, t) => a + (b - a) * t;
+const lerpV = (a, b, t) => a.map((v, i) => lerpN(v, b[i], t));
+function biomeLerp(a, b, t) {
+  return { tint: lerpV(a.tint, b.tint, t), strength: lerpN(a.strength, b.strength, t), sat: lerpN(a.sat, b.sat, t),
+           bright: lerpN(a.bright, b.bright, t), fog: lerpV(a.fog, b.fog, t), density: lerpN(a.density, b.density, t),
+           haze: lerpN(a.haze, b.haze, t) };
+}
+// The values in effect this frame (blending while a fade runs).
+function biomeNow(hor) {
+  const to = biomeResolve(biome, hor);
+  if (!biomeFade) return to;
+  const t = Math.min(1, (performance.now() - biomeFade.t0) / BIOME_FADE_MS), k = t * t * (3 - 2 * t);
+  if (t >= 1) { biomeFade = null; return to; }
+  return biomeLerp(biomeFade.from, to, k);
+}
+// Same maths as the shader, for the clear colour and tests.
+function biomeGrade(c, v) {
+  const t = c.map((x, i) => lerpN(x, x * v.tint[i], v.strength));
+  const l = 0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2];
+  return t.map(x => Math.min(1, Math.max(0, lerpN(l, x, v.sat) * v.bright)));
+}
+let biomeLast = null;                    // last values drawn, so a fade starts from them
+function setBiome(id, fade = true) {
+  id = biomeById(id).id;
+  if (fade && biomeLast && id !== biome) biomeFade = { from: biomeLast, t0: performance.now() };
+  else if (!fade) biomeFade = null;
+  biome = id;
+  try { localStorage.setItem(BIOME_KEY, id); } catch (e) { /* storage blocked */ }
+  renderBiome();
+}
+function loadBiome() {
+  try { const id = localStorage.getItem(BIOME_KEY); if (id && BIOME_FILTERS.some(b => b.id === id)) biome = id; } catch (e) { /* defaults */ }
+}
+// The copyable snippet: the table row, as the game would store it.
+function biomeSnippet(id) {
+  const b = biomeById(id), f = (v) => v.toFixed(2), a = (v) => "[" + v.map(f).join(", ") + "]";
+  return `{\n "id": "${b.id}",\n "name": "${b.name}",\n "tint": ${a(b.tint)},\n "strength": ${f(b.strength)},\n` +
+         ` "saturation": ${f(b.saturation)},\n "brightness": ${f(b.brightness)},\n` +
+         ` "fogRgb": ${b.fogRgb ? a(b.fogRgb) : "null"},\n "fogDensity": ${f(b.fogDensity)}\n}`;
+}
+function renderBiome() {
+  const b = biomeById(biome);
+  $("biomeName").textContent = b.name;
+  $("biomeBtn").classList.toggle("on", b.id !== "none");
+  $("biomeBtn").setAttribute("aria-label", "Biome filter: " + b.name);
+  const list = $("biomeList");
+  if (!list.children.length) {
+    for (const x of BIOME_FILTERS) {
+      const btn = document.createElement("button");
+      btn.type = "button"; btn.dataset.biome = x.id;
+      const chip = document.createElement("i");
+      const col = x.fogRgb ? biomeGrade([0.85, 0.85, 0.85], { tint: x.tint, strength: Math.max(0.5, x.strength * 3), sat: x.saturation, bright: x.brightness }) : [0.85, 0.85, 0.85];
+      chip.style.background = "rgb(" + col.map(v => Math.round(v * 255)).join(",") + ")";
+      btn.append(chip, document.createTextNode(x.name));
+      btn.title = x.name + (x.id === "none" ? ": no filter" : ` filter: tint ${Math.round(x.strength * 100)}%, saturation ${x.saturation}, brightness ${x.brightness}`);
+      btn.addEventListener("click", () => setBiome(x.id));
+      list.append(btn);
+    }
+  }
+  for (const btn of list.children) btn.classList.toggle("on", btn.dataset.biome === b.id);
+  $("biomeRead").textContent = biomeSnippet(b.id);
+}
+
 function saveLight() {
   try { localStorage.setItem(LIGHT_KEY, JSON.stringify(light)); } catch (e) { /* storage blocked */ }
 }
@@ -2803,6 +2937,13 @@ uniform float uAlpha;
 uniform vec4 uTint;          // mix toward rgb by a (dims other objects, highlights selections)
 uniform vec4 uFog;           // fog colour, a = strength (0 = off: edges, dots, gizmo)
 uniform vec2 uFogRange;      // view distance where the fog starts / is full
+uniform vec4 uGrade;         // biome filter: tint rgb, a = strength (0 = off)
+uniform vec2 uGradeSB;       // biome filter: saturation, brightness (1, 1 = unchanged)
+vec3 grade(vec3 c) {
+  c = mix(c, c * uGrade.rgb, uGrade.a);
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  return clamp(mix(vec3(l), c, uGradeSB.x) * uGradeSB.y, 0.0, 1.0);
+}
 in float vDepth;
 out vec4 fragColor;
 void main() {
@@ -2811,7 +2952,7 @@ void main() {
   if (uRing && length(gl_PointCoord - 0.5) < 0.3) discard;    // hollow ring ("will merge")
   vec3 c = mix(vColor, uTint.rgb, uTint.a);
   float f = uFog.a * smoothstep(uFogRange.x, uFogRange.y, vDepth);
-  fragColor = vec4(mix(c, uFog.rgb, f), uAlpha);
+  fragColor = vec4(grade(mix(c, uFog.rgb, f)), uAlpha);   // biome filter is the last step
 }`);
 
 const U = {
@@ -2823,6 +2964,8 @@ const U = {
   tint:  gl.getUniformLocation(prog, "uTint"),
   fog:   gl.getUniformLocation(prog, "uFog"),
   fogRange: gl.getUniformLocation(prog, "uFogRange"),
+  grade: gl.getUniformLocation(prog, "uGrade"),
+  gradeSB: gl.getUniformLocation(prog, "uGradeSB"),
 };
 
 //----- Sky Background -----||
@@ -2840,20 +2983,34 @@ precision mediump float;
 in float vY;
 uniform vec3 uTop;
 uniform vec3 uHorizon;
+uniform vec4 uGrade;         // biome filter: tint rgb, a = strength (0 = off)
+uniform vec2 uGradeSB;       // biome filter: saturation, brightness (1, 1 = unchanged)
+vec3 grade(vec3 c) {
+  c = mix(c, c * uGrade.rgb, uGrade.a);
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  return clamp(mix(vec3(l), c, uGradeSB.x) * uGradeSB.y, 0.0, 1.0);
+}
 out vec4 fragColor;
 void main() {
-  fragColor = vec4(mix(uHorizon, uTop, smoothstep(0.0, 1.0, vY)), 1.0);
+  fragColor = vec4(grade(mix(uHorizon, uTop, smoothstep(0.0, 1.0, vY))), 1.0);
 }`);
-const SKY_U = { top: gl.getUniformLocation(skyProg, "uTop"), hor: gl.getUniformLocation(skyProg, "uHorizon") };
+const SKY_U = { top: gl.getUniformLocation(skyProg, "uTop"), hor: gl.getUniformLocation(skyProg, "uHorizon"),
+                grade: gl.getUniformLocation(skyProg, "uGrade"), gradeSB: gl.getUniformLocation(skyProg, "uGradeSB") };
+// Biome filter uniforms for a program (identity when v is null: overlays stay true-colour).
+function setGrade(u, v) {
+  if (v) { gl.uniform4f(u.grade, v.tint[0], v.tint[1], v.tint[2], v.strength); gl.uniform2f(u.gradeSB, v.sat, v.bright); }
+  else { gl.uniform4f(u.grade, 1, 1, 1, 0); gl.uniform2f(u.gradeSB, 1, 1); }
+}
 const skyVao = gl.createVertexArray();
 // Background in use: { on, top, hor }. Grid lines and the "dim others" tint follow it.
 function skyColors() {
   const p = lightPreset();
   return light.sky ? { on: true, top: p.sky[0], hor: p.sky[1] } : { on: false, top: DARK_BG, hor: DARK_BG };
 }
-function drawSky(bg) {
+function drawSky(bg, bv) {
   gl.disable(gl.DEPTH_TEST);
   gl.useProgram(skyProg);
+  setGrade(SKY_U, bv);
   gl.uniform3f(SKY_U.top, ...bg.top);
   gl.uniform3f(SKY_U.hor, ...bg.hor);
   gl.bindVertexArray(skyVao);
@@ -3963,7 +4120,7 @@ function stepCamAnim() {
   cam.pitch = camAnim.p0 + (camAnim.p1 - camAnim.p0) * k;
   if (t >= 1) camAnim = null;
 }
-for (const b of document.querySelectorAll("#views button"))
+for (const b of document.querySelectorAll("#views button[data-view]"))
   b.addEventListener("click", (e) => { e.stopPropagation(); setView(b.dataset.view); });
 
 
@@ -5048,6 +5205,19 @@ holdSun($("sunPitchD"), 0, -SUN_STEP);
 holdSun($("sunPitchU"), 0, SUN_STEP);
 $("sunView").addEventListener("click", () => setSunFromDir(v3.sub(camEye(), cam.target)));
 $("sunReset").addEventListener("click", () => setSunFromDir(SUN_DEFAULT));
+//----- Biome Menu -----||
+$("biomeBtn").addEventListener("click", (e) => { e.stopPropagation(); $("biomeMenu").classList.toggle("show"); });
+$("biomeClose").addEventListener("click", () => $("biomeMenu").classList.remove("show"));
+$("biomeCopy").addEventListener("click", async () => {
+  const txt = biomeSnippet(biome);
+  try { await navigator.clipboard.writeText(txt); toast("Copied " + biomeById(biome).name + " values"); }
+  catch (e) { toast("Copy blocked: select the values in the box instead"); }
+});
+document.addEventListener("pointerdown", (e) => {
+  if (!$("biomeMenu").classList.contains("show")) return;
+  if (e.target.closest("#biomeMenu") || e.target.closest("#biomeBtn")) return;
+  $("biomeMenu").classList.remove("show");
+});
 document.addEventListener("pointerdown", (e) => {
   if (!$("sunMenu").classList.contains("show")) return;
   if (e.target.closest("#sunMenu") || e.target.closest("#bBake")) return;
@@ -5763,16 +5933,23 @@ function frame() {
   if (meshDirty) rebuildBuffers();
 
   gl.viewport(0, 0, canvas.width, canvas.height);
-  const bg = skyColors();
-  gl.clearColor(bg.hor[0], bg.hor[1], bg.hor[2], 1);
+  const bg0 = skyColors();
+  // Biome filter: the sky hazes toward the biome's fog colour, then everything is graded.
+  const bv = biomeNow(bg0.hor);
+  biomeLast = bv;
+  const bg = bg0.on ? { on: true, top: lerpV(bg0.top, bv.fog, 0.4 * bv.haze * bv.density), hor: lerpV(bg0.hor, bv.fog, 0.8 * bv.haze * bv.density) } : bg0;
+  const clear = biomeGrade(bg.hor, bv);
+  gl.clearColor(clear[0], clear[1], clear[2], 1);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  if (bg.on) drawSky(bg);
+  if (bg.on) drawSky(bg, bv);
   gl.enable(gl.DEPTH_TEST);
   gl.useProgram(prog);
+  setGrade(U, bv);
   // Fog: the model you're looking at stays clear; far scene objects and grid fade out.
-  const fogNear = cam.dist * 1.3 + 0.5;
-  gl.uniform4f(U.fog, bg.hor[0], bg.hor[1], bg.hor[2], light.fog && bg.on ? 0.6 : 0);
-  gl.uniform2f(U.fogRange, fogNear, fogNear + 8 + cam.dist * 3);
+  // Denser biome fog (above the normal 0.6) also starts closer.
+  const fogK = 1.6 - bv.density, fogNear = (cam.dist * 1.3 + 0.5) * fogK;
+  gl.uniform4f(U.fog, bv.fog[0], bv.fog[1], bv.fog[2], light.fog && bg.on ? bv.density : 0);
+  gl.uniform2f(U.fogRange, fogNear, fogNear + (8 + cam.dist * 3) * fogK);
   gl.uniformMatrix4fv(U.mvp, false, viewProj);
   gl.uniform1f(U.alpha, 1);
   gl.uniform1i(U.round, 0);
@@ -5822,6 +5999,7 @@ function frame() {
   }
   gl.uniform4f(U.tint, 0, 0, 0, 0);
   gl.uniform4f(U.fog, 0, 0, 0, 0);                 // no fog on edges, dots and the gizmo
+  setGrade(U, null);                               // ...and no biome filter on them
   gl.disable(gl.POLYGON_OFFSET_FILL);
   gl.uniformMatrix4fv(U.mvp, false, mvpA);
 
@@ -5997,6 +6175,8 @@ load();
 if (snapPositionsToExportGrid()) save();       // older saves land on the same grid the game uses
 loadSun();
 loadLight();
+loadBiome();
+renderBiome();
 applySee();
 updateUI();
 requestAnimationFrame(frame);

@@ -90,6 +90,35 @@ Classic exports are byte-for-byte the same as before (`0.55 + 0.45*max(0, n.(...
 
 **Import** reads that line back and un-bakes each face with the matching preset and sun. It then snaps to the palette colour that re-bakes to the same bytes. A Pastel export therefore re-imports to the exact palette colours, whatever preset the viewport is showing. Files without a preset line are treated as Classic.
 
+## Biome filters (v24)
+
+The **◑** button under the view buttons (F B L R T D I) opens a list of biome screen filters. The active biome's name is always shown under the button. The choice is remembered, and switching fades over about 0.7 s, to preview how the game blends between biomes (2–3 s there).
+
+A biome filter is a **viewport preview only**. It never touches the bake, so exports are byte-for-byte the same with any biome on.
+
+It is the last step of the fragment shader, after fog:
+
+    c = mix(c, c * tint, strength);
+    c = clamp(mix(luma(c), c, saturation) * brightness, 0, 1);   // luma = dot(c, (0.2126, 0.7152, 0.0722))
+
+- **Fog:** fades toward the biome's fog colour, with `fogDensity` as its maximum strength. 0.6 is the normal fog; denser fog also starts closer. None uses the sky's horizon colour, so it looks exactly like the plain lighting preset.
+- **Sky:** hazes toward the fog colour too.
+- **Works with the other view settings:** the lighting presets, the Sky/Fog toggles and the colour preview all combine with it. The Fog toggle turns biome fog off as well.
+- **Copying the numbers:** the menu shows the selected biome's numbers as JSON, with a **Copy values** button. The whole table is `BIOME_FILTERS` in index.html and [examples/biome_filters.json](examples/biome_filters.json).
+
+| Biome | Tint (r, g, b) | Strength | Saturation | Brightness | Fog (r, g, b) | Fog density |
+|---|---|---|---|---|---|---|
+| None | 1.00, 1.00, 1.00 | 0.00 | 1.00 | 1.00 | sky horizon | 0.60 |
+| Meadow | 0.96, 1.00, 0.78 | 0.12 | 1.08 | 1.03 | 0.90, 0.95, 0.80 | 0.45 |
+| Forest | 0.70, 0.92, 0.72 | 0.20 | 0.95 | 0.94 | 0.56, 0.72, 0.60 | 0.65 |
+| Swamp | 0.66, 0.74, 0.46 | 0.25 | 0.78 | 0.90 | 0.46, 0.54, 0.36 | 0.90 |
+| Desert | 1.00, 0.82, 0.64 | 0.20 | 1.15 | 1.05 | 0.98, 0.86, 0.70 | 0.50 |
+| Snow | 0.84, 0.92, 1.00 | 0.20 | 0.85 | 1.08 | 0.90, 0.94, 1.00 | 0.70 |
+| Cave | 0.56, 0.62, 0.90 | 0.25 | 0.80 | 0.72 | 0.10, 0.11, 0.22 | 0.80 |
+| Volcanic | 1.00, 0.56, 0.40 | 0.22 | 1.10 | 0.92 | 0.42, 0.18, 0.16 | 0.70 |
+| Beach | 0.82, 0.98, 1.00 | 0.12 | 1.10 | 1.06 | 0.86, 0.95, 0.98 | 0.40 |
+| Crystal | 0.82, 0.68, 1.00 | 0.20 | 1.12 | 1.02 | 0.72, 0.62, 0.96 | 0.60 |
+
 ## World palette (v23)
 
 A built-in, read-only **World (named)** palette of 36 colours. Every swatch shows its name, and the rows are grouped by material. Most groups run light / mid / dark.

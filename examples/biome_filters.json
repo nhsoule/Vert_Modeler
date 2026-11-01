@@ -1,0 +1,107 @@
+{
+ "name": "Biome filters",
+ "version": "v24-biome-filter",
+ "shader": "c = mix(c, c * tint, strength); l = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = clamp(mix(vec3(l), c, saturation) * brightness, 0, 1); applied last, after fog. Fog fades toward fogRgb with max opacity fogDensity (null = the sky horizon colour).",
+ "biomes": [
+  {
+   "id": "none",
+   "name": "None",
+   "tint": [1, 1, 1],
+   "strength": 0,
+   "saturation": 1,
+   "brightness": 1,
+   "fogRgb": null,
+   "fogDensity": 0.6
+  },
+  {
+   "id": "meadow",
+   "name": "Meadow",
+   "tint": [0.96, 1, 0.78],
+   "strength": 0.12,
+   "saturation": 1.08,
+   "brightness": 1.03,
+   "fogRgb": [0.9, 0.95, 0.8],
+   "fogDensity": 0.45
+  },
+  {
+   "id": "forest",
+   "name": "Forest",
+   "tint": [0.7, 0.92, 0.72],
+   "strength": 0.2,
+   "saturation": 0.95,
+   "brightness": 0.94,
+   "fogRgb": [0.56, 0.72, 0.6],
+   "fogDensity": 0.65
+  },
+  {
+   "id": "swamp",
+   "name": "Swamp",
+   "tint": [0.66, 0.74, 0.46],
+   "strength": 0.25,
+   "saturation": 0.78,
+   "brightness": 0.9,
+   "fogRgb": [0.46, 0.54, 0.36],
+   "fogDensity": 0.9
+  },
+  {
+   "id": "desert",
+   "name": "Desert",
+   "tint": [1, 0.82, 0.64],
+   "strength": 0.2,
+   "saturation": 1.15,
+   "brightness": 1.05,
+   "fogRgb": [0.98, 0.86, 0.7],
+   "fogDensity": 0.5
+  },
+  {
+   "id": "snow",
+   "name": "Snow",
+   "tint": [0.84, 0.92, 1],
+   "strength": 0.2,
+   "saturation": 0.85,
+   "brightness": 1.08,
+   "fogRgb": [0.9, 0.94, 1],
+   "fogDensity": 0.7
+  },
+  {
+   "id": "cave",
+   "name": "Cave",
+   "tint": [0.56, 0.62, 0.9],
+   "strength": 0.25,
+   "saturation": 0.8,
+   "brightness": 0.72,
+   "fogRgb": [0.1, 0.11, 0.22],
+   "fogDensity": 0.8
+  },
+  {
+   "id": "volcanic",
+   "name": "Volcanic",
+   "tint": [1, 0.56, 0.4],
+   "strength": 0.22,
+   "saturation": 1.1,
+   "brightness": 0.92,
+   "fogRgb": [0.42, 0.18, 0.16],
+   "fogDensity": 0.7
+  },
+  {
+   "id": "beach",
+   "name": "Beach",
+   "tint": [0.82, 0.98, 1],
+   "strength": 0.12,
+   "saturation": 1.1,
+   "brightness": 1.06,
+   "fogRgb": [0.86, 0.95, 0.98],
+   "fogDensity": 0.4
+  },
+  {
+   "id": "crystal",
+   "name": "Crystal",
+   "tint": [0.82, 0.68, 1],
+   "strength": 0.2,
+   "saturation": 1.12,
+   "brightness": 1.02,
+   "fogRgb": [0.72, 0.62, 0.96],
+   "fogDensity": 0.6
+  }
+ ]
+}
