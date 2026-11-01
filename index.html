@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="vert-modeler-version" content="v22-shapes">
+<meta name="vert-modeler-version" content="v23-palette">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -71,6 +71,24 @@
   .swatch.on { border-color: #fff; box-shadow: 0 0 0 2px #000 inset; }
   .swatch.add { background: #2a2c38; color: #e8e8ee; font-size: 22px; line-height: 1; }
   #palette.editing .swatch:not(.add) { border-style: dashed; border-color: #e0b43a; }
+  /* Named palettes (World): one row per material group, the name printed on each swatch. */
+  #swatches.named { display: block; max-height: min(34vh, 250px); }
+  .palRow { display: flex; gap: 4px; align-items: stretch; margin-bottom: 4px; }
+  .palGroup {
+    width: 58px; flex: none; align-self: center; font-size: 10px; line-height: 1.15; color: #9a9db0;
+    text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  #swatches.named .swatch {
+    flex: 1; min-width: 0; height: 34px; padding: 0 2px; overflow: hidden;
+    font: 600 10px/1.1 system-ui, -apple-system, sans-serif; white-space: normal; word-break: break-word;
+  }
+  #palRead {
+    display: flex; gap: 6px; align-items: center; min-height: 18px; margin-bottom: 6px;
+    font-size: 12px; color: #d8d9e2; white-space: nowrap; overflow: hidden;
+  }
+  #palRead i { width: 14px; height: 14px; flex: none; border-radius: 4px; border: 1px solid #ffffff80; }
+  #palRead b { font-weight: 600; }
+  #palRead .face { color: #b9bccb; overflow: hidden; text-overflow: ellipsis; }
 
   /* ----- Toolbar (two rows: tools on top, toggles/actions below) -----|| */
   #toolbar {
@@ -273,6 +291,7 @@
   .sunRow { display: flex; gap: 6px; }
   .sunRow button { flex: 1; min-width: 0; }
   #sunMenu .note { font-size: 11px; color: #9a9db0; text-align: center; }
+  #lightPresets button, .lightRow button { font-size: 12px; padding: 0 4px; }
   /* Select mode: the box being dragged */
   #boxSel { position: absolute; display: none; pointer-events: none;
             border: 1px dashed #e0b43a; background: #e0b43a22; }
@@ -328,6 +347,16 @@
         <button id="sunToggle" type="button">Shade on</button>
         <button id="sunClose" type="button" aria-label="Close">×</button>
       </div>
+      <div class="sunRow" id="lightPresets" role="group" aria-label="Lighting preset">
+        <button type="button" data-light="pastel"  title="Peach sun, lavender shadows, pastel sky">Pastel Day</button>
+        <button type="button" data-light="dusk"    title="Orange-pink sun, purple shadows">Dusk</button>
+        <button type="button" data-light="classic" title="The original grey light (older exports)">Classic</button>
+      </div>
+      <div class="sunRow lightRow">
+        <button id="lightSky" type="button" title="Sky gradient behind the model (off = dark)">Sky</button>
+        <button id="lightFog" type="button" title="Soft fog toward the horizon colour">Fog</button>
+        <button id="lightSee" type="button" title="Colour preview: normal, greys (value only), deuteranopia, protanopia">Normal</button>
+      </div>
       <div class="sunPresets" role="group" aria-label="Light from">
         <button type="button" data-sun="front"  title="Light from the front (−Y)">F</button>
         <button type="button" data-sun="back"   title="Light from the back (+Y)">Bk</button>
@@ -347,7 +376,7 @@
         <button id="sunView" type="button" title="Put the sun behind the camera">This view</button>
         <button id="sunReset" type="button" title="Original sun: up, from the back-right">Reset</button>
       </div>
-      <div class="note">Hold ↺↻↓↑ to sweep. Shade bakes this sun into the export.</div>
+      <div class="note">Hold ↺↻↓↑ to sweep. Shade bakes this sun and the preset's colours into the export.</div>
     </div>
     <div id="scenePanel" aria-label="Scene">
       <div class="scHead">
@@ -421,8 +450,10 @@
   <div id="palette">
     <div class="palHead">
       <button id="palName" aria-label="Palettes"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5C6.8 2.5 2.5 6.6 2.5 11.8c0 5 4.1 9.7 9 9.7 1.4 0 2.3-1 2.3-2.2 0-.6-.2-1.1-.6-1.5-.3-.4-.5-.8-.5-1.3 0-1 .8-1.8 1.8-1.8h2.1c3 0 4.9-2.2 4.9-5C21.5 5.9 17.2 2.5 12 2.5zM6.8 12.6a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3-4.2a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm4.4 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3 4.2a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg> <span id="palNameText"></span> ▾</button>
+      <button id="palPick" title="Tap a face to take its colour">Pick</button>
       <button id="palEdit">✎︎ Edit</button>
     </div>
+    <div id="palRead" aria-live="polite"><i id="palReadChip"></i><span id="palReadText"></span><span id="palReadFace" class="face"></span></div>
     <div id="swatches"></div>
   </div>
   <div id="toolbar">
@@ -507,6 +538,7 @@
     <div class="head"><span id="swTitle">Swatch</span></div>
     <input id="swColor" type="color" value="#ff004d">
     <input id="swHex" type="text" maxlength="7" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="#rrggbb">
+    <input id="swName" type="text" maxlength="24" autocomplete="off" spellcheck="false" placeholder="Name (optional)">
     <div class="btnrow">
       <button id="swSave">Save</button>
       <button id="swDelete" class="alt">Delete</button>
@@ -515,6 +547,11 @@
   </div>
 </div>
 <div id="toast"></div>
+<!-- Colour-vision previews (Machado et al. 2009, severity 1.0), applied in linear RGB. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="cvdDeutan" color-interpolation-filters="linearRGB"><feColorMatrix type="matrix" values="0.367322 0.860646 -0.227968 0 0  0.280085 0.672501 0.047413 0 0  -0.011820 0.042940 0.968881 0 0  0 0 0 1 0"/></filter>
+  <filter id="cvdProtan" color-interpolation-filters="linearRGB"><feColorMatrix type="matrix" values="0.152286 1.052583 -0.204868 0 0  0.114503 0.786281 0.099216 0 0  -0.003882 -0.048116 1.051998 0 0  0 0 0 1 0"/></filter>
+</svg>
 
 <script>
 "use strict";
@@ -606,7 +643,57 @@ function bakeFactorFor(n, light) {
   const L = light || sunDir;
   return 0.55 + 0.45 * Math.max(0, n[0]*L[0] + n[1]*L[1] + n[2]*L[2]);
 }
-const bakeFactor = (n) => bakeFactorFor(n, sunDir);
+
+//----- Lighting Presets -----||
+// The baked light, per channel: rgb * (amb + sun * max(0, n.L)), clamped to 1.
+// Classic is the original grey 0.55 + 0.45, so its exports are byte-for-byte unchanged.
+// Rules for a new preset: two decimals (the export header prints them and Import reads
+// them back), and amb + sun <= 1 per channel, so a colour never clips and Import can undo it.
+// sky = [top, horizon] for the viewport background; fog fades toward the horizon colour.
+const LIGHT_PRESETS = [
+  { id: "pastel",  name: "Pastel Day", amb: [0.56, 0.52, 0.70], sun: [0.44, 0.42, 0.16], sky: [[0.62, 0.79, 0.97], [0.99, 0.87, 0.89]] },
+  { id: "dusk",    name: "Dusk",       amb: [0.40, 0.32, 0.58], sun: [0.60, 0.44, 0.22], sky: [[0.22, 0.18, 0.42], [0.86, 0.56, 0.66]] },
+  { id: "classic", name: "Classic",    amb: [0.55, 0.55, 0.55], sun: [0.45, 0.45, 0.45], sky: [[0.70, 0.75, 0.84], [0.88, 0.89, 0.92]] },
+];
+const CLASSIC_BAKE = LIGHT_PRESETS[2];
+const LIGHT_KEY = KEY_PREFIX + "light";
+const DARK_BG = [0.086, 0.09, 0.114];
+const SEE_MODES = ["normal", "value", "deutan", "protan"];
+let light = { preset: "pastel", sky: true, fog: true, see: "normal" };
+const lightPreset = () => LIGHT_PRESETS.find(p => p.id === light.preset) || LIGHT_PRESETS[0];
+const isClassicBake = (b) => b.amb.every(v => v === 0.55) && b.sun.every(v => v === 0.45);
+// Per-channel light factor for normal n, sun direction L and bake b ({ amb, sun }).
+function bakeRGBFor(n, L, b) {
+  const d = Math.max(0, n[0]*L[0] + n[1]*L[1] + n[2]*L[2]);
+  return [b.amb[0] + b.sun[0] * d, b.amb[1] + b.sun[1] * d, b.amb[2] + b.sun[2] * d];
+}
+function saveLight() {
+  try { localStorage.setItem(LIGHT_KEY, JSON.stringify(light)); } catch (e) { /* storage blocked */ }
+}
+function loadLight() {
+  try {
+    const d = JSON.parse(localStorage.getItem(LIGHT_KEY));
+    if (d && typeof d === "object") {
+      if (LIGHT_PRESETS.some(p => p.id === d.preset)) light.preset = d.preset;
+      if (typeof d.sky === "boolean") light.sky = d.sky;
+      if (typeof d.fog === "boolean") light.fog = d.fog;
+      if (SEE_MODES.includes(d.see)) light.see = d.see;
+    }
+  } catch (e) { /* corrupt: defaults */ }
+}
+// The "See" preview is a CSS filter on the view and the palette, so nothing else changes.
+function applySee() {
+  const f = { normal: "", value: "grayscale(1)", deutan: "url(#cvdDeutan)", protan: "url(#cvdProtan)" }[light.see] || "";
+  canvas.style.filter = f;
+  $("palette").style.filter = f;
+}
+function setLight(patch) {
+  Object.assign(light, patch);
+  saveLight();
+  applySee();
+  meshDirty = true;
+  updateUI();
+}
 
 // Remember the sun between sessions. Import of a baked file overwrites this so the
 // preview matches the numbers that were saved.
@@ -670,10 +757,24 @@ function sunPresetOn(name) {
 }
 // Comment text inside "baked into colors (...)". The original sun keeps the historical
 // wording exactly, so older files still say n.(0.3,0.5,0.8).
+// A coloured preset writes its numbers too, e.g.
+//   rgb * ((0.56,0.52,0.70) + (0.44,0.42,0.16)*max(0, n.(0.3,0.5,0.8))), clamped to 1, preset Pastel Day
 function sunFormulaText() {
-  if (sunIsDefault()) return "0.55 + 0.45*max(0, n.(0.3,0.5,0.8))";
-  const parts = sunDir.map(v => (Math.round(v * 1e4) / 1e4).toFixed(4));
-  return `0.55 + 0.45*max(0, n.(${parts.join(",")}))`;
+  const v = sunIsDefault() ? "0.3,0.5,0.8" : sunDir.map(x => (Math.round(x * 1e4) / 1e4).toFixed(4)).join(",");
+  const p = lightPreset();
+  if (isClassicBake(p)) return `0.55 + 0.45*max(0, n.(${v}))`;
+  const f = (a) => "(" + a.map(x => x.toFixed(2)).join(",") + ")";
+  return `rgb * (${f(p.amb)} + ${f(p.sun)}*max(0, n.(${v}))), clamped to 1, preset ${p.name}`;
+}
+// The bake in an export's comment: the coloured form above, else Classic (older files).
+function parseBake(text) {
+  const num = "\\s*([0-9]*\\.?[0-9]+)\\s*";
+  const m = text.match(new RegExp(`\\(${num},${num},${num}\\)\\s*\\+\\s*\\(${num},${num},${num}\\)\\s*\\*\\s*max`));
+  if (!m) return { amb: CLASSIC_BAKE.amb, sun: CLASSIC_BAKE.sun, name: "Classic" };
+  const v = m.slice(1, 7).map(Number);
+  if (v.some(x => !isFinite(x))) return { amb: CLASSIC_BAKE.amb, sun: CLASSIC_BAKE.sun, name: "Classic" };
+  const pm = text.match(/preset ([A-Za-z0-9 _-]+?)\)/);
+  return { amb: v.slice(0, 3), sun: v.slice(3, 6), name: pm ? pm[1] : "custom" };
 }
 // null = the comment has no vector (old "baked" lines, or flat). (0.3,0.5,0.8) is the
 // pre-normalized original sun, not a unit vector.
@@ -808,13 +909,13 @@ function triNormal(t) {
 
 // Colour of triangle t as 0..1 floats, with baked light if "Shade" is on.
 function triColor(t) {
-  const k = bakeOn ? bakeFactor(triNormal(t)) : 1;
-  return mesh.colors[t].map(c => Math.min(1, c * k));
+  return triColorN(t, triNormal(t));
 }
 // Same, lit as if the face pointed along n (a two-sided object's back face uses -normal).
 function triColorN(t, n) {
-  const k = bakeOn ? bakeFactor(n) : 1;
-  return mesh.colors[t].map(c => Math.min(1, c * k));
+  if (!bakeOn) return mesh.colors[t].map(c => Math.min(1, c));
+  const k = bakeRGBFor(n, sunDir, lightPreset());
+  return mesh.colors[t].map((c, i) => Math.min(1, c * k[i]));
 }
 
 // Unique edges as [a, b] pairs (a < b). Each edge is shared by up to 2 triangles.
@@ -1961,7 +2062,7 @@ function sceneData() {
 }
 // The .json project file: the scene plus the light, so it opens looking the same.
 function projectData() {
-  return { format: "vert-modeler-scene", v: 1, bakeOn, sun: sunDir.slice(), ...sceneData() };
+  return { format: "vert-modeler-scene", v: 1, bakeOn, sun: sunDir.slice(), light: light.preset, ...sceneData() };
 }
 
 // Validate a saved / pasted list of objects. Returns fresh objects or null.
@@ -2376,6 +2477,7 @@ function sceneFromJson(d, replace) {
     pointActive(a);
     if (typeof d.bakeOn === "boolean") bakeOn = d.bakeOn;
     if (Array.isArray(d.sun) && d.sun.length === 3 && d.sun.every(isFinite)) adoptSun(d.sun);
+    if (LIGHT_PRESETS.some(p => p.id === d.light)) { light.preset = d.light; saveLight(); }
     setActive(a);
     return list.length;
   }
@@ -2686,9 +2788,11 @@ layout(location = 1) in vec3 aColor;
 uniform mat4 uMVP;
 uniform float uPointSize;
 out vec3 vColor;
+out float vDepth;
 void main() {
   vColor = aColor;
   gl_Position = uMVP * vec4(aPos, 1.0);
+  vDepth = gl_Position.w;          // distance along the view: drives the fog
   gl_PointSize = uPointSize;
 }`, `#version 300 es
 precision mediump float;
@@ -2697,12 +2801,17 @@ uniform bool uRoundPoints;
 uniform bool uRing;
 uniform float uAlpha;
 uniform vec4 uTint;          // mix toward rgb by a (dims other objects, highlights selections)
+uniform vec4 uFog;           // fog colour, a = strength (0 = off: edges, dots, gizmo)
+uniform vec2 uFogRange;      // view distance where the fog starts / is full
+in float vDepth;
 out vec4 fragColor;
 void main() {
   // Points are squares by default; throw away the corners to get round dots.
   if (uRoundPoints && length(gl_PointCoord - 0.5) > 0.5) discard;
   if (uRing && length(gl_PointCoord - 0.5) < 0.3) discard;    // hollow ring ("will merge")
-  fragColor = vec4(mix(vColor, uTint.rgb, uTint.a), uAlpha);
+  vec3 c = mix(vColor, uTint.rgb, uTint.a);
+  float f = uFog.a * smoothstep(uFogRange.x, uFogRange.y, vDepth);
+  fragColor = vec4(mix(c, uFog.rgb, f), uAlpha);
 }`);
 
 const U = {
@@ -2712,7 +2821,45 @@ const U = {
   ring:  gl.getUniformLocation(prog, "uRing"),
   alpha: gl.getUniformLocation(prog, "uAlpha"),
   tint:  gl.getUniformLocation(prog, "uTint"),
+  fog:   gl.getUniformLocation(prog, "uFog"),
+  fogRange: gl.getUniformLocation(prog, "uFogRange"),
 };
+
+//----- Sky Background -----||
+// One full-screen triangle with a vertical gradient (horizon colour at the bottom, sky
+// colour at the top). No vertex buffer: the corners come from gl_VertexID.
+const skyProg = makeProgram(`#version 300 es
+const vec2 P[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+out float vY;
+void main() {
+  vec2 p = P[gl_VertexID];
+  vY = p.y * 0.5 + 0.5;
+  gl_Position = vec4(p, 0.0, 1.0);
+}`, `#version 300 es
+precision mediump float;
+in float vY;
+uniform vec3 uTop;
+uniform vec3 uHorizon;
+out vec4 fragColor;
+void main() {
+  fragColor = vec4(mix(uHorizon, uTop, smoothstep(0.0, 1.0, vY)), 1.0);
+}`);
+const SKY_U = { top: gl.getUniformLocation(skyProg, "uTop"), hor: gl.getUniformLocation(skyProg, "uHorizon") };
+const skyVao = gl.createVertexArray();
+// Background in use: { on, top, hor }. Grid lines and the "dim others" tint follow it.
+function skyColors() {
+  const p = lightPreset();
+  return light.sky ? { on: true, top: p.sky[0], hor: p.sky[1] } : { on: false, top: DARK_BG, hor: DARK_BG };
+}
+function drawSky(bg) {
+  gl.disable(gl.DEPTH_TEST);
+  gl.useProgram(skyProg);
+  gl.uniform3f(SKY_U.top, ...bg.top);
+  gl.uniform3f(SKY_U.hor, ...bg.hor);
+  gl.bindVertexArray(skyVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindVertexArray(null);
+}
 
 // A "draw batch" = one VAO + one VBO + a vertex count. The preview is pos3 + color3
 // (6 floats, stride 24). The C++ export adds the face normal after the colour.
@@ -2834,7 +2981,7 @@ let objGpuPruned = -1;
 function objBatches(o) {
   let g = objGpu.get(o.id);
   if (!g) { g = { face: makeBatch(), edge: makeBatch(), key: "" }; objGpu.set(o.id, g); }
-  const key = sceneVersion + "|" + bakeOn + "|" + sunDir.join(",");
+  const key = sceneVersion + "|" + bakeOn + "|" + sunDir.join(",") + "|" + light.preset;
   if (g.key !== key) {
     uploadBatch(g.face, meshFaceData(o.mesh, o.twoSided));
     uploadBatch(g.edge, meshEdgeData(o.mesh));
@@ -3381,6 +3528,13 @@ canvas.addEventListener("pointerdown", (e) => {
   if (mode === "paint") {
     gesture = { kind: "paint", startX: p.x, startY: p.y, lastX: p.x, lastY: p.y,
                 before: snapshot(), changed: false, any: false, far: false, t0: performance.now() };
+    // Pick: this touch only reads the face's colour; the rest of the stroke paints nothing.
+    if (pickMode && pickFace(p.x, p.y) >= 0) {
+      paintAt(p.x, p.y);
+      gesture.any = true;
+      gesture.done = { has: () => true, add() {} };
+      return;
+    }
     paintStroke(p.x, p.y);
     return;
   }
@@ -3661,6 +3815,7 @@ function paintStroke(x, y) {
     mesh.colors[u] = currentColor.slice();
     meshDirty = true;
   }
+  faceRead = "Face: " + colorLabel(currentColor);
 }
 
 
@@ -3842,6 +3997,14 @@ function setOverlay(on) {
 function paintAt(x, y) {
   const t = pickFace(x, y);
   if (t < 0) return false;
+  if (pickMode) {                            // Pick: take this face's colour, then back to painting
+    pickMode = false;
+    currentColor = mesh.colors[t].slice();
+    faceRead = "Picked: " + colorLabel(mesh.colors[t]);
+    save(); updateUI();
+    return true;
+  }
+  faceRead = "Face: " + colorLabel(currentColor);
   const targets = [t, ...mirroredTris(t)];   // just [t] when mirror is off
   if (targets.every(u => colorEq(mesh.colors[u], currentColor))) return true;
   pushUndo();
@@ -4317,7 +4480,7 @@ function parsePacked(text) {
   if (nums.length < 18 || nums.length % 18)
     throw new Error("12-byte export needs whole triangles of Vert { pos, nrm, rgba }.");
   const lighting = /baked into colors/.test(text) ? "baked" : /not baked/.test(text) ? "flat" : null;
-  return { name: nameMatch ? nameMatch[1] : null, nums, lighting, sun: parseSunVector(text), stride: 6, kind: "packed", placed: parsePlaced(text) };
+  return { name: nameMatch ? nameMatch[1] : null, nums, lighting, sun: parseSunVector(text), bake: parseBake(text), stride: 6, kind: "packed", placed: parsePlaced(text) };
 }
 
 // "// placed at (x, y, z)" from a v18 scene export: where the object's pivot stood.
@@ -4359,10 +4522,12 @@ function parseExport(text) {
   if (!stride || nums.length < perTri) throw new Error("Need at least one triangle (" + (perTri || 18) + " numbers), found " + nums.length + ".");
   if (nums.length % perTri) throw new Error(nums.length + " numbers isn't a whole number of triangles (" + stride + " per vertex, 3 vertices each).");
   const lighting = /baked into colors/.test(text) ? "baked" : /not baked/.test(text) ? "flat" : null;
-  return { name: nameMatch ? nameMatch[1] : null, nums, lighting, sun: parseSunVector(text), stride, kind: stride === 9 ? "float9" : "float6", placed: parsePlaced(text) };
+  return { name: nameMatch ? nameMatch[1] : null, nums, lighting, sun: parseSunVector(text), bake: parseBake(text), stride, kind: stride === 9 ? "float9" : "float6", placed: parsePlaced(text) };
 }
 
-function importMesh(nums, mirror, lighting = null, light = null, stride = 6) {
+// opts.bake = the file's { amb, sun } (Classic if missing); opts.packed = colours are bytes.
+function importMesh(nums, mirror, lighting = null, light = null, stride = 6, opts = {}) {
+  const B = opts.bake || CLASSIC_BAKE;
   // Weld through a hash grid: each position goes in a cell of size WELD_EPS; we check the
   // 27 neighbouring cells so two points either side of a cell border still merge.
   const positions = [], cells = new Map(), corner = [];
@@ -4445,14 +4610,20 @@ function importMesh(nums, mirror, lighting = null, light = null, stride = 6) {
   // Two-sided: one colour has to give back BOTH baked bytes (front and back are lit
   // differently), so take the middle of the range that rounds to both, if there is one.
   const H = 0.5 / 255;
+  // A palette colour that bakes back to exactly the file's numbers wins over the raw
+  // division, so a dark-lit face comes back as "Cap Red", not a near miss of it.
+  const known = allPalettes().flatMap(p => p.colors);
+  const same = opts.packed ? (a, b) => colorByte(a) === colorByte(b) : (a, b) => Math.abs(a - b) <= 0.0005 + 1e-9;
+  const rebakes = (p, k, v) => p.every((x, i) => same(Math.min(1, x * k[i]), v[i]));
   const unbaked = rgb.map((c, t) => {
-    const k = bakeFactorFor(normal(t), L);
-    if (!backRgb) return c.map(v => v / k);
-    const kb = bakeFactorFor(v3.scale(normal(t), -1), L);
-    return c.map((v, i) => {
-      const lo = Math.max((v - H) / k, (backRgb[t][i] - H) / kb), hi = Math.min((v + H) / k, (backRgb[t][i] + H) / kb);
-      return lo < hi ? (lo + hi) / 2 : v / k;
+    const k = bakeRGBFor(normal(t), L, B);
+    const kb = backRgb ? bakeRGBFor(v3.scale(normal(t), -1), L, B) : null;
+    const raw = !backRgb ? c.map((v, i) => v / k[i]) : c.map((v, i) => {
+      const lo = Math.max((v - H) / k[i], (backRgb[t][i] - H) / kb[i]), hi = Math.min((v + H) / k[i], (backRgb[t][i] + H) / kb[i]);
+      return lo < hi ? (lo + hi) / 2 : v / k[i];
     });
+    const hit = known.find(p => colorEq(p, raw, 0.02) && rebakes(p, k, c) && (!kb || rebakes(p, kb, backRgb[t])));
+    return hit ? hit.slice() : raw;
   });
   let useBaked = lighting === "baked";
   if (lighting === null) {
@@ -4491,7 +4662,8 @@ function doImport(input, how = "add") {
     try {
       const parsed = parseExport(c);
       const keepMirror = how === "replace" && !models.length;
-      const res = importMesh(parsed.nums, keepMirror ? mesh.mirror : null, parsed.lighting, parsed.sun || SUN_DEFAULT.slice(), parsed.stride);
+      const res = importMesh(parsed.nums, keepMirror ? mesh.mirror : null, parsed.lighting, parsed.sun || SUN_DEFAULT.slice(), parsed.stride,
+        { bake: parsed.bake, packed: parsed.kind === "packed" });
       if (!keepMirror) detectMirror(res.mesh);
       models.push({ parsed, res });
     } catch (e) { errors.push(e.message); }
@@ -4566,6 +4738,12 @@ function updateSunMenu() {
   $("sunRead").textContent = sunReadout();
   $("sunReset").classList.toggle("on", sunIsDefault());
   for (const b of document.querySelectorAll("[data-sun]")) b.classList.toggle("on", on && sunPresetOn(b.dataset.sun));
+  for (const b of document.querySelectorAll("[data-light]")) b.classList.toggle("on", b.dataset.light === light.preset);
+  $("lightSky").classList.toggle("on", light.sky);
+  $("lightSky").textContent = light.sky ? "Sky" : "Dark";
+  $("lightFog").classList.toggle("on", light.fog && light.sky);
+  $("lightSee").classList.toggle("on", light.see !== "normal");
+  $("lightSee").textContent = { normal: "Normal", value: "Greys", deutan: "Deutan", protan: "Protan" }[light.see];
 }
 
 function updateUI() {
@@ -4842,6 +5020,11 @@ $("bBake").addEventListener("click", () => {
   updateUI();
 });
 $("sunToggle").addEventListener("click", () => { bakeOn = !bakeOn; meshChanged(); });
+for (const b of document.querySelectorAll("[data-light]"))
+  b.addEventListener("click", () => { setLight({ preset: b.dataset.light }); toast("Lighting: " + lightPreset().name + (bakeOn ? " (export bakes it)" : "")); });
+$("lightSky").addEventListener("click", () => setLight({ sky: !light.sky }));
+$("lightFog").addEventListener("click", () => setLight({ fog: !light.fog, sky: true }));
+$("lightSee").addEventListener("click", () => setLight({ see: SEE_MODES[(SEE_MODES.indexOf(light.see) + 1) % SEE_MODES.length] }));
 $("sunClose").addEventListener("click", () => { $("sunMenu").classList.remove("show"); updateUI(); });
 for (const b of document.querySelectorAll("[data-sun]"))
   b.addEventListener("click", () => applySunPreset(b.dataset.sun));
@@ -5094,7 +5277,83 @@ $("mCopy").addEventListener("click", async () => {
 //   { v: 1, active: "<id>", list: [ { id, name, colors: [[r,g,b] 0..1, ...] }, ... ] }
 const PAL_KEY = KEY_PREFIX + "palettes";
 const BUILTIN = { id: "default", name: "PICO-8 (built-in)", colors: DEFAULT_PALETTE, builtin: true };
-let palStore = { v: 1, active: "default", list: [] };
+
+//----- Palettes: World (named) -----||
+// The default palette for the pastel world: every colour has a NAME (shown on the swatch,
+// in the readout, and when you Pick a face), grouped by material. Each group is a
+// light -> dark ramp with clear steps in lightness, so colours can be told apart by value,
+// not only by hue (red-green colour blindness). To extend it, add a row here (0..255);
+// examples/world_palette.json and the README table list the same colours.
+const WORLD_TABLE = [
+  { group: "Foliage", colors: [
+    ["Leaf Light",       [190, 228, 120]],
+    ["Leaf",             [112, 180,  84]],
+    ["Leaf Dark",        [ 32,  92,  74]],
+  ] },
+  { group: "Grass", colors: [
+    ["Grass Light",      [132, 220, 172]],
+    ["Grass Teal",       [ 60, 170, 152]],
+    ["Grass Deep",       [ 28,  92, 112]],
+  ] },
+  { group: "Ground", colors: [
+    ["Sand",             [248, 226, 168]],
+    ["Path",             [196, 148, 104]],
+    ["Dirt",             [112,  72,  74]],
+  ] },
+  { group: "Warm Rock", colors: [
+    ["Warm Stone Light", [238, 222, 210]],
+    ["Warm Stone",       [166, 142, 140]],
+    ["Warm Stone Dark",  [ 96,  80, 100]],
+  ] },
+  { group: "Cool Rock", colors: [
+    ["Cool Stone Light", [196, 204, 232]],
+    ["Cool Stone",       [120, 132, 176]],
+    ["Cool Stone Dark",  [ 66,  70, 116]],
+  ] },
+  { group: "Wood", colors: [
+    ["Wood Light",       [240, 192, 134]],
+    ["Wood",             [192, 128,  84]],
+    ["Wood Dark",        [ 88,  52,  62]],
+  ] },
+  { group: "Water", colors: [
+    ["Water Light",      [176, 240, 250]],
+    ["Water",            [ 80, 166, 224]],
+    ["Water Deep",       [ 44,  84, 166]],
+  ] },
+  { group: "Mushroom", colors: [
+    ["Cream",            [252, 240, 214]],
+    ["Gill Pink",        [226, 178, 176]],
+    ["Cap Pink",         [246, 128, 138]],
+    ["Cap Red",          [220,  62,  84]],
+    ["Cap Red Dark",     [150,  36,  72]],
+  ] },
+  { group: "Blossom", colors: [
+    ["Blossom Pink",     [255, 186, 216]],
+    ["Petal Rose",       [240, 122, 182]],
+    ["Berry Plum",       [132,  56, 132]],
+  ] },
+  { group: "Glow", colors: [
+    ["Glow Yellow",      [255, 240, 130]],
+    ["Crystal Cyan",     [ 90, 220, 214]],
+    ["Crystal Violet",   [160, 116, 240]],
+  ] },
+  { group: "Roof", colors: [
+    ["Roof Coral",       [250, 152, 126]],
+    ["Roof Slate",       [ 84,  90, 152]],
+  ] },
+  { group: "Sky & Misc", colors: [
+    ["Sky Blue",         [170, 208, 252]],
+    ["Ink",              [ 40,  34,  62]],
+  ] },
+];
+const WORLD = {
+  id: "world", name: "World (named)", builtin: true,
+  colors: WORLD_TABLE.flatMap(g => g.colors.map(([, c]) => c.map(v => round3(v / 255)))),
+  names:  WORLD_TABLE.flatMap(g => g.colors.map(([n]) => n)),
+  groups: WORLD_TABLE.flatMap(g => g.colors.map(() => g.group)),
+};
+// "world: 1" marks that the World palette was introduced: older saves switch to it once.
+let palStore = { v: 1, active: "world", list: [], world: 1 };
 let palEditMode = false;
 
 function palLoad() {
@@ -5104,22 +5363,31 @@ function palLoad() {
       palStore.list = d.list.filter(p => p && typeof p.id === "string" && typeof p.name === "string" && Array.isArray(p.colors))
         .map(p => ({ id: p.id, name: p.name, colors: p.colors.filter(c => Array.isArray(c) && c.length === 3 && c.every(isFinite)) }));
       palStore.active = typeof d.active === "string" ? d.active : "default";
+      d.list.forEach((p, i) => {
+        const q = palStore.list.find(x => x.id === p.id);
+        if (!q) return;
+        if (Array.isArray(p.names)) q.names = p.names.map(n => String(n || ""));
+        if (Array.isArray(p.groups)) q.groups = p.groups.map(n => String(n || ""));
+      });
+      if (!d.world) { palStore.active = "world"; palStore.world = 1; palSave(); }
     }
   } catch (e) { /* corrupt: start with just the built-in */ }
 }
 function palSave() {
   try { localStorage.setItem(PAL_KEY, JSON.stringify(palStore)); } catch (e) { /* ignore */ }
 }
-const allPalettes = () => [BUILTIN, ...palStore.list];
-const activePalette = () => palStore.list.find(p => p.id === palStore.active) || BUILTIN;
+const allPalettes = () => [WORLD, BUILTIN, ...palStore.list];
+const activePalette = () => allPalettes().find(p => p.id === palStore.active) || WORLD;
 const newPalId = () => "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 function uniqueName(base) {
   let name = base, n = 2;
   while (allPalettes().some(p => p.name === name)) name = base + " " + n++;
   return name;
 }
-function createPalette(name, colors) {
+function createPalette(name, colors, names, groups) {
   const p = { id: newPalId(), name: uniqueName(name), colors: colors.map(c => c.map(round3)) };
+  if (names && names.length === colors.length) p.names = names.slice();
+  if (groups && groups.length === colors.length) p.groups = groups.slice();
   palStore.list.push(p);
   palStore.active = p.id;
   palSave();
@@ -5149,6 +5417,27 @@ function addToImportedPalette(colors) {
 
 // Hex <-> 0..1 floats.
 const toHex = (c) => "#" + c.map(v => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, "0")).join("");
+// Name of a colour: an exact (within IMPORT_EPS) named swatch, the active palette first,
+// else the nearest World colour ("≈ Leaf"). Nearness is a "redmean" weighted RGB distance.
+function colorInfo(c) {
+  const pals = [activePalette(), ...allPalettes()];
+  for (const p of pals) {
+    if (!p.names) continue;
+    const i = p.colors.findIndex((k, j) => p.names[j] && colorEq(k, c, IMPORT_EPS));
+    if (i >= 0) return { name: p.names[i], group: (p.groups && p.groups[i]) || "", exact: true };
+  }
+  let best = 0, bestD = Infinity;
+  WORLD.colors.forEach((k, i) => {
+    const r = (k[0] + c[0]) / 2, d0 = k[0] - c[0], d1 = k[1] - c[1], d2 = k[2] - c[2];
+    const d = (2 + r) * d0 * d0 + 4 * d1 * d1 + (3 - r) * d2 * d2;
+    if (d < bestD) { bestD = d; best = i; }
+  });
+  return { name: WORLD.names[best], group: WORLD.groups[best], exact: false };
+}
+function colorLabel(c) {
+  const n = colorInfo(c);
+  return (n.exact ? "" : "≈ ") + n.name + (n.group ? " · " + n.group : "");
+}
 function fromHex(h) {
   let t = String(h).trim().replace(/^#/, "");
   if (/^[0-9a-fA-F]{3}$/.test(t)) t = t.split("").map(ch => ch + ch).join("");
@@ -5166,7 +5455,7 @@ function buildPaletteExport(p) {
   const L = [];
   L.push(`// ${name}: ${p.colors.length} colors (exported from Vert Modeler), r, g, b in 0..1`);
   L.push(`static const float ${name}_palette[][3] = {`);
-  for (const c of p.colors) L.push(`    {${c.map(f3).join(", ")}},   // ${toHex(c)}`);
+  p.colors.forEach((c, i) => L.push(`    {${c.map(f3).join(", ")}},   // ${toHex(c)}${p.names && p.names[i] ? " " + p.names[i] : ""}${p.groups && p.groups[i] ? " [" + p.groups[i] + "]" : ""}`));
   L.push(`};`);
   L.push(`static const int ${name}_palette_count = ${p.colors.length};`);
   return L.join("\n") + "\n";
@@ -5211,6 +5500,11 @@ function parsePalette(text) {
   }
   if (!colors.length) throw new Error("no colours found");
   if (colors.length > 256) throw new Error("more than 256 colours");
+  // Names from our own export's comments: "{r, g, b},   // #rrggbb Name [Group]".
+  const named = nameMatch ? [...src.matchAll(/\}\s*,?\s*\/\/\s*#[0-9a-fA-F]{6}[ \t]*([^\n\[]*?)[ \t]*(?:\[([^\]\n]*)\])?[ \t]*$/gm)] : [];
+  if (named.length === colors.length && named.some(m => m[1])) {
+    return { name, colors, names: named.map(m => m[1] || ""), groups: named.map(m => m[2] || "") };
+  }
   return { name, colors };
 }
 
@@ -5223,10 +5517,26 @@ function parsePalette(text) {
 //                 Long-press a swatch does the same without edit mode.
 // The built-in palette is read-only (Edit tells you to Duplicate it).
 let palRenderKey = "";
+let pickMode = false;       // Pick: the next face tap takes its colour instead of painting
+let faceRead = "";          // last face painted / picked / hovered, for the readout
+let hoverRead = "";         // swatch under the mouse
+// Readout under the palette head: the brush colour's name, and the face / swatch you touched.
+function renderPalRead() {
+  $("palReadChip").style.background = toHex(currentColor);
+  $("palReadText").innerHTML = "";
+  const b = document.createElement("b");
+  b.textContent = colorLabel(currentColor);
+  $("palReadText").append("Brush: ", b);
+  $("palReadFace").textContent = pickMode ? "· tap a face to pick" : (hoverRead || faceRead) ? "· " + (hoverRead || faceRead) : "";
+  $("palPick").classList.toggle("on", pickMode);
+}
+// Swatch text: dark on light colours, white on dark ones (by luminance).
+const inkFor = (c) => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) > 0.5 ? "#16171d" : "#ffffff";
 function renderPalette() {
   const p = activePalette();
+  renderPalRead();
   // updateUI runs on every drag step: only rebuild the swatch buttons when something changed.
-  const key = JSON.stringify([p.id, p.name, p.colors, currentColor, palEditMode]);
+  const key = JSON.stringify([p.id, p.name, p.colors, p.names, p.groups, currentColor, palEditMode]);
   if (key === palRenderKey) return;
   palRenderKey = key;
   $("palNameText").textContent = p.name;
@@ -5234,22 +5544,51 @@ function renderPalette() {
   $("palette").classList.toggle("editing", palEditMode);
   const box = $("swatches");
   box.textContent = "";
+  const named = !!(p.names && p.names.some(Boolean));
+  box.classList.toggle("named", named);
+  let row = box, rowGroup = null;
   p.colors.forEach((c, i) => {
+    const name = (p.names && p.names[i]) || "", group = (p.groups && p.groups[i]) || "";
+    if (named && (row === box || group !== rowGroup)) {     // one row per run of a group
+      row = document.createElement("div");
+      row.className = "palRow";
+      const g = document.createElement("span");
+      g.className = "palGroup"; g.textContent = group;
+      row.appendChild(g);
+      box.appendChild(row);
+      rowGroup = group;
+    }
     const b = document.createElement("button");
     b.className = "swatch" + (colorEq(c, currentColor, 0.0006) ? " on" : "");
     b.dataset.i = i;
     b.style.background = toHex(c);
-    b.title = toHex(c);
+    b.title = (name ? name + (group ? " (" + group + ") " : " ") : "") + toHex(c);
+    b.setAttribute("aria-label", name || toHex(c));
+    if (named) { b.textContent = name; b.style.color = inkFor(c); }
+    b.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") { hoverRead = "Swatch: " + (name || toHex(c)); renderPalRead(); } });
+    b.addEventListener("pointerleave", () => { if (hoverRead) { hoverRead = ""; renderPalRead(); } });
     attachSwatchPress(b, i);
-    box.appendChild(b);
+    row.appendChild(b);
   });
   if (palEditMode && !p.builtin) {
     const add = document.createElement("button");
     add.className = "swatch add"; add.textContent = "+";
     add.addEventListener("click", () => openSwatchEditor(-1));
-    box.appendChild(add);
+    (named ? row : box).appendChild(add);
   }
 }
+$("palPick").addEventListener("click", () => { pickMode = !pickMode; updateUI(); });
+// Mouse hover in Paint names the face under the pointer (touch has no hover: tap / Pick).
+let hoverT = 0;
+canvas.addEventListener("pointermove", (e) => {
+  if (mode !== "paint" || e.pointerType !== "mouse" || e.buttons) return;
+  const now = performance.now();
+  if (now - hoverT < 60) return;
+  hoverT = now;
+  const p = localPos(e), t = pickFace(p.x, p.y);
+  const s = t >= 0 ? "Face: " + colorLabel(mesh.colors[t]) : "";
+  if (s !== faceRead) { faceRead = s; renderPalRead(); }
+});
 
 // Tap = pick the colour (or edit, in edit mode). Long-press (450 ms) = edit.
 function attachSwatchPress(b, i) {
@@ -5267,6 +5606,7 @@ function attachSwatchPress(b, i) {
     if (longFired) return;
     if (palEditMode) { openSwatchEditor(i); return; }
     currentColor = activePalette().colors[i].slice();
+    pickMode = false;
     save(); updateUI();
   });
 }
@@ -5281,6 +5621,7 @@ function openSwatchEditor(i) {
   $("swColor").value = toHex(c);
   $("swHex").value = toHex(c);
   $("swDelete").style.display = i >= 0 ? "" : "none";
+  $("swName").value = (i >= 0 && p.names && p.names[i]) || "";
   $("swModal").classList.add("show");
 }
 $("swColor").addEventListener("input", () => { $("swHex").value = $("swColor").value; });
@@ -5290,6 +5631,12 @@ $("swSave").addEventListener("click", () => {
   const c = fromHex($("swHex").value);
   if (!c) { toast("Use a hex colour like #ff004d"); return; }
   const p = activePalette();
+  const name = $("swName").value.trim();
+  if (name || p.names) {                         // keep names (and groups) lined up with colours
+    p.names = p.names || p.colors.map(() => "");
+    if (swEditing >= 0) p.names[swEditing] = name; else p.names.push(name);
+  }
+  if (p.groups && swEditing < 0) p.groups.push(p.groups[p.groups.length - 1] || "");
   if (swEditing >= 0) p.colors[swEditing] = c; else p.colors.push(c);
   currentColor = c.slice();
   palSave(); save();
@@ -5298,7 +5645,11 @@ $("swSave").addEventListener("click", () => {
 });
 $("swDelete").addEventListener("click", () => {
   const p = activePalette();
-  if (swEditing >= 0) p.colors.splice(swEditing, 1);
+  if (swEditing >= 0) {
+    p.colors.splice(swEditing, 1);
+    if (p.names) p.names.splice(swEditing, 1);
+    if (p.groups) p.groups.splice(swEditing, 1);
+  }
   palSave();
   $("swModal").classList.remove("show");
   updateUI();
@@ -5340,7 +5691,7 @@ function showPalIO(kind) {
 function importPaletteText(text) {
   let r;
   try { r = parsePalette(text); } catch (e) { toast("Palette import failed: " + e.message); return null; }
-  const p = createPalette(r.name || "Imported palette", r.colors);
+  const p = createPalette(r.name || "Imported palette", r.colors, r.names, r.groups);
   toast(`Imported palette "${p.name}" (${p.colors.length} colours)`);
   return p;
 }
@@ -5354,7 +5705,7 @@ $("pmNew").addEventListener("click", () => {
 });
 $("pmDup").addEventListener("click", () => {
   const a = activePalette();
-  createPalette(a.builtin ? "My palette" : a.name + " copy", a.colors);
+  createPalette(a.builtin ? (a.names ? "My world palette" : "My palette") : a.name + " copy", a.colors, a.names, a.groups);
   renderPalList(); updateUI();
 });
 $("pmRename").addEventListener("click", () => {
@@ -5369,7 +5720,7 @@ $("pmDelete").addEventListener("click", () => {
   if (a.builtin) return;
   if (!confirm(`Delete palette "${a.name}"? (Models keep their colours.)`)) return;
   palStore.list = palStore.list.filter(p => p.id !== a.id);
-  palStore.active = "default"; palEditMode = false;
+  palStore.active = "world"; palEditMode = false;
   palSave(); renderPalList(); updateUI();
 });
 $("pmExport").addEventListener("click", async () => {
@@ -5412,10 +5763,16 @@ function frame() {
   if (meshDirty) rebuildBuffers();
 
   gl.viewport(0, 0, canvas.width, canvas.height);
-  gl.clearColor(0.086, 0.09, 0.114, 1);
+  const bg = skyColors();
+  gl.clearColor(bg.hor[0], bg.hor[1], bg.hor[2], 1);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  if (bg.on) drawSky(bg);
   gl.enable(gl.DEPTH_TEST);
   gl.useProgram(prog);
+  // Fog: the model you're looking at stays clear; far scene objects and grid fade out.
+  const fogNear = cam.dist * 1.3 + 0.5;
+  gl.uniform4f(U.fog, bg.hor[0], bg.hor[1], bg.hor[2], light.fog && bg.on ? 0.6 : 0);
+  gl.uniform2f(U.fogRange, fogNear, fogNear + 8 + cam.dist * 3);
   gl.uniformMatrix4fv(U.mvp, false, viewProj);
   gl.uniform1f(U.alpha, 1);
   gl.uniform1i(U.round, 0);
@@ -5425,8 +5782,10 @@ function frame() {
 
   // 1) Ground grid (scene origin)
   gl.uniformMatrix4fv(U.mvp, false, world);
+  if (bg.on) gl.uniform4f(U.tint, 0.40, 0.38, 0.60, 0.4);   // softer lavender lines on a light sky
   gl.bindVertexArray(gridBatch.vao);
   gl.drawArrays(gl.LINES, 0, gridBatch.count);
+  gl.uniform4f(U.tint, 0, 0, 0, 0);
 
   // 2) Faces, pushed slightly back in depth so the edge lines on top don't flicker.
   //    No back-face culling: faces stay visible even if a drag turns one inside-out.
@@ -5434,7 +5793,7 @@ function frame() {
   gl.enable(gl.POLYGON_OFFSET_FILL);
   gl.polygonOffset(1, 1);
   // 2a) The other objects, dimmed while you edit one (Scene > Dim others).
-  if (overlayOn && dimOthers && mode !== "object") gl.uniform4f(U.tint, 0.086, 0.09, 0.114, 0.5);
+  if (overlayOn && dimOthers && mode !== "object") gl.uniform4f(U.tint, bg.hor[0], bg.hor[1], bg.hor[2], 0.5);
   for (const o of scene.objects) {
     if (o === act || o.hidden) continue;
     const g = objBatches(o);
@@ -5462,6 +5821,7 @@ function frame() {
     gl.drawArrays(gl.TRIANGLES, 0, b.count);
   }
   gl.uniform4f(U.tint, 0, 0, 0, 0);
+  gl.uniform4f(U.fog, 0, 0, 0, 0);                 // no fog on edges, dots and the gizmo
   gl.disable(gl.POLYGON_OFFSET_FILL);
   gl.uniformMatrix4fv(U.mvp, false, mvpA);
 
@@ -5636,6 +5996,8 @@ palLoad();
 load();
 if (snapPositionsToExportGrid()) save();       // older saves land on the same grid the game uses
 loadSun();
+loadLight();
+applySee();
 updateUI();
 requestAnimationFrame(frame);
 </script>
