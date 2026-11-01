@@ -1,0 +1,246 @@
+{
+ "name": "World",
+ "version": "v23-palette",
+ "groups": [
+  {
+   "group": "Foliage",
+   "colors": [
+    {
+     "name": "Leaf Light",
+     "hex": "#bee478",
+     "rgb": [190, 228, 120]
+    },
+    {
+     "name": "Leaf",
+     "hex": "#70b454",
+     "rgb": [112, 180, 84]
+    },
+    {
+     "name": "Leaf Dark",
+     "hex": "#205c4a",
+     "rgb": [32, 92, 74]
+    }
+   ]
+  },
+  {
+   "group": "Grass",
+   "colors": [
+    {
+     "name": "Grass Light",
+     "hex": "#84dcac",
+     "rgb": [132, 220, 172]
+    },
+    {
+     "name": "Grass Teal",
+     "hex": "#3caa98",
+     "rgb": [60, 170, 152]
+    },
+    {
+     "name": "Grass Deep",
+     "hex": "#1c5c70",
+     "rgb": [28, 92, 112]
+    }
+   ]
+  },
+  {
+   "group": "Ground",
+   "colors": [
+    {
+     "name": "Sand",
+     "hex": "#f8e2a8",
+     "rgb": [248, 226, 168]
+    },
+    {
+     "name": "Path",
+     "hex": "#c49468",
+     "rgb": [196, 148, 104]
+    },
+    {
+     "name": "Dirt",
+     "hex": "#70484a",
+     "rgb": [112, 72, 74]
+    }
+   ]
+  },
+  {
+   "group": "Warm Rock",
+   "colors": [
+    {
+     "name": "Warm Stone Light",
+     "hex": "#eeded2",
+     "rgb": [238, 222, 210]
+    },
+    {
+     "name": "Warm Stone",
+     "hex": "#a68e8c",
+     "rgb": [166, 142, 140]
+    },
+    {
+     "name": "Warm Stone Dark",
+     "hex": "#605064",
+     "rgb": [96, 80, 100]
+    }
+   ]
+  },
+  {
+   "group": "Cool Rock",
+   "colors": [
+    {
+     "name": "Cool Stone Light",
+     "hex": "#c4cce8",
+     "rgb": [196, 204, 232]
+    },
+    {
+     "name": "Cool Stone",
+     "hex": "#7884b0",
+     "rgb": [120, 132, 176]
+    },
+    {
+     "name": "Cool Stone Dark",
+     "hex": "#424674",
+     "rgb": [66, 70, 116]
+    }
+   ]
+  },
+  {
+   "group": "Wood",
+   "colors": [
+    {
+     "name": "Wood Light",
+     "hex": "#f0c086",
+     "rgb": [240, 192, 134]
+    },
+    {
+     "name": "Wood",
+     "hex": "#c08054",
+     "rgb": [192, 128, 84]
+    },
+    {
+     "name": "Wood Dark",
+     "hex": "#58343e",
+     "rgb": [88, 52, 62]
+    }
+   ]
+  },
+  {
+   "group": "Water",
+   "colors": [
+    {
+     "name": "Water Light",
+     "hex": "#b0f0fa",
+     "rgb": [176, 240, 250]
+    },
+    {
+     "name": "Water",
+     "hex": "#50a6e0",
+     "rgb": [80, 166, 224]
+    },
+    {
+     "name": "Water Deep",
+     "hex": "#2c54a6",
+     "rgb": [44, 84, 166]
+    }
+   ]
+  },
+  {
+   "group": "Mushroom",
+   "colors": [
+    {
+     "name": "Cream",
+     "hex": "#fcf0d6",
+     "rgb": [252, 240, 214]
+    },
+    {
+     "name": "Gill Pink",
+     "hex": "#e2b2b0",
+     "rgb": [226, 178, 176]
+    },
+    {
+     "name": "Cap Pink",
+     "hex": "#f6808a",
+     "rgb": [246, 128, 138]
+    },
+    {
+     "name": "Cap Red",
+     "hex": "#dc3e54",
+     "rgb": [220, 62, 84]
+    },
+    {
+     "name": "Cap Red Dark",
+     "hex": "#962448",
+     "rgb": [150, 36, 72]
+    }
+   ]
+  },
+  {
+   "group": "Blossom",
+   "colors": [
+    {
+     "name": "Blossom Pink",
+     "hex": "#ffbad8",
+     "rgb": [255, 186, 216]
+    },
+    {
+     "name": "Petal Rose",
+     "hex": "#f07ab6",
+     "rgb": [240, 122, 182]
+    },
+    {
+     "name": "Berry Plum",
+     "hex": "#843884",
+     "rgb": [132, 56, 132]
+    }
+   ]
+  },
+  {
+   "group": "Glow",
+   "colors": [
+    {
+     "name": "Glow Yellow",
+     "hex": "#fff082",
+     "rgb": [255, 240, 130]
+    },
+    {
+     "name": "Crystal Cyan",
+     "hex": "#5adcd6",
+     "rgb": [90, 220, 214]
+    },
+    {
+     "name": "Crystal Violet",
+     "hex": "#a074f0",
+     "rgb": [160, 116, 240]
+    }
+   ]
+  },
+  {
+   "group": "Roof",
+   "colors": [
+    {
+     "name": "Roof Coral",
+     "hex": "#fa987e",
+     "rgb": [250, 152, 126]
+    },
+    {
+     "name": "Roof Slate",
+     "hex": "#545a98",
+     "rgb": [84, 90, 152]
+    }
+   ]
+  },
+  {
+   "group": "Sky & Misc",
+   "colors": [
+    {
+     "name": "Sky Blue",
+     "hex": "#aad0fc",
+     "rgb": [170, 208, 252]
+    },
+    {
+     "name": "Ink",
+     "hex": "#28223e",
+     "rgb": [40, 34, 62]
+    }
+   ]
+  }
+ ]
+}

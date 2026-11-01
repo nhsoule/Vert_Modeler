@@ -64,6 +64,63 @@ A scene holds several named objects. You can build a small environment to get a 
 - The export also skips any triangle that is still zero-area (three corners on a line) and
   notes `// N zero-area triangles skipped`; normal models export byte-for-byte as before.
 
+## Lighting presets (v23)
+
+The Shade menu (☀) has three named lighting presets. **Pastel Day** is the default.
+
+| Preset | Ambient (r,g,b) | Sun (r,g,b) | Sky top → horizon |
+|---|---|---|---|
+| Pastel Day | 0.56, 0.52, 0.70 (lavender) | 0.44, 0.42, 0.16 (warm) | soft blue → blush pink |
+| Dusk | 0.40, 0.32, 0.58 | 0.60, 0.44, 0.22 | deep violet → rose |
+| Classic | 0.55 (grey) | 0.45 (white) | the old flat grey look |
+
+- **Sky** switches between the gradient background and the old dark background.
+- **Fog** fades distant faces toward the horizon colour. It only affects the viewport and is never exported.
+- Every preset keeps ambient + sun ≤ 1 per channel, so a fully lit face never clips.
+
+**Export bakes the preset that's showing** into the vertex colours, per channel:
+
+    baked = rgb * (ambient + sun * max(0, n · L))   clamped to 1
+
+The header comment states the exact formula and preset. For example:
+
+    // lighting baked into colors (rgb * ((0.56,0.52,0.70) + (0.44,0.42,0.16)*max(0, n.(0.3,0.5,0.8))), clamped to 1, preset Pastel Day)
+
+Classic exports are byte-for-byte the same as before (`0.55 + 0.45*max(0, n.(...))`).
+
+**Import** reads that line back and un-bakes each face with the matching preset and sun. It then snaps to the palette colour that re-bakes to the same bytes. A Pastel export therefore re-imports to the exact palette colours, whatever preset the viewport is showing. Files without a preset line are treated as Classic.
+
+## World palette (v23)
+
+A built-in, read-only **World (named)** palette of 36 colours. Every swatch shows its name, and the rows are grouped by material. Most groups run light / mid / dark.
+
+- **Choosing colours you can't tell apart by eye:**
+  - The readout above the swatches always names the brush (`Brush: Leaf · Foliage`).
+  - It also names the last face you painted, picked or hovered.
+  - A colour that isn't in the palette reads as the nearest name, e.g. `≈ Leaf`.
+- **Pick:** tap Pick, then a face. It takes that face's colour as the brush and doesn't paint.
+- **Colour preview** (in the Shade menu) cycles through four views of the viewport and palette: Normal, Greys (value only), Deutan and Protan. It simulates how the scene reads with each kind of colour vision.
+- **Designed for colorblind viewers:**
+  - The shades inside a group step clearly in lightness.
+  - Groups are separated by blue/yellow and lightness as well as red/green, so they stay distinguishable for deutan and protan viewers.
+- **Your own palettes:** Duplicate makes an editable copy, with a name field per swatch. C++ palette export writes `// #hex Name [Group]` comments, and palette import reads them back.
+- **Data:** the full table is `WORLD_TABLE` in index.html. It is also in [examples/world_palette.json](examples/world_palette.json).
+
+| Group | Light | Mid | Dark |
+|---|---|---|---|
+| Foliage | Leaf Light `#bee478` (190, 228, 120) | Leaf `#70b454` (112, 180, 84) | Leaf Dark `#205c4a` (32, 92, 74) |
+| Grass | Grass Light `#84dcac` (132, 220, 172) | Grass Teal `#3caa98` (60, 170, 152) | Grass Deep `#1c5c70` (28, 92, 112) |
+| Ground | Sand `#f8e2a8` (248, 226, 168) | Path `#c49468` (196, 148, 104) | Dirt `#70484a` (112, 72, 74) |
+| Warm Rock | Warm Stone Light `#eeded2` (238, 222, 210) | Warm Stone `#a68e8c` (166, 142, 140) | Warm Stone Dark `#605064` (96, 80, 100) |
+| Cool Rock | Cool Stone Light `#c4cce8` (196, 204, 232) | Cool Stone `#7884b0` (120, 132, 176) | Cool Stone Dark `#424674` (66, 70, 116) |
+| Wood | Wood Light `#f0c086` (240, 192, 134) | Wood `#c08054` (192, 128, 84) | Wood Dark `#58343e` (88, 52, 62) |
+| Water | Water Light `#b0f0fa` (176, 240, 250) | Water `#50a6e0` (80, 166, 224) | Water Deep `#2c54a6` (44, 84, 166) |
+| Mushroom | Cream `#fcf0d6` (252, 240, 214)<br>Gill Pink `#e2b2b0` (226, 178, 176)<br>Cap Pink `#f6808a` (246, 128, 138)<br>Cap Red `#dc3e54` (220, 62, 84)<br>Cap Red Dark `#962448` (150, 36, 72) | | |
+| Blossom | Blossom Pink `#ffbad8` (255, 186, 216) | Petal Rose `#f07ab6` (240, 122, 182) | Berry Plum `#843884` (132, 56, 132) |
+| Glow | Glow Yellow `#fff082` (255, 240, 130) | Crystal Cyan `#5adcd6` (90, 220, 214) | Crystal Violet `#a074f0` (160, 116, 240) |
+| Roof | Roof Coral `#fa987e` (250, 152, 126)<br>Roof Slate `#545a98` (84, 90, 152) | | |
+| Sky & Misc | Sky Blue `#aad0fc` (170, 208, 252)<br>Ink `#28223e` (40, 34, 62) | | |
+
 ## Size references
 
 The **Rock** button cycles through four states: off (**Ref**), **Rock**, rock + player (**Both**), **Player**, then back to off. The button label shows the state, the setting is remembered, and the references show in every mode.
