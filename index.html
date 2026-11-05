@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="vert-modeler-version" content="v24-biome-filter">
+<meta name="vert-modeler-version" content="v25-edge-density">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -49,6 +49,24 @@
     color: #8a8ea0; text-shadow: 0 1px 2px #000; white-space: nowrap;
   }
   #stats.hide { display: none; }
+
+  /* Edge lengths of the active model (and of the vertex selection), under the stats. */
+  #density {
+    position: absolute; left: 10px; top: calc(env(safe-area-inset-top) + 22px);
+    display: flex; gap: 6px; align-items: flex-start;
+    max-width: calc(100% - 52px); z-index: 4; pointer-events: none;
+  }
+  #density.hide { display: none; }
+  #densityText {
+    font: 11px/1.35 ui-monospace, Menlo, Consolas, monospace;
+    color: #d0d3e0; text-shadow: 0 1px 2px #000; white-space: pre-line;
+  }
+  #bDensity {
+    pointer-events: auto; flex: none; min-height: 28px; padding: 0 8px;
+    border-radius: 6px; border: 1px solid #fff3; background: #1f2029cc; color: #c8cad6;
+    font: 600 10px ui-monospace, Menlo, Consolas, monospace; touch-action: manipulation;
+  }
+  #bDensity.on { background: #f2f2f4; color: #16171d; border-color: #f2f2f4; }
 
   /* Monochrome inline icons (SVG with currentColor), so nothing renders as colour emoji. */
   .svgic { width: 1em; height: 1em; display: inline-block; vertical-align: -0.125em; fill: currentColor; }
@@ -365,6 +383,10 @@
     <canvas id="gl"></canvas>
     <div id="info"></div>
     <div id="stats"></div>
+    <div id="density">
+      <button id="bDensity" type="button" aria-pressed="false" title="Mark edges under half or over double the average. They are drawn thick and bright, in the same neutral colour.">Mark</button>
+      <div id="densityText" aria-live="polite"></div>
+    </div>
     <div id="views" aria-label="View">
       <button data-view="front"  title="Front: from −Y, looking +Y">F</button>
       <button data-view="back"   title="Back: from +Y, looking −Y">B</button>
@@ -620,6 +642,9 @@
 //  environment out of separate models, then export each one on its own. Copy, paste,
 //  duplicate, combine and separate objects; Make Plane adds a single two-sided quad
 //  (leaves, grass); Import adds models as new objects at the place they came from.
+//  v25: a small edge-density readout (average, shortest, longest) in export world
+//  units, for the active model and for the vertex selection. Mark draws edges that
+//  are far from the average thick and bright, in one neutral colour.
 //
 //  Coordinates match the game: Z is up, X is left/right, Y is forward/back, and models
 //  sit with their base on z = 0. Rendering uses raw WebGL 2 (= OpenGL ES 3.0), so the
@@ -3244,6 +3269,7 @@ function uploadBatch(batch, data) {
 
 const faceBatch  = makeBatch();
 const edgeBatch  = makeBatch();
+const markBatch  = makeBatch();   // thick bright outlier edges (density Mark)
 const dotBatch   = makeBatch();
 const ringBatch  = makeBatch();   // "will merge" rings
 const gridBatch  = makeBatch();
@@ -4685,6 +4711,48 @@ function exportTriList(frame) {
 }
 const zeroAreaNote = (n) => n ? [`// ${n} zero-area triangle${n > 1 ? "s" : ""} skipped`] : [];
 
+//----- Edge Density -----||
+// How even the detail is. Each unique edge is measured once, in the world units the
+// export recovers: world = offset + (quantized pos / 32767) * scale. A 1-unit edge
+// reads as 1 on every model, whatever its bounds. The offset cancels in a length;
+// the scale puts the normalized grid back into those units.
+// With 2+ vertices selected, the second line is only the edges that run between
+// selected vertices. Mark draws edges under half or over double the model's average
+// as thick bright lines: one neutral colour, brighter and thicker than the wireframe.
+const DENSITY_SHORT = 0.5, DENSITY_LONG = 2;
+let densityMark = false;
+let markSegs = [];               // outlier edge endpoints, active mesh local space
+try { densityMark = localStorage.getItem(KEY_PREFIX + "density") === "1"; } catch (e) { /* storage blocked */ }
+
+function edgeSpread(lengths) {
+  if (!lengths.length) return null;
+  let sum = 0, min = lengths[0], max = lengths[0];
+  for (const L of lengths) {
+    sum += L;
+    if (L < min) min = L;
+    if (L > max) max = L;
+  }
+  return { n: lengths.length, avg: sum / lengths.length, min, max };
+}
+
+// selSet: a Set of vertex indices, or null. Lengths use the export's world positions.
+function edgeDensity(selSet) {
+  const n = vertCount(), frame = modelFrame(), P = new Array(n);
+  for (let i = 0; i < n; i++) P[i] = dequantizePos(quantizePos(getVert(i), frame), frame);
+  const edges = [];
+  for (const [a, b] of uniqueEdges()) {
+    edges.push({ a, b, len: v3.len(v3.sub(P[a], P[b])), inSel: !!(selSet && selSet.has(a) && selSet.has(b)) });
+  }
+  const model = edgeSpread(edges.map(e => e.len));
+  const sel = selSet ? edgeSpread(edges.filter(e => e.inSel).map(e => e.len)) : null;
+  const marks = [];
+  if (model && model.avg > 0) {
+    const lo = model.avg * DENSITY_SHORT, hi = model.avg * DENSITY_LONG;
+    for (const e of edges) if (e.len < lo || e.len > hi) marks.push([e.a, e.b]);
+  }
+  return { model, sel, marks };
+}
+
 // Secondary option: the v15 9-float layout (pos3 + color3 + normal3).
 function buildExportFloats(o = activeObj()) {
   return withMesh(o.mesh, () => {
@@ -5142,6 +5210,7 @@ function updateUI() {
   if (selected < 0) selExtra.clear();
   mirrorWarnings();
   updateStats();
+  updateDensity();
   updateReadout();
 }
 
@@ -5165,6 +5234,36 @@ function updateStats() {
   const nSel = selection().length;
   el.textContent = `${o.name} · ${n(verts)} verts · ${n(tris)} tris · ${n(bytes)} B  (${n(vertCount())} unique)` +
                    (nSel > 1 ? ` · ${nSel} selected` : "");
+}
+
+// Edge-length readout. Same world units as the export, so models can be compared.
+// Hidden with the rest of the overlay in the clean preview.
+function fmtEdge(x) {
+  const ax = Math.abs(x);
+  if (ax !== 0 && ax < 0.001) return x.toExponential(1);
+  return (ax < 5e-5 ? 0 : x).toFixed(3);
+}
+function updateDensity() {
+  const el = $("density");
+  el.classList.toggle("hide", !overlayOn);
+  const selOn = selection().length >= 2;
+  const d = edgeDensity(selOn ? new Set(selection()) : null);
+  const lines = [];
+  if (!d.model) lines.push("edges —");
+  else lines.push(`edges avg ${fmtEdge(d.model.avg)} · min ${fmtEdge(d.model.min)} · max ${fmtEdge(d.model.max)}`);
+  if (selOn) {
+    lines.push(d.sel
+      ? `sel avg ${fmtEdge(d.sel.avg)} · min ${fmtEdge(d.sel.min)} · max ${fmtEdge(d.sel.max)}`
+      : "sel —");
+  }
+  if (densityMark) lines.push("thick bright = under ½ or over 2× avg");
+  $("densityText").textContent = lines.join("\n");
+  const b = $("bDensity");
+  b.classList.toggle("on", densityMark);
+  b.textContent = densityMark ? "Marked" : "Mark";
+  b.setAttribute("aria-pressed", densityMark ? "true" : "false");
+  markSegs = [];
+  if (densityMark) for (const [a, b2] of d.marks) markSegs.push(...getVert(a), ...getVert(b2));
 }
 
 // Mirror warnings as a short toast, only when a count goes from 0 to something, so a
@@ -5375,6 +5474,13 @@ $("roOk").addEventListener("click", () => closeCoordEdit(true));
 
 for (const b of document.querySelectorAll("[data-mode]"))
   b.addEventListener("click", () => { mode = b.dataset.mode; overlayOn = true; meshDirty = true; updateUI(); });
+
+$("bDensity").addEventListener("click", (e) => {
+  e.stopPropagation();
+  densityMark = !densityMark;
+  try { localStorage.setItem(KEY_PREFIX + "density", densityMark ? "1" : "0"); } catch (err) { /* ignore */ }
+  updateUI();
+});
 
 $("bBake").addEventListener("click", () => {
   $("sunMenu").classList.toggle("show");
@@ -6127,6 +6233,36 @@ new ResizeObserver(resize).observe(canvas);
 
 
 //----- Draw Loop -----||
+// Outlier edges (density Mark): a thick ribbon in one bright neutral, on top of the
+// thin wireframe. Width is in screen pixels so it stays readable as you zoom.
+// WebGL lines stay 1 px, so thickness is a camera-facing quad, same idea as the gizmo.
+function drawMarkedEdges() {
+  if (!markSegs.length) return;
+  const col = [0.97, 0.97, 0.98], quads = [];
+  for (let i = 0; i < markSegs.length; i += 6) {
+    const p = [markSegs[i], markSegs[i+1], markSegs[i+2]];
+    const q = [markSegs[i+3], markSegs[i+4], markSegs[i+5]];
+    const mid = [(p[0]+q[0]) * 0.5, (p[1]+q[1]) * 0.5, (p[2]+q[2]) * 0.5];
+    const s = project(mid);
+    if (!s) continue;
+    const side = v3.cross(v3.sub(q, p), v3.norm(v3.sub(mid, camEye())));
+    const sl = v3.len(side);
+    if (sl < 1e-12) continue;
+    const w = v3.scale(side, 3.5 * worldPerPx(s.depth) / sl);   // ~7 CSS px, thicker than the 1 px wire
+    const c = [v3.add(p, w), v3.sub(p, w), v3.sub(q, w), v3.add(q, w)];
+    for (const k of [0, 1, 2, 0, 2, 3]) quads.push(...c[k], ...col);
+  }
+  if (!quads.length) return;
+  uploadBatch(markBatch, quads);
+  gl.uniform4f(U.tint, 0, 0, 0, 0);
+  gl.uniform1f(U.alpha, 1);
+  gl.enable(gl.POLYGON_OFFSET_FILL);
+  gl.polygonOffset(-2, -2);
+  gl.bindVertexArray(markBatch.vao);
+  gl.drawArrays(gl.TRIANGLES, 0, markBatch.count);
+  gl.disable(gl.POLYGON_OFFSET_FILL);
+}
+
 function frame() {
   resize();
   stepCamAnim();
@@ -6222,6 +6358,8 @@ function frame() {
       gl.drawArrays(gl.LINES, 0, b.count);
     }
     gl.uniform4f(U.tint, 0, 0, 0, 0);
+    gl.uniformMatrix4fv(U.mvp, false, mvpA);
+    drawMarkedEdges();
     gl.uniformMatrix4fv(U.mvp, false, viewProj);
     gl.disable(gl.DEPTH_TEST);
     drawGizmo();
@@ -6236,6 +6374,7 @@ function frame() {
   gl.bindVertexArray(edgeBatch.vao);
   gl.drawArrays(gl.LINES, 0, edgeBatch.count);
   if (mode === "paint") { gl.uniform1f(U.alpha, 1); gl.disable(gl.BLEND); }
+  drawMarkedEdges();
 
   // 4) Mirror plane: translucent, blended over what's behind, and it doesn't write
   //    depth so it never hides anything.
