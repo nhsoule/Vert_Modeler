@@ -155,6 +155,15 @@ A built-in, read-only **World (named)** palette of 36 colours. Every swatch show
 | Roof | Roof Coral `#fa987e` (250, 152, 126)<br>Roof Slate `#545a98` (84, 90, 152) | | |
 | Sky & Misc | Sky Blue `#aad0fc` (170, 208, 252)<br>Ink `#28223e` (40, 34, 62) | | |
 
+## Edge density (v25)
+
+A small readout under the model stats, on the active object:
+
+- **edges avg · min · max** — the average edge length, the shortest, and the longest, in world units. Each edge is counted once (a shared edge is not counted twice). A quad's diagonal counts too, because it is an edge of the triangles, so a unit cube reads min 1 and max √2.
+- The lengths use the same recovery as the export, `world = offset + position × scale`, so a 1-unit edge reads as 1 on every model and the numbers can be compared.
+- **sel avg · min · max** — the same numbers for the edges that run between the selected vertices, when two or more vertices are selected. `sel —` means those vertices share no edge.
+- **Mark** (remembered) draws edges that are under half or over double the average as **thick bright** lines. It is one neutral colour, only brighter and thicker than the wireframe. The readout says `thick bright = under ½ or over 2× avg` while it is on. The button reads **Marked**.
+
 ## Size references
 
 The **Rock** button cycles through four states: off (**Ref**), **Rock**, rock + player (**Both**), **Player**, then back to off. The button label shows the state, the setting is remembered, and the references show in every mode.
