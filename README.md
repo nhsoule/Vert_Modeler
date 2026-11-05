@@ -19,12 +19,14 @@ A scene holds several named objects. You can build a small environment to get a 
   - Add: **+ Cube**, **+ Plane ↑** (standing), **+ Plane ▭** (flat).
   - **Duplicate**, **Copy**, **Paste**.
   - **Combine** joins the selected objects into the active one, with transforms baked.
-    Where two shapes overlap, only the one that passes through is cut: new vertices
-    go on its edges where they cross the other shape, and the pieces inside are
-    removed. The other shape is left exactly as it was. **Cut**, under the buttons,
-    chooses who is cut: Auto (whichever has more of itself inside the other), the
-    active object, or the other objects. A shape that isn't a closed shell never
-    does the cutting. Undo takes the cut back with the join.
+    Where two shapes overlap, only the one that passes through is changed. The other
+    stays exactly as it was. **Combine**, under the buttons, is **Slide & trim**
+    (pull buried corners out along their own edges, then drop faces that end up
+    hidden) or **Delete hidden faces** (move nothing; drop a face only when it lies
+    entirely inside the other shape). A corner that cannot slide without leaving a
+    gap or a notch stays put. **Which shape** chooses who changes: Auto, the active
+    object, or the other objects. A shape that isn't a closed shell never does the
+    trimming. Undo takes it back with the join.
   - **Separate** moves the selected faces into a new object. **Faces → new** copies them into a new object.
   - **Two-sided**, **Subdivide**, **Rename**, **Delete**, **Hide**.
   - **Save .json** / **Open…** for a project file, and **New scene**.

@@ -469,8 +469,14 @@
         <button id="scRefs" type="button" title="Put the rock and player references back beside the start cube">Reset refs</button>
         <button id="scNew" type="button" title="Start over with one cube">New scene</button>
       </div>
-      <label class="cutPick" for="scCut">Cut
-        <select id="scCut" title="Which shape is cut where two overlap. The other shape is left exactly as it is.">
+      <label class="cutPick" for="scCombineMode">Combine
+        <select id="scCombineMode" title="How Combine treats the overlap. The other shape is left exactly as it is.">
+          <option value="slide">Slide &amp; trim</option>
+          <option value="delete">Delete hidden faces</option>
+        </select>
+      </label>
+      <label class="cutPick" for="scCut">Which shape
+        <select id="scCut" title="Which shape is changed where two overlap. The other shape is left exactly as it is.">
           <option value="auto">Auto — whichever pokes in</option>
           <option value="active">The active object</option>
           <option value="others">The other objects</option>
@@ -2341,19 +2347,43 @@ function mergeMeshes(origin, list) {
   return { mesh: out, twoSided: allTwo };
 }
 
-//----- Combine Cut -----||
-// Where two shapes overlap, only the one that passes through is cut. The other
-// keeps every triangle exactly. The cut adds a vertex wherever the loser's edge
-// crosses the winner's surface, and wherever the winner's edge pierces a face,
-// then splits those faces along the intersection and throws away the pieces that
-// landed inside. A face pressed flat against the winner and looking into it goes
-// too; a face that still looks outward stays. An open shape is never a volume,
-// so it cannot cut anything. Changed faces pick up new normals and baked colours
-// from the same export path as every other edit (triNormal + the shade formula).
-const CUT_RAYS = [[0.437, 0.251, 0.863], [0.173, 0.821, 0.543], [-0.612, 0.331, 0.717], [0.271, -0.513, 0.815]];
-const CUT_ON   = 1e-4;   // a point this close to a face counts as on the surface
-const CUT_WELD = 1e-5;   // intersection points closer than this are one vertex
-const CUT_SLIVER = 1e-10;
+//----- Combine Cleanup -----||
+// Two ways to join shapes that overlap. The winner is never edited: same
+// vertices, same triangles. An open shape is never a volume, so it cannot
+// be the winner.
+//
+// Slide & trim. A vertex of the loser that sits inside the winner moves
+// along its own edge until that edge meets the winner's surface. The edge
+// has to reach a vertex that is still outside, and the move is kept only
+// when every triangle that uses the vertex stays the right way out and
+// keeps some area. That is a clean shortening: the part keeps its
+// direction and only gets shorter. A corner whose neighbours are all
+// inside too (the crossmember buried in a crate frame) is left where it
+// is — sliding it would open a gap or notch the end. Faces that end up
+// hidden are then removed: entirely inside the winner, or pressed flat
+// against it and facing into it. Changed faces pick up new normals and
+// baked colours from the same export path as every other edit.
+//
+// Delete hidden faces. Nothing moves and nothing is added. A triangle is
+// removed only when all three corners, its centre, and the middle of each
+// edge are inside or on the winner. A face that still reaches the opening
+// stays, buried tips and all.
+const BURY_RAYS = [[0.437, 0.251, 0.863], [0.173, 0.821, 0.543], [-0.612, 0.331, 0.717]];
+const BURY_ON    = 1e-4;                 // on the surface: same ballpark as WELD_EPS
+const BURY_TIE   = 1 * Math.PI / 180;    // corners within 1° count as equally sharp
+const BURY_FLAT  = 5 * Math.PI / 180;    // below this, an edge is a flat quad's diagonal
+const BURY_PROBE = 1e-3;                 // step along a normal to see which way a face looks
+const BURY_AREA  = 1e-10;                // a slide that collapses a triangle is not clean
+
+let cutMode = "auto";       // "auto" | "active" | "others" — which shape loses
+let combineMode = "slide";  // "slide" | "delete"
+try {
+  const savedWho = localStorage.getItem(KEY_PREFIX + "cut");
+  if (savedWho === "active" || savedWho === "others" || savedWho === "auto") cutMode = savedWho;
+  const savedHow = localStorage.getItem(KEY_PREFIX + "combine");
+  if (savedHow === "delete" || savedHow === "slide") combineMode = savedHow;
+} catch (e) { /* storage blocked */ }
+
 function meshIsClosed(m) {
   const T = m.tris, nE = new Map();
   if (!T || T.length < 12) return false;
@@ -2367,413 +2397,304 @@ function meshIsClosed(m) {
   for (const n of nE.values()) if (n !== 2) return false;
   return true;
 }
-let cutMode = "auto";    // "auto" | "active" | "others" — which shape is cut
-try {
-  const saved = localStorage.getItem(KEY_PREFIX + "cut");
-  if (saved === "active" || saved === "others" || saved === "auto") cutMode = saved;
-} catch (e) { /* storage blocked */ }
 
-function cutRay(orig, dir, v0, v1, v2) {
+// Ray from orig along dir (not necessarily unit). t is in units of dir; null = miss.
+function buryRayHit(orig, dir, v0, v1, v2) {
   const e1 = v3.sub(v1, v0), e2 = v3.sub(v2, v0);
   const pvec = v3.cross(dir, e2), det = v3.dot(e1, pvec);
-  if (Math.abs(det) < 1e-14) return null;
+  if (Math.abs(det) < 1e-12) return null;
   const inv = 1 / det, tvec = v3.sub(orig, v0);
   const u = v3.dot(tvec, pvec) * inv;
-  if (u < -1e-8 || u > 1 + 1e-8) return null;
+  if (u < -1e-7 || u > 1 + 1e-7) return null;
   const qvec = v3.cross(tvec, e1), v = v3.dot(dir, qvec) * inv;
-  if (v < -1e-8 || u + v > 1 + 1e-8) return null;
-  const t = v3.dot(e2, qvec) * inv;
-  const edgey = u < 1e-5 || v < 1e-5 || u + v > 1 - 1e-5;
-  return { t, u, v, edgey };
+  if (v < -1e-7 || u + v > 1 + 1e-7) return null;
+  return v3.dot(e2, qvec) * inv;
 }
 
-// Strictly inside a closed shell. A ray that clips an edge is thrown out and the
-// direction is nudged, so a corner of the crate doesn't flip the answer.
-function cutInside(p, vol) {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    let votes = 0, used = 0;
-    for (const dir0 of CUT_RAYS) {
-      const dir = attempt ? [dir0[0] + attempt * 0.017, dir0[1] - attempt * 0.011, dir0[2] + attempt * 0.007] : dir0;
-      let hits = 0, dirty = false;
-      for (const [a, b, c] of vol) {
-        const h = cutRay(p, dir, a, b, c);
-        if (!h || h.t <= 1e-7) continue;
-        if (h.edgey) { dirty = true; break; }
-        hits++;
-      }
-      if (dirty) continue;
-      used++;
-      if (hits % 2) votes++;
+function buryPointInside(p, vol) {
+  let votes = 0;
+  for (const dir of BURY_RAYS) {
+    let hits = 0;
+    for (const [a, b, c] of vol) {
+      const t = buryRayHit(p, dir, a, b, c);
+      if (t !== null && t > 1e-8) hits++;
     }
-    if (used) return votes * 2 >= used;
+    if (hits % 2) votes++;
   }
+  return votes >= 2;
+}
+
+function buryOnSurface(p, vol) {
+  for (const [a, b, c] of vol) if (pointTriDist(p, a, b, c) <= BURY_ON) return true;
   return false;
 }
+const buryInsideOrOn = (p, vol) => buryOnSurface(p, vol) || buryPointInside(p, vol);
 
-function cutOnSurface(p, vol) {
-  for (const [a, b, c] of vol) if (pointTriDist(p, a, b, c) <= CUT_ON) return true;
-  return false;
-}
-
-function cutTriArea(a, b, c) {
-  return v3.len(v3.cross(v3.sub(b, a), v3.sub(c, a))) * 0.5;
-}
-function cutTriNormal(a, b, c) {
-  const n = v3.cross(v3.sub(b, a), v3.sub(c, a));
-  const l = v3.len(n);
-  return l > 1e-12 ? v3.scale(n, 1 / l) : null;
-}
-function cutCentroid(a, b, c) {
-  return [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3, (a[2] + b[2] + c[2]) / 3];
-}
-
-// Keep a piece of the loser unless it sits inside the winner, or lies on the
-// winner and faces into it (a cap pressed against the surface). Outward faces stay.
-function cutKeepPiece(tri, vol) {
-  const [a, b, c] = tri;
-  if (cutTriArea(a, b, c) < CUT_SLIVER) return false;
-  const mid = cutCentroid(a, b, c);
-  const n = cutTriNormal(a, b, c);
-  if (cutOnSurface(mid, vol)) {
-    if (!n) return false;
-    const probe = v3.add(mid, v3.scale(n, 1e-3));
-    if (cutInside(probe, vol)) return false;
-    return true;
-  }
-  return !cutInside(mid, vol);
-}
-
-// The line where triangle T meets triangle V: overlap of the two triangles on the
-// line where their planes meet. One segment, or null when they miss or are parallel.
-function cutTriTriSeg(T, V) {
-  const n1 = v3.cross(v3.sub(T[1], T[0]), v3.sub(T[2], T[0]));
-  const n2 = v3.cross(v3.sub(V[1], V[0]), v3.sub(V[2], V[0]));
-  const dir = v3.cross(n1, n2);
-  const den = v3.dot(dir, dir);
-  if (den < 1e-16) return null;
-  const d1 = v3.dot(n1, T[0]), d2 = v3.dot(n2, V[0]);
-  const o = v3.scale(v3.add(v3.scale(v3.cross(n2, dir), d1), v3.scale(v3.cross(dir, n1), d2)), 1 / den);
-  // t-interval where o + t*dir lies inside a triangle. Barycentric coords are linear in t.
-  function interval(tri) {
-    const [a, b, c] = tri;
-    const v0 = v3.sub(b, a), v1 = v3.sub(c, a), oa = v3.sub(o, a);
-    const d00 = v3.dot(v0, v0), d01 = v3.dot(v0, v1), d11 = v3.dot(v1, v1);
-    const det = d00 * d11 - d01 * d01;
-    if (Math.abs(det) < 1e-18) return null;
-    const b0 = v3.dot(oa, v0), b1 = v3.dot(oa, v1), s0 = v3.dot(dir, v0), s1 = v3.dot(dir, v1);
-    const vb = (d11 * b0 - d01 * b1) / det, vs = (d11 * s0 - d01 * s1) / det;
-    const wb = (d00 * b1 - d01 * b0) / det, ws = (d00 * s1 - d01 * s0) / det;
-    const coords = [[1 - vb - wb, -vs - ws], [vb, vs], [wb, ws]];
-    let lo = -1e9, hi = 1e9;
-    for (const [C, S] of coords) {
-      if (Math.abs(S) < 1e-14) { if (C < -1e-7) return null; continue; }
-      const t = -C / S;
-      if (S > 0) lo = Math.max(lo, t); else hi = Math.min(hi, t);
-    }
-    return lo <= hi + 1e-8 ? [lo, hi] : null;
-  }
-  const i1 = interval(T), i2 = interval(V);
-  if (!i1 || !i2) return null;
-  const lo = Math.max(i1[0], i2[0]), hi = Math.min(i1[1], i2[1]);
-  if (hi - lo < 1e-6) return null;
-  const p = v3.add(o, v3.scale(dir, lo)), q = v3.add(o, v3.scale(dir, hi));
-  return v3.len(v3.sub(p, q)) > CUT_WELD ? [p, q] : null;
-}
-
-function cutBasis(a, b, c) {
-  const x = v3.norm(v3.sub(b, a));
-  const n = v3.norm(v3.cross(v3.sub(b, a), v3.sub(c, a)));
-  const y = v3.cross(n, x);
-  return { o: a, x, y };
-}
-function cutTo2(p, b) {
-  const d = v3.sub(p, b.o);
-  return [v3.dot(d, b.x), v3.dot(d, b.y)];
-}
-function cutFrom2(uv, b) {
-  return v3.add(b.o, v3.add(v3.scale(b.x, uv[0]), v3.scale(b.y, uv[1])));
-}
-
-// Split one triangle along the intersection segments. Returns 3D triangles, or null
-// if there is nothing to cut (caller keeps or drops the original).
-function cutSplitTriangle(A, B, C, segs) {
-  const basis = cutBasis(A, B, C);
-  const pts = [A, B, C].map(p => ({ p, uv: cutTo2(p, basis) }));
-  function weldUV(uv, p3) {
-    for (const e of pts) {
-      const du = e.uv[0] - uv[0], dv = e.uv[1] - uv[1];
-      if (du * du + dv * dv <= CUT_WELD * CUT_WELD) return pts.indexOf(e);
-    }
-    pts.push({ p: p3 || cutFrom2(uv, basis), uv });
-    return pts.length - 1;
-  }
-  function weld3(p) { return weldUV(cutTo2(p, basis), p); }
-  const raw = [[0, 1], [1, 2], [2, 0]];
-  for (const [p, q] of segs) {
-    const i = weld3(p), j = weld3(q);
-    if (i !== j) raw.push([i, j]);
-  }
-  // Parameters where each raw segment is cut by another, or by a vertex sitting on it.
-  const cuts = raw.map(() => [0, 1]);
-  function uvAt(i, t) {
-    const a = pts[raw[i][0]].uv, b = pts[raw[i][1]].uv;
-    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-  }
-  for (let i = 0; i < raw.length; i++) {
-    const a = pts[raw[i][0]].uv, b = pts[raw[i][1]].uv;
-    const abx = b[0] - a[0], aby = b[1] - a[1], ab2 = abx * abx + aby * aby;
-    if (ab2 < 1e-20) continue;
-    for (let k = 0; k < pts.length; k++) {
-      const t = ((pts[k].uv[0] - a[0]) * abx + (pts[k].uv[1] - a[1]) * aby) / ab2;
-      if (t <= 1e-4 || t >= 1 - 1e-4) continue;
-      const qx = a[0] + abx * t, qy = a[1] + aby * t;
-      const dx = pts[k].uv[0] - qx, dy = pts[k].uv[1] - qy;
-      if (dx * dx + dy * dy <= CUT_WELD * CUT_WELD) cuts[i].push(t);
-    }
-    for (let j = i + 1; j < raw.length; j++) {
-      const c = pts[raw[j][0]].uv, d = pts[raw[j][1]].uv;
-      const rx = b[0] - a[0], ry = b[1] - a[1], sx = d[0] - c[0], sy = d[1] - c[1];
-      const den = rx * sy - ry * sx;
-      if (Math.abs(den) < 1e-14) continue;
-      const qx = c[0] - a[0], qy = c[1] - a[1];
-      const t = (qx * sy - qy * sx) / den, u = (qx * ry - qy * rx) / den;
-      if (t <= 1e-4 || t >= 1 - 1e-4 || u <= 1e-4 || u >= 1 - 1e-4) continue;
-      const hit = uvAt(i, t);
-      weldUV(hit);
-      cuts[i].push(t);
-      cuts[j].push(u);
-    }
-  }
-  const edges = [];
-  const ek = new Set();
-  function addE(i, j) {
-    if (i === j) return;
-    const k = i < j ? i + "," + j : j + "," + i;
-    if (ek.has(k)) return;
-    ek.add(k);
-    edges.push([i, j]);
-  }
-  for (let i = 0; i < raw.length; i++) {
-    const ts = [...new Set(cuts[i].map(t => Math.round(t * 1e6) / 1e6))].sort((a, b) => a - b);
-    const ids = ts.map(t => weldUV(uvAt(i, t)));
-    for (let k = 0; k + 1 < ids.length; k++) addE(ids[k], ids[k + 1]);
-  }
-  if (edges.length < 3) return null;
-  const adj = Array.from({ length: pts.length }, () => []);
-  for (const [a, b] of edges) { adj[a].push(b); adj[b].push(a); }
-  for (let i = 0; i < pts.length; i++) {
-    adj[i].sort((p, q) => Math.atan2(pts[p].uv[1] - pts[i].uv[1], pts[p].uv[0] - pts[i].uv[0])
-                         - Math.atan2(pts[q].uv[1] - pts[i].uv[1], pts[q].uv[0] - pts[i].uv[0]));
-  }
-  const used = new Set(), dirKey = (a, b) => a + ">" + b;
-  const faces = [];
-  for (const [a, b] of edges) for (const [u0, v0] of [[a, b], [b, a]]) {
-    if (used.has(dirKey(u0, v0))) continue;
-    const face = [];
-    let u = u0, v = v0, guard = 0;
-    while (guard++ < edges.length * 4 + 8) {
-      if (used.has(dirKey(u, v))) break;
-      used.add(dirKey(u, v));
-      face.push(u);
-      const nbrs = adj[v];
-      const inc = nbrs.indexOf(u);
-      if (inc < 0 || !nbrs.length) break;
-      const w = nbrs[(inc - 1 + nbrs.length) % nbrs.length];
-      u = v; v = w;
-      if (u === u0 && v === v0) break;
-    }
-    if (face.length >= 3 && u === u0 && v === v0) faces.push(face);
-  }
-  const out = [];
-  for (const face of faces) {
-    let area = 0;
-    for (let i = 0; i < face.length; i++) {
-      const p = pts[face[i]].uv, q = pts[face[(i + 1) % face.length]].uv;
-      area += p[0] * q[1] - q[0] * p[1];
-    }
-    if (area < 1e-12) continue;                 // clockwise = the outside of the triangle
-    const poly = face.slice();
-    const tris = [];
-    let guard = 0;
-    while (poly.length > 3 && guard++ < 64) {
-      let clipped = false;
-      for (let i = 0; i < poly.length; i++) {
-        const i0 = poly[(i + poly.length - 1) % poly.length], i1 = poly[i], i2 = poly[(i + 1) % poly.length];
-        const a = pts[i0].uv, b = pts[i1].uv, c = pts[i2].uv;
-        const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-        if (cross <= 1e-14) continue;
-        let ear = true;
-        for (const k of poly) {
-          if (k === i0 || k === i1 || k === i2) continue;
-          const p = pts[k].uv;
-          const c0 = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
-          const c1 = (c[0] - b[0]) * (p[1] - b[1]) - (c[1] - b[1]) * (p[0] - b[0]);
-          const c2 = (a[0] - c[0]) * (p[1] - c[1]) - (a[1] - c[1]) * (p[0] - c[0]);
-          if (c0 > 1e-14 && c1 > 1e-14 && c2 > 1e-14) { ear = false; break; }
-        }
-        if (!ear) continue;
-        tris.push([i0, i1, i2]);
-        poly.splice(i, 1);
-        clipped = true;
-        break;
-      }
-      if (!clipped) break;
-    }
-    if (poly.length === 3) tris.push(poly.slice());
-    for (const [i, j, k] of tris) {
-      const tri = [pts[i].p, pts[j].p, pts[k].p];
-      if (cutTriArea(tri[0], tri[1], tri[2]) >= CUT_SLIVER) out.push(tri);
-    }
-  }
-  return out.length ? out : null;
-}
-
-// Cut object o against a closed volume given as world-space triangles. o is modified.
-function cutObjectByVolume(o, vol) {
-  const off = o.pos, m = o.mesh, n = m.positions.length / 3;
-  const world = [];
-  for (let i = 0; i < n; i++) world.push([m.positions[i * 3] + off[0], m.positions[i * 3 + 1] + off[1], m.positions[i * 3 + 2] + off[2]]);
-  const pieces = [], colors = [];
-  let removed = 0;
-  for (let t = 0; t < m.tris.length / 3; t++) {
-    const T = [0, 1, 2].map(k => world[m.tris[t * 3 + k]]);
-    const segs = [];
-    for (const V of vol) {
-      const s = cutTriTriSeg(T, V);
-      if (s) segs.push(s);
-    }
-    let kept;
-    if (!segs.length) kept = cutKeepPiece(T, vol) ? [T] : [];
-    else {
-      const bits = cutSplitTriangle(T[0], T[1], T[2], segs);
-      kept = (bits || [T]).filter(p => cutKeepPiece(p, vol));
-    }
-    if (!kept.length) removed++;
-    for (const p of kept) { pieces.push(p); colors.push(m.colors[t].slice()); }
-  }
-  // Weld the pieces back into one mesh, in the object's local coordinates.
-  const positions = [], tris = [];
-  function vid(p) {
-    const loc = [p[0] - off[0], p[1] - off[1], p[2] - off[2]];
-    for (let i = 0; i < positions.length; i += 3) {
-      const dx = positions[i] - loc[0], dy = positions[i + 1] - loc[1], dz = positions[i + 2] - loc[2];
-      if (dx * dx + dy * dy + dz * dz <= CUT_WELD * CUT_WELD) return i / 3;
-    }
-    positions.push(loc[0], loc[1], loc[2]);
-    return positions.length / 3 - 1;
-  }
-  const outT = [], outC = [];
-  for (let i = 0; i < pieces.length; i++) {
-    const [a, b, c] = pieces[i].map(vid);
-    if (a === b || b === c || a === c) continue;
-    outT.push(a, b, c);
-    outC.push(colors[i]);
-  }
-  o.mesh = { positions, tris: outT, colors: outC, partner: [], mirror: m.mirror };
-  const mirror = o.mesh.mirror;
-  o.mesh.mirror = null;
-  pairMirror(o.mesh);
-  withMesh(o.mesh, () => retriangulate());
-  o.mesh.mirror = mirror;
-  if (mirror) keepMirrorIfSymmetric(o.mesh);
-  else pairMirror(o.mesh);
-  return removed;
-}
-
-function cutWorldTris(o) {
-  const off = o.pos, m = o.mesh, vol = [];
-  for (let t = 0; t < m.tris.length / 3; t++) {
-    vol.push([0, 1, 2].map(k => {
-      const i = m.tris[t * 3 + k];
-      return [m.positions[i * 3] + off[0], m.positions[i * 3 + 1] + off[1], m.positions[i * 3 + 2] + off[2]];
-    }));
-  }
-  return vol;
-}
-
-function cutBox(o) {
+function burySceneBox(o) {
   const b = boundsOf(o.mesh);
   return { lo: [b.lo[0] + o.pos[0], b.lo[1] + o.pos[1], b.lo[2] + o.pos[2]],
            hi: [b.hi[0] + o.pos[0], b.hi[1] + o.pos[1], b.hi[2] + o.pos[2]] };
 }
-function cutBoxesHit(a, b) {
-  for (let k = 0; k < 3; k++) if (a.hi[k] < b.lo[k] - 1e-4 || b.hi[k] < a.lo[k] - 1e-4) return false;
+function buryBoxHit(a, b) {
+  for (let k = 0; k < 3; k++) if (a.hi[k] < b.lo[k] - 1e-5 || b.hi[k] < a.lo[k] - 1e-5) return false;
+  return true;
+}
+function buryScenePoint(o, i) {
+  const P = o.mesh.positions;
+  return [P[i * 3] + o.pos[0], P[i * 3 + 1] + o.pos[1], P[i * 3 + 2] + o.pos[2]];
+}
+function buryCentroid(a, b, c) {
+  return [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3, (a[2] + b[2] + c[2]) / 3];
+}
+function buryTriArea(a, b, c) {
+  return v3.len(v3.cross(v3.sub(b, a), v3.sub(c, a))) * 0.5;
+}
+
+function buryVolume(o) {
+  const m = o.mesh;
+  if (!meshIsClosed(m)) return null;
+  const vol = [];
+  for (let t = 0; t < m.tris.length; t += 3)
+    vol.push([0, 1, 2].map(k => buryScenePoint(o, m.tris[t + k])));
+  return vol;
+}
+
+function buryEdgeTurn(m, edgeFaces, a, b) {
+  const faces = edgeFaces.get(a < b ? a + "," + b : b + "," + a);
+  if (!faces || faces.length < 2) return Math.PI;
+  const nOf = (t) => {
+    const p = (k) => { const i = m.tris[t * 3 + k]; return [m.positions[i * 3], m.positions[i * 3 + 1], m.positions[i * 3 + 2]]; };
+    return v3.norm(v3.cross(v3.sub(p(1), p(0)), v3.sub(p(2), p(0))));
+  };
+  const ns = faces.map(nOf);
+  let best = 0;
+  for (let i = 0; i < ns.length; i++) for (let j = i + 1; j < ns.length; j++) {
+    const d = Math.max(-1, Math.min(1, v3.dot(ns[i], ns[j])));
+    best = Math.max(best, Math.acos(d));
+  }
+  return best;
+}
+
+// Where V lands on vol's surface, walking the edge toward W.
+// Inside V: the first crossing between V and W. Just-outside V (a buried cap tip):
+// the nearest crossing behind V, no further than one edge length.
+function burySlide(V, W, vol, allowBack) {
+  const dir = v3.sub(W, V);
+  let fwdT = Infinity, fwd = null, backT = -Infinity, back = null;
+  for (const [a, b, c] of vol) {
+    const t = buryRayHit(V, dir, a, b, c);
+    if (t === null) continue;
+    if (t > 1e-5 && t <= 1 + 1e-5 && t < fwdT) { fwdT = t; fwd = v3.add(V, v3.scale(dir, t)); }
+    else if (allowBack && t < -1e-5 && t > -1 && t > backT) { backT = t; back = v3.add(V, v3.scale(dir, t)); }
+  }
+  return fwd || back;
+}
+
+// Moving vi to hit must not flip a triangle or squash it flat.
+function burySlideClean(o, vi, hit) {
+  const m = o.mesh, P = m.positions;
+  const old = [P[vi * 3], P[vi * 3 + 1], P[vi * 3 + 2]];
+  const lp = [hit[0] - o.pos[0], hit[1] - o.pos[1], hit[2] - o.pos[2]];
+  const at = (i) => i === vi ? lp : [P[i * 3], P[i * 3 + 1], P[i * 3 + 2]];
+  for (let t = 0; t < m.tris.length; t += 3) {
+    const tri = [m.tris[t], m.tris[t + 1], m.tris[t + 2]];
+    if (!tri.includes(vi)) continue;
+    const a0 = [P[tri[0] * 3], P[tri[0] * 3 + 1], P[tri[0] * 3 + 2]];
+    const b0 = [P[tri[1] * 3], P[tri[1] * 3 + 1], P[tri[1] * 3 + 2]];
+    const c0 = [P[tri[2] * 3], P[tri[2] * 3 + 1], P[tri[2] * 3 + 2]];
+    const n0 = v3.cross(v3.sub(b0, a0), v3.sub(c0, a0));
+    const a1 = at(tri[0]), b1 = at(tri[1]), c1 = at(tri[2]);
+    const n1 = v3.cross(v3.sub(b1, a1), v3.sub(c1, a1));
+    if (v3.len(n1) * 0.5 < BURY_AREA) return false;
+    if (v3.dot(n0, n1) <= 0) return false;
+  }
+  // The vertex really moved; a no-op is not a slide.
+  if (Math.hypot(lp[0] - old[0], lp[1] - old[1], lp[2] - old[2]) < 1e-12) return false;
   return true;
 }
 
-// How much of i's surface sits inside j's volume (area). Straddling faces count a quarter,
-// so a board whose corners are buried still loses to the shell it passes through.
-function cutInsideScore(i, j, list, vols) {
+// All three corners, the centre, and each edge midpoint inside or on the shell.
+function buryFullyInside(ps, vol) {
+  const [a, b, c] = ps;
+  const mid = (p, q) => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2, (p[2] + q[2]) / 2];
+  const pts = [a, b, c, buryCentroid(a, b, c), mid(a, b), mid(b, c), mid(c, a)];
+  return pts.every(p => buryInsideOrOn(p, vol));
+}
+
+// Hidden after a slide: corners in the solid, and either the centre is
+// strictly inside, or the face lies on the surface and looks into the solid.
+function buryFaceHidden(ps, vols) {
+  const c = buryCentroid(ps[0], ps[1], ps[2]);
+  const nRaw = v3.cross(v3.sub(ps[1], ps[0]), v3.sub(ps[2], ps[0]));
+  const n = v3.len(nRaw) > 1e-12 ? v3.norm(nRaw) : null;
+  for (const vol of vols) {
+    if (!vol) continue;
+    if (!ps.every(p => buryInsideOrOn(p, vol))) continue;
+    if (buryPointInside(c, vol) && !buryOnSurface(c, vol)) return true;
+    if (!n || !buryOnSurface(c, vol)) continue;
+    const probe = v3.add(c, v3.scale(n, BURY_PROBE));
+    if (buryPointInside(probe, vol) && !buryOnSurface(probe, vol)) return true;
+  }
+  return false;
+}
+
+function buryWorldTri(o, t) {
+  return [0, 1, 2].map(k => buryScenePoint(o, o.mesh.tris[t * 3 + k]));
+}
+
+function buryDropFaces(o, vols, fullyOnly) {
+  const keep = [];
+  let hid = 0;
+  const m = o.mesh;
+  for (let t = 0; t < m.tris.length / 3; t++) {
+    const ps = buryWorldTri(o, t);
+    const drop = fullyOnly ? vols.some(vol => vol && buryFullyInside(ps, vol)) : buryFaceHidden(ps, vols);
+    if (drop) hid++; else keep.push(t);
+  }
+  if (!hid) return 0;
+  o.mesh = extractTris(m, keep);
+  keepMirrorIfSymmetric(o.mesh);
+  return hid;
+}
+
+// How much of i's surface sits inside j. A face whose centre is inside counts
+// in full; a face that only has a buried corner counts a quarter, so a board
+// crossing a recess still loses to the shell.
+function buryInsideScore(i, j, list, vols) {
   const o = list[i], vol = vols[j];
   if (!vol) return 0;
-  const off = o.pos, m = o.mesh;
   let score = 0;
-  for (let t = 0; t < m.tris.length / 3; t++) {
-    const T = [0, 1, 2].map(k => {
-      const v = m.tris[t * 3 + k];
-      return [m.positions[v * 3] + off[0], m.positions[v * 3 + 1] + off[1], m.positions[v * 3 + 2] + off[2]];
-    });
-    const area = cutTriArea(T[0], T[1], T[2]);
-    const mid = cutCentroid(T[0], T[1], T[2]);
-    if (!cutOnSurface(mid, vol) && cutInside(mid, vol)) score += area;
-    else if (T.some(p => !cutOnSurface(p, vol) && cutInside(p, vol))) score += area * 0.25;
+  for (let t = 0; t < o.mesh.tris.length / 3; t++) {
+    const ps = buryWorldTri(o, t);
+    const area = buryTriArea(ps[0], ps[1], ps[2]);
+    const c = buryCentroid(ps[0], ps[1], ps[2]);
+    if (!buryOnSurface(c, vol) && buryPointInside(c, vol)) score += area;
+    else if (ps.some(p => !buryOnSurface(p, vol) && buryPointInside(p, vol))) score += area * 0.25;
   }
   return score;
 }
 
-// list[0] is the active object. mode "auto" cuts whichever has more of itself inside
-// the other; "active" cuts only the active one; "others" cuts every object but it.
-// Returns the names that were cut.
-function cutJoined(list, mode = cutMode) {
-  const vols = list.map(o => meshIsClosed(o.mesh) ? cutWorldTris(o) : null);
-  const boxes = list.map(cutBox);
-  const plan = new Map();   // loser index -> winner indices
+// list[0] is the active object. Returns loser index -> winner indices.
+function buryPlan(list, who) {
+  const vols = list.map(buryVolume), boxes = list.map(burySceneBox);
+  const plan = new Map();
   const pair = (loser, winner) => {
     if (loser === winner || !vols[winner]) return;
-    if (!cutBoxesHit(boxes[loser], boxes[winner])) return;
+    if (!buryBoxHit(boxes[loser], boxes[winner])) return;
     if (!plan.has(loser)) plan.set(loser, []);
     if (!plan.get(loser).includes(winner)) plan.get(loser).push(winner);
   };
   for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
-    if (mode === "active") {
+    if (who === "active") {
       if (i !== 0 && j !== 0) continue;
-      const other = i === 0 ? j : i;
-      pair(0, other);
-    } else if (mode === "others") {
+      pair(0, i === 0 ? j : i);
+    } else if (who === "others") {
       if (i === 0) pair(j, i);
       else if (j === 0) pair(i, j);
-      else {
-        // Two bystanders: same rule as Auto, so neither is favoured by being active.
-        const si = vols[j] ? cutInsideScore(i, j, list, vols) : 0;
-        const sj = vols[i] ? cutInsideScore(j, i, list, vols) : 0;
-        if (vols[j] && !vols[i]) pair(i, j);
-        else if (vols[i] && !vols[j]) pair(j, i);
-        else if (si > sj) pair(i, j);
-        else if (sj > si) pair(j, i);
-        else if (si > 0 || sj > 0) pair(list[i].mesh.tris.length <= list[j].mesh.tris.length ? i : j,
-                                        list[i].mesh.tris.length <= list[j].mesh.tris.length ? j : i);
+      else buryAutoPair(i, j, list, vols, pair);
+    } else buryAutoPair(i, j, list, vols, pair);
+  }
+  return { plan, vols, boxes };
+}
+function buryAutoPair(i, j, list, vols, pair) {
+  const si = vols[j] ? buryInsideScore(i, j, list, vols) : 0;
+  const sj = vols[i] ? buryInsideScore(j, i, list, vols) : 0;
+  if (vols[j] && !vols[i]) pair(i, j);
+  else if (vols[i] && !vols[j]) pair(j, i);
+  else if (si > sj + 1e-8) pair(i, j);
+  else if (sj > si + 1e-8) pair(j, i);
+  else if (si > 0 || sj > 0) {
+    const small = list[i].mesh.tris.length <= list[j].mesh.tris.length ? i : j;
+    pair(small, small === i ? j : i);
+  }
+}
+
+// Slide buried vertices of o onto the winner volumes, when that slide is clean.
+// Returns the vertex indices that were buried but left in place.
+function burySlideObject(o, vols) {
+  const m = o.mesh, n = m.positions.length / 3;
+  const left = [];
+  if (!n || !m.tris.length || !vols.some(Boolean)) return { slid: 0, left };
+  const adj = new Map(), edgeFaces = new Map();
+  for (let i = 0; i < n; i++) adj.set(i, []);
+  for (let t = 0; t < m.tris.length; t += 3) for (let k = 0; k < 3; k++) {
+    const a = m.tris[t + k], b = m.tris[t + (k + 1) % 3];
+    adj.get(a).push(b); adj.get(b).push(a);
+    const key = a < b ? a + "," + b : b + "," + a;
+    if (!edgeFaces.has(key)) edgeFaces.set(key, []);
+    edgeFaces.get(key).push(t / 3);
+  }
+  const spos = [];
+  for (let i = 0; i < n; i++) spos.push(buryScenePoint(o, i));
+  const planned = new Map();
+  const wasBuried = new Set();
+  for (const vol of vols) {
+    if (!vol) continue;
+    const inside = new Set();
+    for (let i = 0; i < n; i++)
+      if (buryPointInside(spos[i], vol) && !buryOnSurface(spos[i], vol)) inside.add(i);
+    const buried = new Set(inside);
+    for (let t = 0; t < m.tris.length / 3; t++) {
+      const tri = [m.tris[t * 3], m.tris[t * 3 + 1], m.tris[t * 3 + 2]];
+      if (tri.reduce((k, v) => k + (inside.has(v) ? 1 : 0), 0) < 2) continue;
+      const c = buryCentroid(spos[tri[0]], spos[tri[1]], spos[tri[2]]);
+      if (buryPointInside(c, vol) && !buryOnSurface(c, vol)) for (const v of tri) buried.add(v);
+    }
+    for (const vi of buried) wasBuried.add(vi);
+    for (const vi of buried) {
+      const seen = new Set(), nbr = [];
+      for (const w of adj.get(vi)) if (!seen.has(w)) { seen.add(w); nbr.push(w); }
+      const outside = nbr.filter(w => !buried.has(w));
+      let hit = null;
+      if (outside.length) {
+        const ranked = outside.map(w => ({ w, turn: buryEdgeTurn(m, edgeFaces, vi, w), d: v3.len(v3.sub(spos[vi], spos[w])) }));
+        ranked.sort((p, q) => q.turn - p.turn || p.d - q.d);
+        const pool = ranked.filter(r => ranked[0].turn - r.turn < BURY_TIE);
+        pool.sort((p, q) => p.d - q.d);
+        hit = burySlide(spos[vi], spos[pool[0].w], vol, !inside.has(vi));
       }
-    } else {
-      const si = vols[j] ? cutInsideScore(i, j, list, vols) : 0;
-      const sj = vols[i] ? cutInsideScore(j, i, list, vols) : 0;
-      if (vols[j] && !vols[i]) pair(i, j);
-      else if (vols[i] && !vols[j]) pair(j, i);
-      else if (si > sj + 1e-8) pair(i, j);
-      else if (sj > si + 1e-8) pair(j, i);
-      else if (si > 0 || sj > 0) {
-        const small = list[i].mesh.tris.length <= list[j].mesh.tris.length ? i : j;
-        pair(small, small === i ? j : i);
-      }
+      // No outside neighbour: every edge stays in the solid (a corner buried in
+      // a frame). Sliding along a crease notches the end, so the vertex stays.
+      if (!hit || !burySlideClean(o, vi, hit)) continue;
+      const prev = planned.get(vi);
+      if (!prev || v3.len(v3.sub(hit, spos[vi])) < v3.len(v3.sub(prev, spos[vi]))) planned.set(vi, hit);
     }
   }
-  const names = [];
-  let removed = 0;
-  for (const [li, winners] of plan) {
-    const beforeT = list[li].mesh.tris.length, beforeP = list[li].mesh.positions.length;
-    for (const wi of winners) removed += cutObjectByVolume(list[li], vols[wi]);
-    if (list[li].mesh.tris.length !== beforeT || list[li].mesh.positions.length !== beforeP) names.push(list[li].name);
+  let slid = 0;
+  for (const [i, sp] of planned) {
+    const lp = [sp[0] - o.pos[0], sp[1] - o.pos[1], sp[2] - o.pos[2]];
+    m.positions[i * 3] = lp[0]; m.positions[i * 3 + 1] = lp[1]; m.positions[i * 3 + 2] = lp[2];
+    slid++;
   }
-  return { names, removed };
+  for (const vi of wasBuried) if (!planned.has(vi)) left.push(vi);
+  if (slid && m.mirror) keepMirrorIfSymmetric(m);
+  else if (slid) pairMirror(m);
+  return { slid, left };
+}
+
+// who: which shape loses. how: "slide" or "delete".
+// left[] is { name, index, at: [x,y,z] } for vertices slide mode refused to move.
+function combineJoined(list, who = cutMode, how = combineMode) {
+  const { plan, vols } = buryPlan(list, who);
+  const names = [], left = [];
+  let slid = 0, dropped = 0;
+  for (const [li, winners] of plan) {
+    const o = list[li];
+    const use = winners.map(w => vols[w]);
+    const beforeT = o.mesh.tris.length;
+    const beforeP = o.mesh.positions.slice();
+    if (how === "delete") {
+      dropped += buryDropFaces(o, use, true);
+    } else {
+      const r = burySlideObject(o, use);
+      slid += r.slid;
+      for (const vi of r.left) left.push({ name: o.name, index: vi, at: buryScenePoint(o, vi) });
+      dropped += buryDropFaces(o, use, false);
+    }
+    const posSame = beforeP.length === o.mesh.positions.length && beforeP.every((v, i) => v === o.mesh.positions[i]);
+    if (o.mesh.tris.length !== beforeT || !posSame) names.push(o.name);
+  }
+  return { names, slid, dropped, left };
 }
 // Make Plane: one quad (2 triangles), 1 x 1 unit. "up" stands on the ground facing -Y
 // (toward the Front view); "flat" lies on z = 0 facing up. Two-sided by default, so
@@ -2958,8 +2879,10 @@ function cmdCombine() {
   pushUndo();
   const tgt = activeObj(), others = list.filter(o => o !== tgt);
   const choice = (document.getElementById("scCut") || {}).value;
-  const mode = choice === "active" || choice === "others" || choice === "auto" ? choice : cutMode;
-  const fix = cutJoined([tgt, ...others], mode);   // same undo step as the join
+  const who = choice === "active" || choice === "others" || choice === "auto" ? choice : cutMode;
+  const howEl = (document.getElementById("scCombineMode") || {}).value;
+  const how = howEl === "delete" || howEl === "slide" ? howEl : combineMode;
+  const fix = combineJoined([tgt, ...others], who, how);   // same undo step as the join
   const r = mergeMeshes(tgt.pos, [tgt, ...others]);
   scene.objects = scene.objects.filter(o => !others.includes(o));
   tgt.mesh = r.mesh; tgt.twoSided = r.twoSided;
@@ -2968,8 +2891,12 @@ function cmdCombine() {
   clearSelection();
   sceneVersion++;
   meshChanged();
-  const who = fix.names.length ? `, cut ${fix.names.join(" and ")} where ${fix.names.length > 1 ? "they pass" : "it passes"} through` : "";
-  toast(`Combined ${list.length} objects into ${tgt.name}: ${triCount()} tris` + who + (r.twoSided || !list.some(o => o.twoSided) ? "" : " (two-sided parts got real back faces)"));
+  const bits = [];
+  if (fix.slid) bits.push(`slid ${fix.slid} vert${fix.slid === 1 ? "" : "s"}`);
+  if (fix.left.length) bits.push(`left ${fix.left.length} vert${fix.left.length === 1 ? "" : "s"} in place`);
+  if (fix.dropped) bits.push(`deleted ${fix.dropped} hidden face${fix.dropped === 1 ? "" : "s"}`);
+  const detail = bits.length ? ` (${bits.join(", ")}${fix.names.length ? " on " + fix.names.join(" and ") : ""})` : "";
+  toast(`Combined ${list.length} objects into ${tgt.name}: ${triCount()} tris` + detail + (r.twoSided || !list.some(o => o.twoSided) ? "" : " (two-sided parts got real back faces)"));
 }
 // Separate (move) or Faces → new (copy): the faces whose corners are all selected.
 function cmdSeparate(keep) {
@@ -5953,6 +5880,11 @@ $("scCut").value = cutMode;
 $("scCut").addEventListener("change", () => {
   cutMode = $("scCut").value === "active" || $("scCut").value === "others" ? $("scCut").value : "auto";
   try { localStorage.setItem(KEY_PREFIX + "cut", cutMode); } catch (e) { /* blocked */ }
+});
+$("scCombineMode").value = combineMode;
+$("scCombineMode").addEventListener("change", () => {
+  combineMode = $("scCombineMode").value === "delete" ? "delete" : "slide";
+  try { localStorage.setItem(KEY_PREFIX + "combine", combineMode); } catch (e) { /* blocked */ }
 });
 $("scSeparate").addEventListener("click", () => cmdSeparate(false));
 $("scFaces").addEventListener("click", () => cmdSeparate(true));

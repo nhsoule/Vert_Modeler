@@ -1,8 +1,7 @@
-// Combine cut. Run from the repo root:  node test/combine-cleanup.mjs
-//   his84.txt  -> the arms are cut where they pass through the bucket and the grip;
-//                 those two stay byte-identical, and the result is near 80 triangles.
-//   cube_3.txt -> the plank is cut where it passes through the crate. The crate's
-//                 108 triangles stay byte-identical, including with Mirror X on.
+// Combine. Run from the repo root:  node test/combine-cleanup.mjs
+//   Slide & trim: his84.txt matches Bucket80.h (80 tris).
+//   Delete hidden faces: only triangles entirely inside the winner are removed.
+//   cube_3.txt: the crate's 108 triangles stay byte-identical in both modes.
 import fs from "fs";
 import vm from "vm";
 import path from "path";
@@ -67,8 +66,13 @@ function loadModeler() {
 let meshDirty = true;
 function updateUI() {}
 function $(id) { return document.getElementById(id); }
+const allPalettes = () => [{ id: "default", colors: DEFAULT_PALETTE }];
 globalThis.__vertTest = {
-  cmdCombine, undo, redo, buildExportPacked, makeObject, makeCube, cutJoined, cutInside, cutWorldTris,
+  cmdCombine, undo, redo, buildExportPacked, makeObject, makeCube, combineJoined, importMesh, parsePacked: parsePacked,
+  get combineMode() { return combineMode; },
+  set combineMode(v) { combineMode = v; },
+  get cutMode() { return cutMode; },
+  set cutMode(v) { cutMode = v; },
   get scene() { return scene; },
   set scene(v) { scene = v; },
   get mesh() { return mesh; },
@@ -167,16 +171,13 @@ function main() {
   assert(api.scene.objects.length === 1, "disjoint combine should leave one object");
   assert(api.triCount() === 24, "disjoint cubes should stay 24 tris, got " + api.triCount());
   assert(api.vertCount() === 16, "disjoint cubes should stay 16 verts, got " + api.vertCount());
-  assert(!/tucked|dropped/.test(cubeToast), "disjoint combine should not report cleanup: " + cubeToast);
+  assert(!/slid|deleted|left /.test(cubeToast), "disjoint combine should not report cleanup: " + cubeToast);
   api.undo();
   assert(api.scene.objects.length === 2, "undo should restore both cubes");
   const afterUndo = api.scene.objects.map(o => ({ pos: o.pos, positions: o.mesh.positions, tris: o.mesh.tris }));
   assert(JSON.stringify(afterUndo) === JSON.stringify(beforeCubes), "undo should restore the cubes exactly");
   console.log("ok  disjoint cubes: 24 tris, no cleanup, undo restores both");
 
-  // Build separate objects from a vertex dump. Returns the objects and per-part
-  // triangle keys (quantized positions, winding kept) so a winner can be checked
-  // byte-for-byte after the cut.
   function buildParts(rows, offset, scale, names) {
     const { qpos, byComp } = componentsOf(rows);
     const objects = byComp.map((tris, i) => {
@@ -209,102 +210,171 @@ function main() {
     const bag = new Set(exported);
     return keys.filter(k => bag.has(k)).length;
   }
+  function snap(parts) {
+    return parts.map(o => ({
+      name: o.name,
+      pos: o.mesh.positions.slice(),
+      tris: o.mesh.tris.slice(),
+    }));
+  }
 
-  // ----- bucket: arms are cut, the body and the grip are not touched -----
+  // ----- Slide & trim: his84 matches the hand-made 80-triangle header -----
   const header = fs.readFileSync(path.join(fixDir, "Bucket80.h"), "utf8");
   const offset = header.match(/_offset\[3\]\s*=\s*\{\s*([^}]+)\}/)[1].split(",").map(s => parseFloat(s));
   const scale = parseFloat(header.match(/_scale\s*=\s*([-+0-9.eE]+)/)[1]);
   const his = parseHis(fs.readFileSync(path.join(fixDir, "his84.txt"), "utf8"));
-  const bucketParts = buildParts(his, offset, scale, ["bucket", "grip", "armL", "armR"]);
-  assert(bucketParts.map(o => o._n).join(",") === "44,12,14,14", "unexpected his84 part sizes");
-  const bodyVol = api.cutWorldTris(bucketParts[0]);
-  const gripVol = api.cutWorldTris(bucketParts[1]);
-  globalThis.__toasts.length = 0;
-  api.scene = { name: "Bucket", active: 0, objects: bucketParts };
-  api.mesh = bucketParts[0].mesh;
-  api.objSel = new Set(bucketParts.map(o => o.id));
-  api.cmdCombine();
-  const bucketToast = globalThis.__toasts.at(-1) || "";
-  const bucketKeys = exportKeys();
-  assert(keptCount(bucketParts[0]._keys, bucketKeys) === 44, "the bucket body must stay byte-identical");
-  assert(keptCount(bucketParts[1]._keys, bucketKeys) === 12, "the grip must stay byte-identical");
-  assert(api.triCount() >= 80 && api.triCount() <= 100, "arm cut should land near 80 tris, got " + api.triCount());
-  assert(/cut armL and armR/.test(bucketToast), "expected the arms to be the parts that are cut: " + bucketToast);
-  const P = api.mesh.positions, T = api.mesh.tris;
-  const winnerKeys = new Set([...bucketParts[0]._keys, ...bucketParts[1]._keys]);
-  let buried = 0;
-  for (let t = 0; t < T.length; t += 3) {
-    const key = [0, 1, 2].map(k => {
-      const i = T[t + k];
-      return [0, 1, 2].map(c => Math.round((P[i * 3 + c] - offset[c]) / scale * POS_Q)).join(",");
-    }).join("|");
-    if (winnerKeys.has(key)) continue;
-    const mid = [0, 1, 2].map(k => (P[T[t] * 3 + k] + P[T[t + 1] * 3 + k] + P[T[t + 2] * 3 + k]) / 3);
-    if (api.cutInside(mid, bodyVol) || api.cutInside(mid, gripVol)) buried++;
+  assert(his.length === 84 * 3, "his84 should be 84 triangles");
+  function bucketScene() {
+    const parts = buildParts(his, offset, scale, ["bucket", "grip", "armL", "armR"]);
+    api.combineMode = "slide";
+    api.cutMode = "auto";
+    api.light.preset = "classic";
+    api.bakeOn = true;
+    api.setSunFromDir([-0.5890, 0, 0.8081]);
+    api.scene = { name: "Bucket", active: 0, objects: parts };
+    api.mesh = parts[0].mesh;
+    api.objSel = new Set(parts.map(o => o.id));
+    return parts;
   }
-  assert(buried === 0, buried + " triangles are still inside the bucket or the grip");
+  globalThis.__toasts.length = 0;
+  const slideParts = bucketScene();
+  const slideBefore = slideParts.reduce((n, o) => n + o._n, 0);
+  api.cmdCombine();
+  const slideToast = globalThis.__toasts.at(-1) || "";
+  const got = parsePacked(api.buildExportPacked());
+  const exp = parsePacked(header);
+  assert(got.length === 80 && exp.length === 80, "slide mode should export 80 tris, got " + got.length);
+  const origPos = new Set(his.map(r => r[0] + "," + r[1] + "," + r[2]));
+  let movedFaces = 0;
+  for (let i = 0; i < got.length; i++) {
+    const g = got[i], e = exp[i];
+    for (let k = 0; k < 3; k++) {
+      for (let c = 0; c < 3; c++)
+        assert(g[k][c] === e[k][c], "tri " + i + " position " + g[k].slice(0, 3) + " != " + e[k].slice(0, 3));
+      assert(g[k][3] === e[k][3] && g[k][4] === e[k][4], "tri " + i + " oct normal " + g[k].slice(3, 5) + " != " + e[k].slice(3, 5));
+    }
+    const moved = g.some(v => !origPos.has(v[0] + "," + v[1] + "," + v[2]));
+    if (moved) movedFaces++;
+    for (let k = 0; k < 3; k++) for (let c = 5; c < 8; c++) {
+      const d = Math.abs(g[k][c] - e[k][c]);
+      assert(d <= (moved ? 1 : 0), "tri " + i + " colour channel off by " + d);
+    }
+  }
+  assert(movedFaces === 24, "shortened arm faces should be 24, got " + movedFaces);
+  assert(/slid /.test(slideToast) && /deleted /.test(slideToast), "unexpected slide toast: " + slideToast);
   api.undo();
   assert(api.scene.objects.length === 4, "undo should restore the 4 bucket parts");
-  console.log("ok  his84 combine -> " + bucketKeys.length + " tris, bucket and grip untouched, nothing left inside");
+  assert(api.scene.objects.reduce((n, o) => n + o.mesh.tris.length / 3, 0) === slideBefore, "undo should restore the bucket tris");
+  api.redo();
+  assert(api.triCount() === 80, "redo should bring the 80-triangle bucket back");
+  console.log("ok  slide his84 -> 80 tris match Bucket80.h; " + slideToast);
 
-  // ----- crate: only the plank is cut; the crate's 108 triangles stay identical -----
+  // ----- Delete hidden faces on the bucket: winners stay, only fully buried faces go -----
+  globalThis.__toasts.length = 0;
+  const delParts = bucketScene();
+  api.combineMode = "delete";
+  const bodyKeys = delParts[0]._keys.slice();
+  const gripKeys = delParts[1]._keys.slice();
+  api.cmdCombine();
+  const delToast = globalThis.__toasts.at(-1) || "";
+  const delKeys = exportKeys();
+  assert(keptCount(bodyKeys, delKeys) === 44, "delete mode must leave the bucket body byte-identical");
+  assert(keptCount(gripKeys, delKeys) === 12, "delete mode must leave the grip byte-identical");
+  assert(!/slid /.test(delToast), "delete mode must not slide: " + delToast);
+  api.undo();
+  assert(api.scene.objects.length === 4, "undo should restore the bucket parts after delete mode");
+  console.log("ok  delete his84 -> " + delKeys.length + " tris; " + delToast);
+
+  // ----- crate, both modes, including Mirror X -----
   const crateRows = parseHis(fs.readFileSync(path.join(fixDir, "cube_3.txt"), "utf8"));
   const crateOff = [0.03873622, 0.30441112, 0.03792348];
   const crateSc = 0.91715836;
-  const crateParts = buildParts(crateRows, crateOff, crateSc, ["plank", "bucket", "grip", "armL", "armR", "crate"]);
-  assert(crateParts[0]._n === 4 && crateParts[5]._n === 108, "cube_3 plank/crate sizes");
-  // Mirror X on, the way the phone screenshot had it, and the crate is the active object.
-  for (const o of crateParts) o.mesh.mirror = "x";
-  const crateVol = api.cutWorldTris(crateParts[5]);
-  const ordered = [crateParts[5], crateParts[0], crateParts[1], crateParts[2], crateParts[3], crateParts[4]];
-  globalThis.__toasts.length = 0;
-  api.scene = { name: "cube_3", active: 0, objects: ordered };
-  api.mesh = ordered[0].mesh;
-  api.objSel = new Set(ordered.map(o => o.id));
-  api.cmdCombine();
-  const crateToast = globalThis.__toasts.at(-1) || "";
-  const crateKeys = exportKeys();
-  assert(keptCount(crateParts[5]._keys, crateKeys) === 108, "crate triangles must stay byte-identical");
-  assert(/cut plank/.test(crateToast), "the plank should be what gets cut: " + crateToast);
-  assert(!/cut crate/.test(crateToast), "the crate must not be cut: " + crateToast);
-  const MP = api.mesh.positions, MT = api.mesh.tris;
-  let plankInside = 0;
-  for (let t = 0; t < MT.length; t += 3) {
-    const mid = [0, 1, 2].map(k => (MP[MT[t] * 3 + k] + MP[MT[t + 1] * 3 + k] + MP[MT[t + 2] * 3 + k]) / 3);
-    // Only count a piece that isn't one of the original crate triangles.
-    const key = [0, 1, 2].map(k => {
-      const i = MT[t + k];
-      return [0, 1, 2].map(c => Math.round((MP[i * 3 + c] - crateOff[c]) / crateSc * POS_Q)).join(",");
-    }).join("|");
-    if (crateParts[5]._keys.includes(key)) continue;
-    if (api.cutInside(mid, crateVol)) plankInside++;
+  const notch = ["-2822,-25697,-8794", "-2822,-3936,13257", "-2822,-22434,-13067", "-2822,625,10298"];
+  function crateScene(mirror) {
+    const parts = buildParts(crateRows, crateOff, crateSc, ["plank", "bucket", "grip", "armL", "armR", "crate"]);
+    if (mirror) for (const o of parts) o.mesh.mirror = "x";
+    const ordered = [parts[5], parts[0], parts[1], parts[2], parts[3], parts[4]];
+    api.cutMode = "auto";
+    api.scene = { name: "cube_3", active: 0, objects: ordered };
+    api.mesh = ordered[0].mesh;
+    api.objSel = new Set(ordered.map(o => o.id));
+    return { parts, ordered };
   }
-  assert(plankInside === 0, plankInside + " non-crate triangles are still inside the crate");
-  api.undo();
-  assert(api.scene.objects.length === 6, "undo should restore the 6 crate-scene parts");
-  api.redo();
-  assert(api.triCount() === crateKeys.length, "redo should bring the cut back");
-  console.log("ok  cube_3 combine with Mirror X -> " + crateKeys.length + " tris, crate's 108 unchanged, plank cut");
+  function runCrate(how, mirror) {
+    globalThis.__toasts.length = 0;
+    api.combineMode = how;
+    const { parts } = crateScene(mirror);
+    const plankPos = parts[0].mesh.positions.slice();
+    api.cmdCombine();
+    const toast = globalThis.__toasts.at(-1) || "";
+    const keys = exportKeys();
+    assert(keptCount(parts[5]._keys, keys) === 108, how + (mirror ? " mirror" : "") + " must keep the crate's 108 triangles");
+    assert(!/on crate/.test(toast), "the crate must not be the shape that changes: " + toast);
+    return { toast, keys, plankPos, n: keys.length };
+  }
 
-  // The Cut menu: "the active object" cuts only that one; "the other objects" cuts the rest.
-  function fresh() {
-    return buildParts(crateRows, crateOff, crateSc, ["plank", "bucket", "grip", "armL", "armR", "crate"]);
+  const slideCrate = runCrate("slide", false);
+  const slideExport = parsePacked(api.buildExportPacked());
+  const have = new Set(slideExport.flat().map(v => v.slice(0, 3).join(",")));
+  for (const p of notch) assert(!have.has(p), "slide mode must not notch the plank onto " + p);
+  api.undo();
+  assert(api.scene.objects.length === 6, "undo should restore the 6 crate parts");
+  api.redo();
+  assert(api.triCount() === slideCrate.n, "redo should restore the slide-mode crate");
+  console.log("ok  slide cube_3 -> " + slideCrate.n + " tris; " + slideCrate.toast);
+
+  const slideMirror = runCrate("slide", true);
+  assert(slideMirror.n === slideCrate.n, "Mirror X should not change the slide-mode triangle count");
+  api.undo();
+  assert(api.scene.objects.length === 6, "undo should restore the mirrored crate scene");
+  console.log("ok  slide cube_3 with Mirror X -> " + slideMirror.n + " tris; " + slideMirror.toast);
+
+  const delCrate = runCrate("delete", false);
+  const delExport = parsePacked(api.buildExportPacked());
+  // Nothing may move: every exported position is one of the original quantized positions.
+  const crateOrig = new Set(crateRows.map(r => r.slice(0, 3).join(",")));
+  for (const t of delExport) for (const v of t)
+    assert(crateOrig.has(v.slice(0, 3).join(",")), "delete mode moved a vertex to " + v.slice(0, 3));
+  api.undo();
+  api.redo();
+  assert(api.triCount() === delCrate.n, "redo should restore delete mode");
+  console.log("ok  delete cube_3 -> " + delCrate.n + " tris; " + delCrate.toast);
+
+  const delMirror = runCrate("delete", true);
+  assert(delMirror.n === delCrate.n, "Mirror X should not change the delete-mode triangle count");
+  console.log("ok  delete cube_3 with Mirror X -> " + delMirror.n + " tris; " + delMirror.toast);
+
+  // Import builds the same two meshes the Import button does, then Combine.
+  function headerFromTris(name, tris, qpos) {
+    const lines = [];
+    for (const t of tris) for (const v of t) {
+      const q = qpos[v];
+      lines.push(`  { { ${q[0]}, ${q[1]}, ${q[2]} }, { 0, 0 }, { 180, 180, 190, 255 } },`);
+    }
+    return `#pragma once\n#include "vert.h"\n// lighting baked into colors (0.55 + 0.45*max(0, n.(0.3,0.5,0.8)))\nstatic const float ${name}_offset[3] = { 0.03873622f, 0.30441112f, 0.03792348f };\nstatic const float ${name}_scale = 0.91715836f;\nstatic const Vert ${name}_verts[] = {\n${lines.join("\n")}\n};\n`;
   }
-  const byActive = fresh();
-  const cratePos = byActive[5].mesh.positions.slice();
-  api.cutJoined([byActive[0], byActive[5]], "active");
-  assert(byActive[0].mesh.tris.length > 12, "Cut: the active object should cut the plank");
-  assert(byActive[5].mesh.positions.join(",") === cratePos.join(","), "cutting the plank must not move a crate vertex");
-  const byOthers = fresh();
-  const cratePos2 = byOthers[5].mesh.positions.slice();
-  api.cutJoined([byOthers[5], byOthers[0]], "others");
-  assert(byOthers[0].mesh.tris.length > 12, "Cut: the other objects should cut the plank");
-  assert(byOthers[5].mesh.positions.join(",") === cratePos2.join(","), "the crate stays put when the others are cut");
-  const noCut = fresh();
-  api.cutJoined([noCut[5], noCut[0]], "active");
-  assert(noCut[5].mesh.tris.length === 324 && noCut[0].mesh.tris.length === 12,
-    "an open plank is not a volume, so it cannot cut the active crate");
-  console.log("ok  Cut choice: active cuts the plank, others cuts the plank, an open shape never cuts");
+  const comp = componentsOf(crateRows);
+  for (const how of ["slide", "delete"]) {
+    const objs = ["crate", "plank"].map((name, i) => {
+      const part = i === 0 ? comp.byComp[5] : comp.byComp[0];
+      const parsed = api.parsePacked(headerFromTris(name, part, comp.qpos));
+      const res = api.importMesh(parsed.nums, null, parsed.lighting, parsed.sun, parsed.stride, { bake: parsed.bake, packed: true });
+      return api.makeObject(name, res.mesh, [0, 0, 0]);
+    });
+    api.combineMode = how;
+    api.cutMode = "auto";
+    api.scene = { name: "imported", active: 0, objects: objs };
+    api.mesh = objs[0].mesh;
+    api.objSel = new Set(objs.map(o => o.id));
+    globalThis.__toasts.length = 0;
+    api.cmdCombine();
+    const toast = globalThis.__toasts.at(-1) || "";
+    // Crate 108 + plank 4 = 112. Slide drops the 2 thin edges; delete drops nothing.
+    const expect = how === "slide" ? 110 : 112;
+    assert(api.triCount() === expect, "imported " + how + " should be " + expect + " tris, got " + api.triCount() + " (" + toast + ")");
+    assert(!/on crate/.test(toast), "imported " + how + " must not change the crate: " + toast);
+    console.log("ok  imported crate+plank " + how + " -> " + api.triCount() + " tris; " + toast);
+  }
 
   if (process.exitCode) process.exit(process.exitCode);
   console.log("all checks passed");
