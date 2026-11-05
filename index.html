@@ -2339,15 +2339,22 @@ function mergeMeshes(origin, list) {
 // is only how the face was split, so sliding along it would kink the part. Equal
 // corners use the nearest outside vertex. The part keeps its direction and only
 // gets shorter — the vertex is not dropped down a face normal.
-// A face that ends up inside the other part, or flat on its surface (an end cap
-// pushed into a box), is deleted. A cap vertex that sits just outside the volume
-// still belongs to that buried end and is pulled onto the face along the same kind
-// of edge. A part that is not a closed volume is not used as a volume. Nothing
-// intersecting leaves every mesh untouched. Normals and baked colours are not
-// stored here: export rebuilds them with triNormal and the shade formula.
+// A face that ends up inside the other part, or flat against it and facing into
+// it (an end cap pushed into a box), is deleted. A face that merely lies on the
+// surface but looks outward is kept — that is the board you can still see.
+// A cap vertex that sits just outside the volume still belongs to that buried end
+// and is pulled onto the face along the same kind of edge. On a concave shell
+// (a crate with a recessed panel) every neighbour of a buried corner can itself
+// be inside the frame; the corner edge may still leave the solid across the
+// opening, and that exit is where the corner stops. A part that is not a closed
+// volume is not used as a volume. Nothing intersecting leaves every mesh
+// untouched. Normals and baked colours are not stored here: export rebuilds
+// them with triNormal and the shade formula.
 const BURY_RAYS = [[0.437, 0.251, 0.863], [0.173, 0.821, 0.543], [-0.612, 0.331, 0.717]];
 const BURY_ON    = 1e-4;                 // on the surface: same ballpark as WELD_EPS
 const BURY_TIE   = 1 * Math.PI / 180;    // corners within 1° count as equally sharp
+const BURY_FLAT  = 5 * Math.PI / 180;    // below this, an edge is a flat quad's diagonal
+const BURY_PROBE = 1e-3;                 // step along a normal to see which way a face looks
 
 function meshIsClosed(m) {
   const T = m.tris, nE = new Map();
@@ -2454,6 +2461,25 @@ function burySlide(V, W, vol, allowBack) {
   return fwd || back;
 }
 
+// A triangle hidden by another part: its corners are in that solid, and either its
+// centre is strictly inside, or it lies on the surface and looks into the solid
+// (a cap pressed flat against a box). A board lying on a panel and facing out is kept.
+function buryFaceHidden(ps, list, A, vols, boxes) {
+  const c = buryCentroid(ps[0], ps[1], ps[2]);
+  const nRaw = v3.cross(v3.sub(ps[1], ps[0]), v3.sub(ps[2], ps[0]));
+  const n = v3.len(nRaw) > 1e-12 ? v3.norm(nRaw) : null;
+  for (let B = 0; B < list.length; B++) {
+    if (A === B || !vols[B] || !buryBoxHit(boxes[A], boxes[B])) continue;
+    const vol = vols[B];
+    if (!ps.every(p => buryInsideOrOn(p, vol))) continue;
+    if (buryPointInside(c, vol) && !buryOnSurface(c, vol)) return true;
+    if (!n || !buryOnSurface(c, vol)) continue;
+    const probe = v3.add(c, v3.scale(n, BURY_PROBE));
+    if (buryPointInside(probe, vol) && !buryOnSurface(probe, vol)) return true;
+  }
+  return false;
+}
+
 // Mutates the parts' meshes. Returns how many vertices moved and faces dropped.
 function buryJoined(list) {
   const vols = list.map(buryVolume), boxes = list.map(burySceneBox);
@@ -2485,14 +2511,31 @@ function buryJoined(list) {
         if (buryPointInside(c, vol) && !buryOnSurface(c, vol)) for (const v of tri) buried.add(v);
       }
       for (const vi of buried) {
-        const seen = new Set(), cand = [];
-        for (const w of adj.get(vi)) if (!buried.has(w) && !seen.has(w)) { seen.add(w); cand.push(w); }
-        if (!cand.length) continue;
-        const ranked = cand.map(w => ({ w, turn: buryEdgeTurn(m, edgeFaces, vi, w), d: v3.len(v3.sub(spos[vi], spos[w])) }));
-        ranked.sort((p, q) => q.turn - p.turn || p.d - q.d);
-        const pool = ranked.filter(r => ranked[0].turn - r.turn < BURY_TIE);
-        pool.sort((p, q) => p.d - q.d);
-        const hit = burySlide(spos[vi], spos[pool[0].w], vol, !inside.has(vi));
+        const seen = new Set(), nbr = [];
+        for (const w of adj.get(vi)) if (!seen.has(w)) { seen.add(w); nbr.push(w); }
+        const outside = nbr.filter(w => !buried.has(w));
+        let hit = null;
+        if (outside.length) {
+          // Sharpest corner that still leads out of the solid. Flat diagonals lose to a real edge.
+          const ranked = outside.map(w => ({ w, turn: buryEdgeTurn(m, edgeFaces, vi, w), d: v3.len(v3.sub(spos[vi], spos[w])) }));
+          ranked.sort((p, q) => q.turn - p.turn || p.d - q.d);
+          const pool = ranked.filter(r => ranked[0].turn - r.turn < BURY_TIE);
+          pool.sort((p, q) => p.d - q.d);
+          hit = burySlide(spos[vi], spos[pool[0].w], vol, !inside.has(vi));
+        } else if (inside.has(vi)) {
+          // Concave shell: no neighbour is outside, but a corner edge can still cross
+          // the opening. Skip flat diagonals and open edges; stop at the nearest exit.
+          let bestD = Infinity;
+          for (const w of nbr) {
+            const faces = edgeFaces.get(vi < w ? vi + "," + w : w + "," + vi);
+            if (!faces || faces.length < 2) continue;
+            if (buryEdgeTurn(m, edgeFaces, vi, w) < BURY_FLAT) continue;
+            const p = burySlide(spos[vi], spos[w], vol, false);
+            if (!p) continue;
+            const d = v3.len(v3.sub(p, spos[vi]));
+            if (d < bestD) { bestD = d; hit = p; }
+          }
+        }
         if (!hit) continue;
         const prev = planned[A].get(vi);
         if (!prev || v3.len(v3.sub(hit, spos[vi])) < v3.len(v3.sub(prev, spos[vi]))) planned[A].set(vi, hit);
@@ -2512,13 +2555,7 @@ function buryJoined(list) {
     let hid = 0;
     for (let t = 0; t < m.tris.length / 3; t++) {
       const ps = [0, 1, 2].map(k => buryScenePoint(o, m.tris[t * 3 + k]));
-      let hidden = false;
-      for (let B = 0; B < list.length && !hidden; B++) {
-        if (A === B || !vols[B] || !buryBoxHit(boxes[A], boxes[B])) continue;
-        if (!ps.every(p => buryInsideOrOn(p, vols[B]))) continue;
-        if (buryInsideOrOn(buryCentroid(ps[0], ps[1], ps[2]), vols[B])) hidden = true;
-      }
-      if (hidden) hid++; else keep.push(t);
+      if (buryFaceHidden(ps, list, A, vols, boxes)) hid++; else keep.push(t);
     }
     dropped += hid;
     if (!planned[A].size && !hid) continue;

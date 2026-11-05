@@ -1,6 +1,7 @@
-// Combine cleanup: his84.txt (bucket + grip + two arms, 84 tris) should come out
-// like the hand-made Bucket80.h (80 tris: end caps dropped, arm ends on the
-// surfaces). Run from the repo root:  node test/combine-cleanup.mjs
+// Combine cleanup. Run from the repo root:  node test/combine-cleanup.mjs
+//   his84.txt  -> Bucket80.h (84 tris, arm caps dropped, ends on the rim and grip)
+//   cube_3.txt -> plank on a recessed crate: 2 thin edges dropped, board corners
+//                 pulled onto the panel opening, crate unchanged (192 -> 190)
 import fs from "fs";
 import vm from "vm";
 import path from "path";
@@ -246,6 +247,77 @@ function main() {
 
   console.log("ok  his84 combine -> " + got.length + " tris match Bucket80.h (positions, oct normals, order); "
     + movedFaces + " shortened faces re-baked within 1 colour byte");
+
+  // ----- crate: a diagonal plank across a recessed panel -----
+  // cube_3 is one export of six parts (plank, cleaned bucket, grip, two arms, crate).
+  // The plank is 4 triangles: a quad on the left panel plus two thin edges that run
+  // into the frame. Combine should drop those two edges and pull the quad's corners
+  // out of the frame onto the opening. The crate's own triangles stay put.
+  const crateText = fs.readFileSync(path.join(fixDir, "cube_3.txt"), "utf8");
+  const crateRows = parseHis(crateText);
+  assert(crateRows.length === 192 * 3, "cube_3 should be 192 triangles, got " + (crateRows.length / 3));
+  const crateOff = [0.03873622, 0.30441112, 0.03792348];
+  const crateSc = 0.91715836;
+  const built = componentsOf(crateRows);
+  assert(built.byComp.length === 6, "cube_3 should be 6 parts, got " + built.byComp.length);
+  assert(built.byComp[0].length === 4 && built.byComp[5].length === 108, "plank should be 4 tris and the crate 108");
+  const names = ["plank", "bucket", "grip", "armL", "armR", "crate"];
+  const parts = built.byComp.map((tris, i) => {
+    const remap = new Map();
+    const positions = [];
+    const faces = [];
+    for (const t of tris) {
+      for (const v of t) {
+        if (!remap.has(v)) {
+          remap.set(v, positions.length / 3);
+          const q = built.qpos[v];
+          positions.push(crateOff[0] + (q[0] / POS_Q) * crateSc, crateOff[1] + (q[1] / POS_Q) * crateSc, crateOff[2] + (q[2] / POS_Q) * crateSc);
+        }
+        faces.push(remap.get(v));
+      }
+    }
+    return api.makeObject(names[i] || "part", {
+      positions, tris: faces,
+      colors: Array.from({ length: faces.length / 3 }, () => grey.slice()),
+      partner: [], mirror: null,
+    }, [0, 0, 0]);
+  });
+  // Crate is the active object, so the join keeps its name. Order otherwise matches the file.
+  const crateFirst = [parts[5], parts[0], parts[1], parts[2], parts[3], parts[4]];
+  const crateTrisBefore = crateFirst.reduce((n, o) => n + o.mesh.tris.length / 3, 0);
+  globalThis.__toasts.length = 0;
+  api.scene = { name: "cube_3", active: 0, objects: crateFirst };
+  api.mesh = crateFirst[0].mesh;
+  api.objSel = new Set(crateFirst.map(o => o.id));
+  api.cmdCombine();
+  const crateToast = globalThis.__toasts.at(-1) || "";
+  assert(api.triCount() === 190, "crate combine should be 190 tris, got " + api.triCount());
+  assert(/tucked 4 verts, dropped 2 hidden faces/.test(crateToast), "unexpected crate toast: " + crateToast);
+  const crateExport = parsePacked(api.buildExportPacked());
+  const triPos = (t) => t.map(v => v.slice(0, 3).join(",")).join("|");
+  // Original crate triangles, in file order, from the rows that belong to the big component.
+  const crateKeys = new Set();
+  for (const t of built.byComp[5]) {
+    crateKeys.add(t.map(v => built.qpos[v].join(",")).join("|"));
+  }
+  let crateKept = 0;
+  for (const t of crateExport) if (crateKeys.has(triPos(t))) crateKept++;
+  assert(crateKept === 108, "crate should keep all 108 triangles, kept " + crateKept);
+  const want = [
+    [-2822, -25697, -8794],
+    [-2822, -3936, 13257],
+    [-2822, -22434, -13067],
+    [-2822, 625, 10298],
+  ];
+  const have = new Set(crateExport.flat().map(v => v.slice(0, 3).join(",")));
+  for (const p of want) assert(have.has(p.join(",")), "plank corner did not land on the opening: " + p.join(","));
+  assert(!have.has("54,-915,16318") && !have.has("54,2875,12578"), "thin-edge vertices of the plank should be gone");
+  api.undo();
+  const crateBack = api.scene.objects.reduce((n, o) => n + o.mesh.tris.length / 3, 0);
+  assert(api.scene.objects.length === 6, "undo should restore 6 parts");
+  assert(crateBack === crateTrisBefore, "undo should restore " + crateTrisBefore + " tris, got " + crateBack);
+  console.log("ok  cube_3 combine -> 190 tris (plank 4 -> 2, crate's 108 unchanged)");
+
   if (process.exitCode) process.exit(process.exitCode);
   console.log("all checks passed");
 }
