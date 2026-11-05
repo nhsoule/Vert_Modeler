@@ -1,7 +1,8 @@
-// Combine cleanup. Run from the repo root:  node test/combine-cleanup.mjs
-//   his84.txt  -> Bucket80.h (84 tris, arm caps dropped, ends on the rim and grip)
-//   cube_3.txt -> plank on a recessed crate: 2 thin edges dropped, board corners
-//                 pulled onto the panel opening, crate unchanged (192 -> 190)
+// Combine cut. Run from the repo root:  node test/combine-cleanup.mjs
+//   his84.txt  -> the arms are cut where they pass through the bucket and the grip;
+//                 those two stay byte-identical, and the result is near 80 triangles.
+//   cube_3.txt -> the plank is cut where it passes through the crate. The crate's
+//                 108 triangles stay byte-identical, including with Mirror X on.
 import fs from "fs";
 import vm from "vm";
 import path from "path";
@@ -67,7 +68,7 @@ let meshDirty = true;
 function updateUI() {}
 function $(id) { return document.getElementById(id); }
 globalThis.__vertTest = {
-  cmdCombine, undo, buildExportPacked, makeObject, makeCube, buryJoined,
+  cmdCombine, undo, redo, buildExportPacked, makeObject, makeCube, cutJoined, cutInside, cutWorldTris,
   get scene() { return scene; },
   set scene(v) { scene = v; },
   get mesh() { return mesh; },
@@ -173,150 +174,137 @@ function main() {
   assert(JSON.stringify(afterUndo) === JSON.stringify(beforeCubes), "undo should restore the cubes exactly");
   console.log("ok  disjoint cubes: 24 tris, no cleanup, undo restores both");
 
-  // ----- reference: his84 parts combined vs Bucket80.h -----
-  const header = fs.readFileSync(path.join(fixDir, "Bucket80.h"), "utf8");
-  const offM = header.match(/_offset\[3\]\s*=\s*\{\s*([^}]+)\}/);
-  const scM = header.match(/_scale\s*=\s*([-+0-9.eE]+)/);
-  const offset = offM[1].split(",").map(s => parseFloat(s));
-  const scale = parseFloat(scM[1]);
-  const rows = parseHis(fs.readFileSync(path.join(fixDir, "his84.txt"), "utf8"));
-  assert(rows.length === 84 * 3, "his84 should be 84 triangles, got " + (rows.length / 3));
-  const { qpos, byComp } = componentsOf(rows);
-  assert(byComp.length === 4, "his84 should be 4 parts, got " + byComp.length);
-  const objects = byComp.map((tris, i) => {
-    const remap = new Map();
-    const positions = [];
-    const faces = [];
-    for (const t of tris) {
-      for (const v of t) {
-        if (!remap.has(v)) {
-          remap.set(v, positions.length / 3);
-          const q = qpos[v];
-          positions.push(offset[0] + (q[0] / POS_Q) * scale, offset[1] + (q[1] / POS_Q) * scale, offset[2] + (q[2] / POS_Q) * scale);
+  // Build separate objects from a vertex dump. Returns the objects and per-part
+  // triangle keys (quantized positions, winding kept) so a winner can be checked
+  // byte-for-byte after the cut.
+  function buildParts(rows, offset, scale, names) {
+    const { qpos, byComp } = componentsOf(rows);
+    const objects = byComp.map((tris, i) => {
+      const remap = new Map();
+      const positions = [];
+      const faces = [];
+      for (const t of tris) {
+        for (const v of t) {
+          if (!remap.has(v)) {
+            remap.set(v, positions.length / 3);
+            const q = qpos[v];
+            positions.push(offset[0] + (q[0] / POS_Q) * scale, offset[1] + (q[1] / POS_Q) * scale, offset[2] + (q[2] / POS_Q) * scale);
+          }
+          faces.push(remap.get(v));
         }
-        faces.push(remap.get(v));
       }
-    }
-    const mesh = { positions, tris: faces, colors: Array.from({ length: faces.length / 3 }, () => grey.slice()), partner: [], mirror: null };
-    const names = ["bucket", "grip", "armL", "armR"];
-    return api.makeObject(names[i] || "part", mesh, [0, 0, 0]);
-  });
-  globalThis.__toasts.length = 0;
-  api.light.preset = "classic";
-  api.bakeOn = true;
-  api.setSunFromDir([-0.5890, 0, 0.8081]);
-  api.scene = { name: "Bucket", active: 0, objects };
-  api.mesh = objects[0].mesh;
-  api.objSel = new Set(objects.map(o => o.id));
-  const trisBefore = objects.reduce((n, o) => n + o.mesh.tris.length / 3, 0);
-  api.cmdCombine();
-  const toast = globalThis.__toasts.at(-1) || "";
-  assert(api.scene.objects.length === 1, "combine should leave one object");
-  assert(api.triCount() === 80, "expected 80 tris after cleanup, got " + api.triCount());
-  assert(/tucked 12 verts, dropped 4 hidden faces/.test(toast), "unexpected toast: " + toast);
-  const exported = api.buildExportPacked();
-  assert(/0\.55 \+ 0\.45\*max\(0, n\.\(-0\.5890,0\.0000,0\.8081\)\)/.test(exported),
-    "export should bake with the classic formula and this sun");
-  const got = parsePacked(exported);
-  const exp = parsePacked(header);
-  assert(got.length === 80 && exp.length === 80, "export and Bucket80 should both be 80 tris");
-  const origPos = new Set(rows.map(r => r[0] + "," + r[1] + "," + r[2]));
-  let movedFaces = 0;
-  for (let i = 0; i < got.length; i++) {
-    const g = got[i], e = exp[i];
-    for (let k = 0; k < 3; k++) {
-      for (let c = 0; c < 3; c++)
-        assert(g[k][c] === e[k][c], "tri " + i + " position " + g[k].slice(0, 3) + " != " + e[k].slice(0, 3));
-      assert(g[k][3] === e[k][3] && g[k][4] === e[k][4], "tri " + i + " oct normal " + g[k].slice(3, 5) + " != " + e[k].slice(3, 5));
-    }
-    // A face that still uses only the input positions did not move, so its bake must
-    // match the hand-made file exactly. A shortened face is re-baked by the exporter;
-    // that rounds within 1 byte of the hand-made colour.
-    const moved = g.some(v => !origPos.has(v[0] + "," + v[1] + "," + v[2]));
-    if (moved) movedFaces++;
-    for (let k = 0; k < 3; k++) for (let c = 5; c < 8; c++) {
-      const d = Math.abs(g[k][c] - e[k][c]);
-      assert(d <= (moved ? 1 : 0), "tri " + i + " colour channel off by " + d);
-    }
+      const mesh = { positions, tris: faces, colors: Array.from({ length: faces.length / 3 }, () => grey.slice()), partner: [], mirror: null };
+      const o = api.makeObject(names[i] || "part", mesh, [0, 0, 0]);
+      o._keys = tris.map(t => t.map(v => qpos[v].join(",")).join("|"));
+      o._n = tris.length;
+      return o;
+    });
+    return objects;
   }
-  assert(movedFaces === 24, "the two arms' remaining faces should be the ones that shortened, got " + movedFaces);
+  function exportKeys() {
+    const tris = parsePacked(api.buildExportPacked());
+    return tris.map(t => t.map(v => v.slice(0, 3).join(",")).join("|"));
+  }
+  function keptCount(keys, exported) {
+    const bag = new Set(exported);
+    return keys.filter(k => bag.has(k)).length;
+  }
+
+  // ----- bucket: arms are cut, the body and the grip are not touched -----
+  const header = fs.readFileSync(path.join(fixDir, "Bucket80.h"), "utf8");
+  const offset = header.match(/_offset\[3\]\s*=\s*\{\s*([^}]+)\}/)[1].split(",").map(s => parseFloat(s));
+  const scale = parseFloat(header.match(/_scale\s*=\s*([-+0-9.eE]+)/)[1]);
+  const his = parseHis(fs.readFileSync(path.join(fixDir, "his84.txt"), "utf8"));
+  const bucketParts = buildParts(his, offset, scale, ["bucket", "grip", "armL", "armR"]);
+  assert(bucketParts.map(o => o._n).join(",") === "44,12,14,14", "unexpected his84 part sizes");
+  const bodyVol = api.cutWorldTris(bucketParts[0]);
+  const gripVol = api.cutWorldTris(bucketParts[1]);
+  globalThis.__toasts.length = 0;
+  api.scene = { name: "Bucket", active: 0, objects: bucketParts };
+  api.mesh = bucketParts[0].mesh;
+  api.objSel = new Set(bucketParts.map(o => o.id));
+  api.cmdCombine();
+  const bucketToast = globalThis.__toasts.at(-1) || "";
+  const bucketKeys = exportKeys();
+  assert(keptCount(bucketParts[0]._keys, bucketKeys) === 44, "the bucket body must stay byte-identical");
+  assert(keptCount(bucketParts[1]._keys, bucketKeys) === 12, "the grip must stay byte-identical");
+  assert(api.triCount() >= 80 && api.triCount() <= 100, "arm cut should land near 80 tris, got " + api.triCount());
+  assert(/cut armL and armR/.test(bucketToast), "expected the arms to be the parts that are cut: " + bucketToast);
+  const P = api.mesh.positions, T = api.mesh.tris;
+  const winnerKeys = new Set([...bucketParts[0]._keys, ...bucketParts[1]._keys]);
+  let buried = 0;
+  for (let t = 0; t < T.length; t += 3) {
+    const key = [0, 1, 2].map(k => {
+      const i = T[t + k];
+      return [0, 1, 2].map(c => Math.round((P[i * 3 + c] - offset[c]) / scale * POS_Q)).join(",");
+    }).join("|");
+    if (winnerKeys.has(key)) continue;
+    const mid = [0, 1, 2].map(k => (P[T[t] * 3 + k] + P[T[t + 1] * 3 + k] + P[T[t + 2] * 3 + k]) / 3);
+    if (api.cutInside(mid, bodyVol) || api.cutInside(mid, gripVol)) buried++;
+  }
+  assert(buried === 0, buried + " triangles are still inside the bucket or the grip");
   api.undo();
-  const restored = api.scene.objects.reduce((n, o) => n + o.mesh.tris.length / 3, 0);
-  assert(api.scene.objects.length === 4, "undo should bring the 4 parts back");
-  assert(restored === trisBefore, "undo should restore " + trisBefore + " tris, got " + restored);
+  assert(api.scene.objects.length === 4, "undo should restore the 4 bucket parts");
+  console.log("ok  his84 combine -> " + bucketKeys.length + " tris, bucket and grip untouched, nothing left inside");
 
-  console.log("ok  his84 combine -> " + got.length + " tris match Bucket80.h (positions, oct normals, order); "
-    + movedFaces + " shortened faces re-baked within 1 colour byte");
-
-  // ----- crate: a diagonal plank across a recessed panel -----
-  // cube_3 is one export of six parts (plank, cleaned bucket, grip, two arms, crate).
-  // The plank is 4 triangles: a quad on the left panel plus two thin edges that run
-  // into the frame. Combine should drop those two edges and pull the quad's corners
-  // out of the frame onto the opening. The crate's own triangles stay put.
-  const crateText = fs.readFileSync(path.join(fixDir, "cube_3.txt"), "utf8");
-  const crateRows = parseHis(crateText);
-  assert(crateRows.length === 192 * 3, "cube_3 should be 192 triangles, got " + (crateRows.length / 3));
+  // ----- crate: only the plank is cut; the crate's 108 triangles stay identical -----
+  const crateRows = parseHis(fs.readFileSync(path.join(fixDir, "cube_3.txt"), "utf8"));
   const crateOff = [0.03873622, 0.30441112, 0.03792348];
   const crateSc = 0.91715836;
-  const built = componentsOf(crateRows);
-  assert(built.byComp.length === 6, "cube_3 should be 6 parts, got " + built.byComp.length);
-  assert(built.byComp[0].length === 4 && built.byComp[5].length === 108, "plank should be 4 tris and the crate 108");
-  const names = ["plank", "bucket", "grip", "armL", "armR", "crate"];
-  const parts = built.byComp.map((tris, i) => {
-    const remap = new Map();
-    const positions = [];
-    const faces = [];
-    for (const t of tris) {
-      for (const v of t) {
-        if (!remap.has(v)) {
-          remap.set(v, positions.length / 3);
-          const q = built.qpos[v];
-          positions.push(crateOff[0] + (q[0] / POS_Q) * crateSc, crateOff[1] + (q[1] / POS_Q) * crateSc, crateOff[2] + (q[2] / POS_Q) * crateSc);
-        }
-        faces.push(remap.get(v));
-      }
-    }
-    return api.makeObject(names[i] || "part", {
-      positions, tris: faces,
-      colors: Array.from({ length: faces.length / 3 }, () => grey.slice()),
-      partner: [], mirror: null,
-    }, [0, 0, 0]);
-  });
-  // Crate is the active object, so the join keeps its name. Order otherwise matches the file.
-  const crateFirst = [parts[5], parts[0], parts[1], parts[2], parts[3], parts[4]];
-  const crateTrisBefore = crateFirst.reduce((n, o) => n + o.mesh.tris.length / 3, 0);
+  const crateParts = buildParts(crateRows, crateOff, crateSc, ["plank", "bucket", "grip", "armL", "armR", "crate"]);
+  assert(crateParts[0]._n === 4 && crateParts[5]._n === 108, "cube_3 plank/crate sizes");
+  // Mirror X on, the way the phone screenshot had it, and the crate is the active object.
+  for (const o of crateParts) o.mesh.mirror = "x";
+  const crateVol = api.cutWorldTris(crateParts[5]);
+  const ordered = [crateParts[5], crateParts[0], crateParts[1], crateParts[2], crateParts[3], crateParts[4]];
   globalThis.__toasts.length = 0;
-  api.scene = { name: "cube_3", active: 0, objects: crateFirst };
-  api.mesh = crateFirst[0].mesh;
-  api.objSel = new Set(crateFirst.map(o => o.id));
+  api.scene = { name: "cube_3", active: 0, objects: ordered };
+  api.mesh = ordered[0].mesh;
+  api.objSel = new Set(ordered.map(o => o.id));
   api.cmdCombine();
   const crateToast = globalThis.__toasts.at(-1) || "";
-  assert(api.triCount() === 190, "crate combine should be 190 tris, got " + api.triCount());
-  assert(/tucked 4 verts, dropped 2 hidden faces/.test(crateToast), "unexpected crate toast: " + crateToast);
-  const crateExport = parsePacked(api.buildExportPacked());
-  const triPos = (t) => t.map(v => v.slice(0, 3).join(",")).join("|");
-  // Original crate triangles, in file order, from the rows that belong to the big component.
-  const crateKeys = new Set();
-  for (const t of built.byComp[5]) {
-    crateKeys.add(t.map(v => built.qpos[v].join(",")).join("|"));
+  const crateKeys = exportKeys();
+  assert(keptCount(crateParts[5]._keys, crateKeys) === 108, "crate triangles must stay byte-identical");
+  assert(/cut plank/.test(crateToast), "the plank should be what gets cut: " + crateToast);
+  assert(!/cut crate/.test(crateToast), "the crate must not be cut: " + crateToast);
+  const MP = api.mesh.positions, MT = api.mesh.tris;
+  let plankInside = 0;
+  for (let t = 0; t < MT.length; t += 3) {
+    const mid = [0, 1, 2].map(k => (MP[MT[t] * 3 + k] + MP[MT[t + 1] * 3 + k] + MP[MT[t + 2] * 3 + k]) / 3);
+    // Only count a piece that isn't one of the original crate triangles.
+    const key = [0, 1, 2].map(k => {
+      const i = MT[t + k];
+      return [0, 1, 2].map(c => Math.round((MP[i * 3 + c] - crateOff[c]) / crateSc * POS_Q)).join(",");
+    }).join("|");
+    if (crateParts[5]._keys.includes(key)) continue;
+    if (api.cutInside(mid, crateVol)) plankInside++;
   }
-  let crateKept = 0;
-  for (const t of crateExport) if (crateKeys.has(triPos(t))) crateKept++;
-  assert(crateKept === 108, "crate should keep all 108 triangles, kept " + crateKept);
-  const want = [
-    [-2822, -25697, -8794],
-    [-2822, -3936, 13257],
-    [-2822, -22434, -13067],
-    [-2822, 625, 10298],
-  ];
-  const have = new Set(crateExport.flat().map(v => v.slice(0, 3).join(",")));
-  for (const p of want) assert(have.has(p.join(",")), "plank corner did not land on the opening: " + p.join(","));
-  assert(!have.has("54,-915,16318") && !have.has("54,2875,12578"), "thin-edge vertices of the plank should be gone");
+  assert(plankInside === 0, plankInside + " non-crate triangles are still inside the crate");
   api.undo();
-  const crateBack = api.scene.objects.reduce((n, o) => n + o.mesh.tris.length / 3, 0);
-  assert(api.scene.objects.length === 6, "undo should restore 6 parts");
-  assert(crateBack === crateTrisBefore, "undo should restore " + crateTrisBefore + " tris, got " + crateBack);
-  console.log("ok  cube_3 combine -> 190 tris (plank 4 -> 2, crate's 108 unchanged)");
+  assert(api.scene.objects.length === 6, "undo should restore the 6 crate-scene parts");
+  api.redo();
+  assert(api.triCount() === crateKeys.length, "redo should bring the cut back");
+  console.log("ok  cube_3 combine with Mirror X -> " + crateKeys.length + " tris, crate's 108 unchanged, plank cut");
+
+  // The Cut menu: "the active object" cuts only that one; "the other objects" cuts the rest.
+  function fresh() {
+    return buildParts(crateRows, crateOff, crateSc, ["plank", "bucket", "grip", "armL", "armR", "crate"]);
+  }
+  const byActive = fresh();
+  const cratePos = byActive[5].mesh.positions.slice();
+  api.cutJoined([byActive[0], byActive[5]], "active");
+  assert(byActive[0].mesh.tris.length > 12, "Cut: the active object should cut the plank");
+  assert(byActive[5].mesh.positions.join(",") === cratePos.join(","), "cutting the plank must not move a crate vertex");
+  const byOthers = fresh();
+  const cratePos2 = byOthers[5].mesh.positions.slice();
+  api.cutJoined([byOthers[5], byOthers[0]], "others");
+  assert(byOthers[0].mesh.tris.length > 12, "Cut: the other objects should cut the plank");
+  assert(byOthers[5].mesh.positions.join(",") === cratePos2.join(","), "the crate stays put when the others are cut");
+  const noCut = fresh();
+  api.cutJoined([noCut[5], noCut[0]], "active");
+  assert(noCut[5].mesh.tris.length === 324 && noCut[0].mesh.tris.length === 12,
+    "an open plank is not a volume, so it cannot cut the active crate");
+  console.log("ok  Cut choice: active cuts the plank, others cuts the plank, an open shape never cuts");
 
   if (process.exitCode) process.exit(process.exitCode);
   console.log("all checks passed");
