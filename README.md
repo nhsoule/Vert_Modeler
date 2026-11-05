@@ -19,6 +19,11 @@ A scene holds several named objects. You can build a small environment to get a 
   - Add: **+ Cube**, **+ Plane ↑** (standing), **+ Plane ▭** (flat).
   - **Duplicate**, **Copy**, **Paste**.
   - **Combine** joins the selected objects into the active one, with transforms baked.
+    If a closed part has vertices inside another closed part, those vertices slide
+    along their own edge onto that part's surface (the part keeps its direction and
+    only gets shorter). Faces that end up inside the other part, or flat on its
+    surface, are removed. Undo takes that cleanup back with the join. Parts that
+    don't meet are left as they were.
   - **Separate** moves the selected faces into a new object. **Faces → new** copies them into a new object.
   - **Two-sided**, **Subdivide**, **Rename**, **Delete**, **Hide**.
   - **Save .json** / **Open…** for a project file, and **New scene**.
