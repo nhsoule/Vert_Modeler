@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="vert-modeler-version" content="v25-edge-density">
+<meta name="vert-modeler-version" content="v26-plane-faces">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -481,6 +481,8 @@
           <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M9 6h14v20H9z"/><path d="M4 26h24" stroke-dasharray="2 2"/></svg>Plane ↑<small>2▵ · 2-sided</small></button>
         <button id="scPlaneH" class="tile" type="button" title="Add a flat plane on the ground (one quad, two-sided)">
           <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 21 11 12h18l-8 9z"/></svg>Plane ▭<small>2▵ · 2-sided</small></button>
+        <button id="scPlane1" class="tile" type="button" aria-label="Plane (one-sided)" title="Plane (one-sided): one flat quad, faces on the top only (normal +Z)">
+          <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 22 14 14h14l-9 8z"/><path d="M14 8v6M14 8l-2.2 2.2M14 8l2.2 2.2"/></svg>Plane<small>(one-sided)</small></button>
       </div>
       <div class="shBox">
         <button id="scPrism" class="tile wide" type="button" title="Add a prism with the fewest triangles (shape below)">
@@ -534,6 +536,8 @@
       <button id="bMirror"><span class="ic">⇋︎</span><span id="mirrorLabel">Mirror X</span></button>
       <button id="bSym"><span class="ic">⧓</span>Symm</button>
       <button id="bSelect" data-mode="select"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h4v2H5v2H3zm6 0h6v2H9zm8 0h4v4h-2V5h-2zM3 9h2v6H3zm16 0h2v6h-2zM3 17h2v2h2v2H3zm16 0h2v4h-4v-2h2zM9 19h6v2H9z"/></svg></span>Select</button>
+      <button id="bFace" data-mode="face" title="Face pick: tap triangles on the active object. Tap again to unmark. Delete removes them."><span class="ic">△</span>Faces</button>
+      <button id="bFaceDel" type="button" title="Delete the picked triangles (Delete or Backspace). A mirror twin is removed with its face."><span class="ic">⌫︎</span>Del</button>
       <button id="bObject" data-mode="object" title="Object mode: select, move, rotate and scale whole objects (Tab)"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l9 5v10l-9 5-9-5V7zm0 2.3L5.2 8 12 11.7 18.8 8zM5 9.7v6.1l6 3.4v-6.2zm14 0l-6 3.3v6.2l6-3.4z"/></svg></span>Object</button>
       <button id="bBake" aria-haspopup="true" aria-expanded="false" title="Shade and sun direction"><span class="ic">☀︎</span>Shade</button>
       <button id="bImport"><span class="ic">⇩</span>Import</button>
@@ -645,6 +649,9 @@
 //  v25: a small edge-density readout (average, shortest, longest) in export world
 //  units, for the active model and for the vertex selection. Mark draws edges that
 //  are far from the average thick and bright, in one neutral colour.
+//  v26: hold a shape in the view to make it the active object (a drag still orbits).
+//  Shapes adds Plane (one-sided): a flat quad, top faces only. Faces mode picks
+//  triangles; Delete removes them (and a mirror twin, when the mesh has one).
 //
 //  Coordinates match the game: Z is up, X is left/right, Y is forward/back, and models
 //  sit with their base on z = 0. Rendering uses raw WebGL 2 (= OpenGL ES 3.0), so the
@@ -658,6 +665,7 @@ const SAVE_KEY      = KEY_PREFIX + "v2";  // autosave (holds the v3 scene format
 const OLD_SAVE_KEY  = KEY_PREFIX + "v1";  // v1 saves were Y-up; converted once on load
 const TOUCH_RADIUS  = 24;                 // CSS px: how close a tap must be to a vertex/edge
 const TAP_SLOP      = 8;                  // CSS px a finger may wiggle and still count as a tap
+const LONG_PRESS_MS = 450;                // hold still (within TAP_SLOP) to select the object under the finger
 const SNAP_STEP     = 0.125;              // grid snap size in model units
 const UNDO_LIMIT    = 100;                // max snapshots kept
 const FOV_Y         = 50 * Math.PI / 180; // vertical field of view (radians)
@@ -1883,13 +1891,14 @@ const ROCK_BOUNDS = (() => {
 
 
 //----- App State -----||
-let mode         = "move";  // "move" | "select" | "split" | "paint" | "object"
+let mode         = "move";  // "move" | "select" | "split" | "paint" | "object" | "face"
 let snapOn       = false;
 let bakeOn       = true;    // bake light into face colours (preview + export)
 let currentColor = DEFAULT_PALETTE[8].slice();   // RGB (0..1) that Paint uses
 let overlayOn    = true;    // false = clean preview: no dots, edges, gizmo, or mirror plane
 let selected     = -1;      // primary selected vertex (the last one tapped), -1 = none
 let selExtra     = new Set(); // the other selected vertices (multi-select); empty if selected < 0
+let faceSel      = new Set(); // Face mode: triangle indices picked on the active object
 let undoStack    = [];      // array of JSON snapshots of `mesh`
 let redoStack    = [];      // snapshots undone, cleared by the next new edit
 let mergeOn      = true;    // auto-merge on drag release (stored under MERGE_KEY)
@@ -1983,6 +1992,7 @@ function undo() {
   redoStack.push(snapshot());
   if (redoStack.length > UNDO_LIMIT) redoStack.shift();
   restore(undoStack.pop());
+  faceSel.clear();
   if (selection().some(i => i >= vertCount())) clearSelection();
   meshChanged();
 }
@@ -1993,6 +2003,7 @@ function redo() {
   undoStack.push(snapshot());
   if (undoStack.length > UNDO_LIMIT) undoStack.shift();
   restore(redoStack.pop());
+  faceSel.clear();
   if (selection().some(i => i >= vertCount())) clearSelection();
   meshChanged();
 }
@@ -2205,6 +2216,7 @@ function setActive(i, keepSel = false) {
   o.hidden = false;
   if (keepSel) objSel.add(o.id); else objSel = new Set([o.id]);
   clearSelection();
+  faceSel.clear();
   if (roEditing) closeCoordEdit(false);
   lastWarn = { nv: mesh.mirror ? unpairedCount() : 0, nt: mesh.mirror ? foldedTriCount() : 0 };
   sceneVersion++;
@@ -2703,6 +2715,15 @@ function cmdAddPlane(kind) {
   addObjects([o]);
   toast(kind === "flat" ? "Added a flat plane (two-sided)" : "Added a standing plane (two-sided)");
 }
+// Plane (one-sided): the same flat quad as the ground plane (normal +Z, CCW from above),
+// but twoSided stays false, so the export is only the top faces.
+function cmdAddPlane1() {
+  pushUndo();
+  const o = makeObject("plane", makePlane("flat"), spawnPos());
+  o.twoSided = false;
+  addObjects([o]);
+  toast("Added a one-sided plane (top faces only)");
+}
 function cmdDuplicate() {
   const list = objSelList();
   if (!list.length) return;
@@ -2800,9 +2821,69 @@ function cmdSubdivide() {
   if (triCount() > 20000) { toast("Too many triangles to subdivide"); return; }
   pushUndo();
   clearSelection();
+  faceSel.clear();
   subdivideMesh();
   meshChanged();
   toast(`Subdivided ${activeObj().name}: ${triCount()} tris`);
+}
+
+//----- Face Delete -----||
+// Face mode picks triangles. Delete drops them, then drops vertices nothing still
+// uses, and meshChanged rebakes light the same way every other edit does. One undo.
+// Mirror: the twin from mirroredTris (the same pairing Paint uses) is removed too, so
+// a face that has a real twin takes its twin with it. A fresh cube's opposite walls
+// are not twins — the diagonals don't mirror, and the walls are farther apart than
+// Paint's fallback — so one side triangle deletes on its own.
+function faceGroup(t) {
+  const g = new Set([t]);
+  if (t >= 0 && t < triCount()) for (const u of mirroredTris(t)) if (u >= 0 && u < triCount()) g.add(u);
+  return [...g];
+}
+function toggleFacePick(t) {
+  if (t < 0 || t >= triCount()) return;
+  const g = faceGroup(t);
+  const allOn = g.every(u => faceSel.has(u));
+  for (const u of g) if (allOn) faceSel.delete(u); else faceSel.add(u);
+  meshDirty = true;
+  updateUI();
+}
+// Remove these triangles (plus mirror twins). Returns how many triangles were removed,
+// 0 when nothing matched, -1 when that would delete the whole mesh.
+function deleteFaces(list) {
+  const drop = new Set();
+  for (const t of list) {
+    if (!Number.isInteger(t) || t < 0 || t >= triCount()) continue;
+    for (const u of faceGroup(t)) drop.add(u);
+  }
+  if (!drop.size) return 0;
+  if (drop.size >= triCount()) return -1;
+  const keep = [];
+  for (let t = 0; t < triCount(); t++) if (!drop.has(t)) keep.push(t);
+  const m = extractTris(mesh, keep);
+  keepMirrorIfSymmetric(m);
+  mesh = m;
+  const o = scene.objects[scene.active];
+  if (o) o.mesh = m;
+  return drop.size;
+}
+function cmdDeleteFaces() {
+  if (!faceSel.size) { toast("Pick faces first"); return; }
+  const list = [...faceSel];
+  const before = triCount();
+  if (deleteFacesPreview(list) >= before) { toast("Can't delete every face"); return; }
+  pushUndo();
+  const n = deleteFaces(list);
+  faceSel.clear();
+  clearSelection();
+  if (n <= 0) { undoStack.pop(); toast("No faces removed"); updateUI(); return; }
+  meshChanged();
+  const gone = before - triCount();
+  toast(`Deleted ${gone} face${gone === 1 ? "" : "s"}`);
+}
+function deleteFacesPreview(list) {
+  const drop = new Set();
+  for (const t of list) if (Number.isInteger(t) && t >= 0 && t < triCount()) for (const u of faceGroup(t)) drop.add(u);
+  return drop.size;
 }
 function cmdRename() {
   const o = activeObj();
@@ -3305,6 +3386,7 @@ function uploadBatch(batch, data) {
 }
 
 const faceBatch  = makeBatch();
+const faceHiBatch = makeBatch();  // Face mode: picked triangles, drawn in front
 const edgeBatch  = makeBatch();
 const markBatch  = makeBatch();   // thick bright outlier edges (density Mark)
 const dotBatch   = makeBatch();
@@ -3432,6 +3514,12 @@ function mvpAt(off) {
 // own 3 vertices so it can carry its own colour (exactly what the export produces).
 function rebuildBuffers() {
   uploadBatch(faceBatch, meshFaceData(mesh, activeObj().twoSided));
+  const hi = [];
+  if (mode === "face") for (const t of faceSel) {
+    if (t < 0 || t >= triCount()) continue;
+    for (let k = 0; k < 3; k++) hi.push(...getVert(mesh.tris[t * 3 + k]), 1, 0.86, 0.15);
+  }
+  uploadBatch(faceHiBatch, hi);
   uploadBatch(edgeBatch, meshEdgeData(mesh));
 
   // Dot colours: selected = yellow, its mirror partner = orange,
@@ -3442,7 +3530,7 @@ function rebuildBuffers() {
   const twinsOfSel = new Set(selection().map(i => mesh.partner[i]));
   const vis = vertVisibility();
   const hiddenDots = [], shownDots = [], rings = [];
-  for (let i = 0; i < (mode === "paint" || mode === "object" ? 0 : vertCount()); i++) {
+  for (let i = 0; i < (mode === "paint" || mode === "object" || mode === "face" ? 0 : vertCount()); i++) {
     if (mergeVerts.has(i)) { rings.push(...getVert(i), 0.3, 0.9, 1.0); continue; }
     let c = [0.95, 0.95, 1.0];
     if (ax >= 0 && mesh.partner[i] < 0) c = [1.0, 0.35, 0.3];
@@ -3900,6 +3988,45 @@ function localPos(e) {
   return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
 
+//----- Long Press Select -----||
+// Holding still on a shape (mouse or touch) makes it the active object, the same as
+// tapping its name in the scene list. A move past TAP_SLOP cancels the hold, so a
+// drag still orbits or moves the gizmo. Releasing early is a normal tap.
+let longPress = null;   // { x, y, i, fired, timer }
+function cancelLongPress() {
+  if (!longPress) return;
+  clearTimeout(longPress.timer);
+  longPress = null;
+}
+function fireLongPress() {
+  const lp = longPress;
+  if (!lp || lp.fired) return;
+  if (!pointers.size) { cancelLongPress(); return; }
+  for (const q of pointers.values())
+    if (Math.hypot(q.x - lp.x, q.y - lp.y) > TAP_SLOP) { cancelLongPress(); return; }
+  const kind = gesture && gesture.kind;
+  if (kind === "axis" || kind === "orbit" || kind === "box" || kind === "pan" || kind === "pinch" || kind === "idle") {
+    cancelLongPress(); return;
+  }
+  lp.fired = true;
+  const i = lp.i;
+  if (i < 0 || i >= scene.objects.length) return;
+  const o = scene.objects[i];
+  if (!o || o.hidden) return;
+  overlayOn = true;
+  setActive(i);                                  // scene list: the name button calls setActive
+  toast(o.name);
+}
+function armLongPress(x, y) {
+  cancelLongPress();
+  if (!gesture || gesture.kind === "axis" || gesture.kind === "pan" || gesture.kind === "pinch" || gesture.kind === "orbit") return;
+  const i = pickObject(x, y);
+  if (i < 0) return;
+  const token = { x, y, i, fired: false, timer: 0 };
+  token.timer = setTimeout(fireLongPress, LONG_PRESS_MS);
+  longPress = token;
+}
+
 canvas.addEventListener("pointerdown", (e) => {
   canvas.setPointerCapture(e.pointerId);
   const p = localPos(e);
@@ -3908,6 +4035,7 @@ canvas.addEventListener("pointerdown", (e) => {
   // Second finger: switch to pinch/pan, whatever was happening (a dot that was about
   // to be toggled is forgotten, so two fingers never change the selection).
   if (pointers.size === 2) {
+    cancelLongPress();
     if (gesture && gesture.kind === "axis" && gesture.moved) {
       if (gesture.obj) objGestureEnd(gesture);
       else { mergeVerts = new Set(); meshChanged(); }
@@ -3965,7 +4093,11 @@ canvas.addEventListener("pointerdown", (e) => {
 
   gesture = { kind: "pending", startX: p.x, startY: p.y, lastX: p.x, lastY: p.y };
   // Object mode: a gizmo handle grabs the selected objects; anything else is a tap or orbit.
-  if (mode === "object" && overlayOn) { objPointerDown(p); return; }
+  if (mode === "object" && overlayOn) {
+    objPointerDown(p);
+    if (gesture.kind !== "axis") armLongPress(p.x, p.y);
+    return;
+  }
 
   // In clean preview nothing is grabbed on touch-down: the tap (on release) restores the
   // overlay, and a drag just orbits.
@@ -4022,12 +4154,14 @@ canvas.addEventListener("pointerdown", (e) => {
     const v = pickVertex(p.x, p.y);
     if (v >= 0) gesture.picked = v;
   }
+  if (gesture && gesture.kind === "pending" && mode !== "paint") armLongPress(p.x, p.y);
 });
 
 canvas.addEventListener("pointermove", (e) => {
   if (!pointers.has(e.pointerId)) return;
   const p = localPos(e);
   pointers.set(e.pointerId, p);
+  if (longPress && Math.hypot(p.x - longPress.x, p.y - longPress.y) > TAP_SLOP) cancelLongPress();
   if (!gesture) return;
 
   if (gesture.kind === "pinch" && pointers.size >= 2) {
@@ -4142,6 +4276,8 @@ canvas.addEventListener("pointermove", (e) => {
 function endPointer(e) {
   if (!pointers.has(e.pointerId)) return;
   pointers.delete(e.pointerId);
+  const held = !!(longPress && longPress.fired);
+  cancelLongPress();
   if (!gesture) return;
 
   if (gesture.kind === "pinch") {
@@ -4170,7 +4306,8 @@ function endPointer(e) {
     return;
   }
   if (gesture.kind === "pending" && e.type === "pointerup") {
-    if (gesture.picked !== undefined && overlayOn && editMode()) {
+    if (held) { /* the hold already selected the object; don't also treat it as a tap */ }
+    else if (gesture.picked !== undefined && overlayOn && editMode()) {
       toggleSelect(gesture.picked); lastEmptyTap = null; meshDirty = true; updateUI();
     } else handleTap(gesture.startX, gesture.startY);
   }
@@ -4465,6 +4602,12 @@ function handleTap(x, y) {
     else { lastEmptyTap = null; objTap(o.i); }
     return;
   }
+  if (mode === "face") {
+    const t = pickFace(x, y);
+    if (t < 0) emptyTap(x, y, true);
+    else { lastEmptyTap = null; toggleFacePick(t); }
+    return;
+  }
   if (editMode()) {
     emptyTap(x, y, pickFace(x, y) < 0);
   } else if (mode === "split") {
@@ -4529,6 +4672,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (k === "p" && editMode()) cmdSeparate(false);
   if (k === "h" && mode === "object") cmdHideSelected();
+  if ((e.key === "Delete" || e.key === "Backspace") && mode === "face") { e.preventDefault(); cmdDeleteFaces(); return; }
   if ((e.key === "Delete" || e.key === "Backspace") && mode === "object") { e.preventDefault(); cmdDelete(); }
 });
 
@@ -5234,6 +5378,9 @@ function updateUI() {
   $("roMerge").classList.toggle("off", !mergeOn);
   // Extrude needs 3+ selected verts (if they cover no face, pressing it says why).
   $("bExtrude").disabled = !(editMode() && selection().length >= 3);
+  if (mode === "face") { for (const t of [...faceSel]) if (t >= triCount()) faceSel.delete(t); }
+  else faceSel.clear();
+  $("bFaceDel").disabled = mode !== "face" || faceSel.size === 0;
   // View snaps stay up in the clean preview and with nothing selected.
   $("palette").classList.toggle("show", mode === "paint");
   renderPalette();
@@ -5270,6 +5417,7 @@ function updateStats() {
   const tris = triCount() * (o.twoSided ? 2 : 1), verts = tris * 3, bytes = verts * 12;
   const nSel = selection().length;
   el.textContent = `${o.name} · ${n(verts)} verts · ${n(tris)} tris · ${n(bytes)} B  (${n(vertCount())} unique)` +
+                   (mode === "face" && faceSel.size ? ` · ${faceSel.size} face${faceSel.size === 1 ? "" : "s"}` : "") +
                    (nSel > 1 ? ` · ${nSel} selected` : "");
 }
 
@@ -5511,6 +5659,7 @@ $("roOk").addEventListener("click", () => closeCoordEdit(true));
 
 for (const b of document.querySelectorAll("[data-mode]"))
   b.addEventListener("click", () => { mode = b.dataset.mode; overlayOn = true; meshDirty = true; updateUI(); });
+$("bFaceDel").addEventListener("click", cmdDeleteFaces);
 
 $("bDensity").addEventListener("click", (e) => {
   e.stopPropagation();
@@ -5738,6 +5887,7 @@ $("scCube").addEventListener("click", cmdAddCube);
 $("scPrism").addEventListener("click", () => cmdAddPrism(prismKind));
 $("scPlaneV").addEventListener("click", () => cmdAddPlane("up"));
 $("scPlaneH").addEventListener("click", () => cmdAddPlane("flat"));
+$("scPlane1").addEventListener("click", cmdAddPlane1);
 $("scDup").addEventListener("click", cmdDuplicate);
 $("scCopy").addEventListener("click", cmdCopy);
 $("scPaste").addEventListener("click", cmdPaste);
@@ -6365,6 +6515,12 @@ function frame() {
   gl.bindVertexArray(faceBatch.vao);
   gl.drawArrays(gl.TRIANGLES, 0, faceBatch.count);
   gl.disable(gl.CULL_FACE);
+  if (mode === "face" && faceHiBatch.count) {
+    gl.polygonOffset(-2, -2);
+    gl.bindVertexArray(faceHiBatch.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, faceHiBatch.count);
+    gl.polygonOffset(1, 1);
+  }
   // 2c) Reference rock (display only): the game's colours, no edges, just like in game.
   //     A selected reference is tinted yellow.
   for (const [k, b] of [["rock", rockBatch], ["player", playerBatch]]) {
@@ -6430,7 +6586,7 @@ function frame() {
   // 5) Vertex dots, drawn on top of everything so back vertices can still be grabbed.
   //    Paint mode: no dots and no gizmo, just the faces and the faint wireframe.
   gl.disable(gl.DEPTH_TEST);
-  if (mode === "paint") { gl.bindVertexArray(null); requestAnimationFrame(frame); return; }
+  if (mode === "paint" || mode === "face") { gl.bindVertexArray(null); requestAnimationFrame(frame); return; }
   gl.uniform1i(U.round, 1);
   gl.uniform1f(U.size, 10 * dpr);
   gl.bindVertexArray(dotBatch.vao);
