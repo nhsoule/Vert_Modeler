@@ -19,13 +19,14 @@ A scene holds several named objects. You can build a small environment to get a 
   - Add: **+ Cube**, **+ Plane ↑** (standing), **+ Plane ▭** (flat).
   - **Duplicate**, **Copy**, **Paste**.
   - **Combine** joins the selected objects into the active one, with transforms baked.
-    If a closed part has vertices inside another closed part, those vertices slide
-    along their own edge onto that part's surface (the part keeps its direction and
-    only gets shorter). On a recessed panel, corners buried in the frame slide to
-    the opening even when the rest of the board is inside the frame too. Faces that
-    end up inside the other part, or pressed flat against it, are removed. A board
-    that still faces outward is kept. Undo takes that cleanup back with the join.
-    Parts that don't meet are left as they were.
+    Where two shapes overlap, only the one that passes through is changed. The other
+    stays exactly as it was. **Combine**, under the buttons, is **Slide & trim**
+    (pull buried corners out along their own edges, then drop faces that end up
+    hidden) or **Delete hidden faces** (move nothing; drop a face only when it lies
+    entirely inside the other shape). A corner that cannot slide without leaving a
+    gap or a notch stays put. **Which shape** chooses who changes: Auto, the active
+    object, or the other objects. A shape that isn't a closed shell never does the
+    trimming. Undo takes it back with the join.
   - **Separate** moves the selected faces into a new object. **Faces → new** copies them into a new object.
   - **Two-sided**, **Subdivide**, **Rename**, **Delete**, **Hide**.
   - **Save .json** / **Open…** for a project file, and **New scene**.
