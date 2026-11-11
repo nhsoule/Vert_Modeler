@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Vert Modeler">
 <meta name="application-name" content="Vert Modeler">
 <meta name="theme-color" content="#16171d">
-<meta name="vert-modeler-version" content="v27-folders">
+<meta name="vert-modeler-version" content="v28-preview">
 <title>Vert Modeler</title>
 <style>
   /* ----- Page Setup -----|| */
@@ -224,9 +224,13 @@
     flex-direction: column; gap: 6px;
   }
   #scenePanel.show, #shapesPanel.show { display: flex; }
-  #scenePanel button, #shapesPanel button {
+  #scenePanel button, #shapesPanel button, #scenePanel a.tool {
     min-height: 38px; border: 0; border-radius: 9px; background: #2a2c38; color: #e8e8ee;
     font: inherit; font-size: 12px; touch-action: manipulation; padding: 0 6px;
+  }
+  #scenePanel a.tool {
+    display: flex; align-items: center; justify-content: center; text-decoration: none;
+    box-sizing: border-box; background: #3a3220; color: #e0b43a; font-weight: 600;
   }
   #scenePanel button.on, #shapesPanel button.on { background: #e0b43a; color: #16171d; }
   #scenePanel button:disabled, #shapesPanel button:disabled { opacity: 0.35; }
@@ -295,6 +299,12 @@
                   background: #1f2029a0; color: #e8e8eecc; font: 600 11px ui-monospace, Menlo, Consolas, monospace;
                   touch-action: manipulation; }
   #views button:active { background: #e0b43a; color: #16171d; }
+  #views a#animLink {
+    height: 24px; padding: 0 6px; border: 1px solid #e0b43a88; border-radius: 6px;
+    background: #3a3220cc; color: #e0b43a; font: 600 11px ui-monospace, Menlo, Consolas, monospace;
+    text-decoration: none; display: flex; align-items: center; justify-content: center;
+    touch-action: manipulation;
+  }
   #views { align-items: flex-end; }
   /* ----- Biome Filter -----|| button under the view buttons, its name always shown */
   #views #biomeBtn { margin-top: 4px; font-size: 14px; }
@@ -408,6 +418,7 @@
       <div id="densityText" aria-live="polite"></div>
     </div>
     <div id="views" aria-label="View">
+      <a id="animLink" href="preview.html" title="Animation preview: load a scene header and tune how each part moves">Anim</a>
       <button data-view="front"  title="Front: from −Y, looking +Y">F</button>
       <button data-view="back"   title="Back: from +Y, looking −Y">B</button>
       <button data-view="left"   title="Left: from −X, looking +X">L</button>
@@ -499,6 +510,7 @@
         <button id="scOpen" type="button" title="Open a scene .json (replaces the scene) or add .h models">Open…</button>
         <button id="scRefs" type="button" title="Put the rock and player references back beside the start cube">Reset refs</button>
         <button id="scNew" type="button" title="Start over with one cube">New scene</button>
+        <a class="tool" href="preview.html" title="Animation preview: load a scene header and tune how each part moves">Preview</a>
       </div>
       <label class="cutPick" for="scCombineMode">Combine
         <select id="scCombineMode" title="How Combine treats the overlap. The other shape is left exactly as it is.">
@@ -702,6 +714,8 @@
 //  v27: folders in the scene list. A folder can hold shapes and other folders.
 //  Collapse, hide, select-all and move (drag the grip, or Move to on a phone).
 //  A folder keeps a pivot for a later part group; nothing reads it yet.
+//  v28: Anim (top right) and Scene → Preview open preview.html, which plays a
+//  scene header with per-part motion rules.
 //
 //  Coordinates match the game: Z is up, X is left/right, Y is forward/back, and models
 //  sit with their base on z = 0. Rendering uses raw WebGL 2 (= OpenGL ES 3.0), so the
