@@ -217,6 +217,7 @@
   #scenePanel { min-width: 0; }
   #scenePanel .scBody {
     display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto;
+    position: relative;
     min-height: 0; min-width: 0; width: 100%; max-width: 100%; overflow: hidden;
   }
   #scenePanel .scHead { min-width: 0; width: 100%; overflow: hidden; flex-wrap: nowrap; align-items: center; padding-right: 16px; box-sizing: border-box; }
@@ -278,12 +279,16 @@
   #objList button { min-height: 34px; }
   #scenePanel .scHead, #scenePanel .note { flex: 0 0 auto; }
   #scenePanel .folderAsk, #scenePanel .folderPick { flex: 0 0 auto; }
+  /* Overlay at the bottom so showing it mid-drag does not shift the tree rows. */
   #objRootDrop {
-    display: none; min-height: 30px; border: 1px dashed #e0b43a; border-radius: 8px;
-    color: #e0b43a; font-size: 11px; align-items: center; justify-content: center;
+    display: none; position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 9;
+    min-height: 32px; box-sizing: border-box;
+    border: 2px dashed #fff; box-shadow: 0 0 0 1px #000; border-radius: 8px;
+    background: #1f2029f2; color: #fff; font-size: 11px; font-weight: 700;
+    align-items: center; justify-content: center; pointer-events: auto;
   }
   #objRootDrop.show { display: flex; }
-  #objRootDrop.drop { background: #e0b43a33; }
+  #objRootDrop.drop { outline: 2px solid #fff; outline-offset: 2px; background: #2a2c38; }
   .objRow { display: flex; gap: 3px; align-items: stretch; }
   .objRow .eye, .objRow .ck { width: 32px; min-width: 32px; padding: 0; font-size: 15px; }
   .objRow .tw, .objRow .all, .objRow .mv { width: 30px; min-width: 30px; padding: 0; font-size: 12px; }
@@ -519,16 +524,16 @@
 
   /* ----- Tree drop indicators (outline + label, not colour alone) -----|| */
   #objDropLine {
-    position: absolute; left: 8px; right: 8px; height: 0; z-index: 4;
-    border-top: 3px solid #fff;
-    box-shadow: 0 0 0 1px #000, 0 1px 0 0 #e0b43a;
+    position: absolute; left: 8px; right: 8px; height: 0; z-index: 8;
+    border-top: 4px solid #fff;
+    box-shadow: 0 0 0 1px #000, 0 2px 0 0 #000;
     pointer-events: none; display: none;
   }
   #objDropLine.show { display: block; }
   #objDropLine::before {
-    content: "▸"; position: absolute; left: -2px; top: -0.72em;
-    color: #fff; font: 800 14px/1 system-ui, sans-serif;
-    text-shadow: 0 0 2px #000, 0 1px 0 #000;
+    content: ""; position: absolute; left: -1px; top: -6px;
+    width: 10px; height: 10px; background: #fff; border: 1px solid #000;
+    box-sizing: border-box;
   }
   #objDropLine::after {
     content: attr(data-label); position: absolute; left: 14px; top: -0.85em;
@@ -2301,7 +2306,11 @@ function pushUndo(snap = snapshot()) {
   undoStack.push(snap);
   if (undoStack.length > UNDO_LIMIT) undoStack.shift();
   redoStack.length = 0;                          // a new edit drops the redo branch
-  updateUI();
+  // Don't call updateUI() here: it runs ensureTree(), which rebuilds folder
+  // children arrays, so any list handle taken before pushUndo() goes stale.
+  const bu = $("bUndo"), br = $("bRedo");
+  if (bu) bu.disabled = undoStack.length === 0;
+  if (br) br.disabled = redoStack.length === 0;
 }
 
 function undo() {
@@ -2889,19 +2898,25 @@ function moveItems(entries, dest) {
   for (const e of entries) {
     if (e.kind === "folder" && parentId && (e.id === parentId || folderContains(e.id, "folder", parentId))) return "into-self";
   }
-  const destList = childList(parentId);
+  let destList = childList(parentId);
   let index = (dest && typeof dest === "object" && dest.index != null) ? dest.index : destList.length;
   if (index < 0) index = 0;
   if (index > destList.length) index = destList.length;
   // "Already there": dropping into a folder they all already live in, with no explicit index.
   if (into && entries.every(e => parentIdOf(e.kind, e.id) === parentId) && !(dest && dest.index != null)) return "there";
-  // Reorder no-op: every item already sits at the requested span.
-  if (!into && entries.length) {
+  // Reorder no-op: before or after the item is the same place, or the requested span is already there.
+  if (!into && entries.length === 1) {
+    const cur = locate(entries[0].kind, entries[0].id);
+    if (cur && cur.list === destList && (index === cur.index || index === cur.index + 1)) return "there";
+  } else if (!into && entries.length) {
     const ids = entries.map(e => e.kind + ":" + e.id).join(",");
     const at = destList.slice(Math.max(0, index - entries.length), index).map(n => n.kind + ":" + n.id).join(",");
     if (ids === at && entries.every(e => parentIdOf(e.kind, e.id) === parentId)) return "there";
   }
   pushUndo();
+  // Recapture in case ensureTree() rebuilt folder children after the snapshot.
+  destList = childList(parentId);
+  if (index > destList.length) index = destList.length;
   const locs = [];
   for (const e of entries) { const loc = locate(e.kind, e.id); if (loc) locs.push(loc); }
   let adjust = 0;
@@ -4115,9 +4130,9 @@ function cmdRenameFolderPrompt(id) {
   if (r) toast("Renamed folder to " + r.name);
 }
 function entriesFor(kind, id) {
-  if (kind === "folder") return [{ kind, id }];
-  if (objSel.has(id) && objSel.size > 1) return [...objSel].map(oid => ({ kind: "object", id: oid }));
-  return [{ kind: "object", id }];
+  // A row drag always moves that row. Folder-name click selects every child, so
+  // treating the whole selection as the drag would make in-folder reorder a no-op.
+  return [{ kind, id }];
 }
 function openMovePicker(entries) {
   ensureTree();
@@ -4295,26 +4310,59 @@ function clearDropMarks() {
   const line = $("objDropLine");
   if (line) line.classList.remove("show");
 }
-function destFromPoint(x, y) {
-  const el = document.elementFromPoint(x, y);
-  if (!el || !el.closest) return undefined;
-  if (el.closest("#objRootDrop")) return { parent: null, index: 0, into: false };
-  const row = el.closest(".objRow");
-  if (!row) {
-    if (el.closest("#objList") || el.closest("#scenePanel")) return { parent: null, index: Infinity, into: false };
-    return undefined;
-  }
+function rowDropDest(row, y) {
   const r = row.getBoundingClientRect();
   const yRel = (y - r.top) / Math.max(1, r.height);
   const parent = row.dataset.parent || null;
   const index = +row.dataset.index;
-  if (row.dataset.kind === "folder" && yRel >= 0.28 && yRel <= 0.72) {
-    return { parent: row.dataset.id, index: Infinity, into: true, row };
+  // Folder rows: top = insert before, middle = drop into, bottom = insert after.
+  if (row.dataset.kind === "folder") {
+    if (yRel >= 0.28 && yRel <= 0.72) {
+      return { parent: row.dataset.id, index: Infinity, into: true, row };
+    }
+    if (yRel < 0.28) return { parent, index, into: false, row, place: "before" };
+    return { parent, index: index + 1, into: false, row, place: "after" };
   }
-  if (yRel < (row.dataset.kind === "folder" ? 0.28 : 0.5)) {
-    return { parent, index, into: false, row, place: "before" };
-  }
+  if (yRel < 0.5) return { parent, index, into: false, row, place: "before" };
   return { parent, index: index + 1, into: false, row, place: "after" };
+}
+function destFromPoint(x, y) {
+  const root = $("objRootDrop");
+  if (root && root.classList.contains("show")) {
+    const rr = root.getBoundingClientRect();
+    if (y >= rr.top && y <= rr.bottom && x >= rr.left && x <= rr.right) {
+      return { parent: null, index: Infinity, into: false, root: true };
+    }
+  }
+  const list = $("objList");
+  if (!list) return undefined;
+  const listR = list.getBoundingClientRect();
+  const inList = x >= listR.left && x <= listR.right && y >= listR.top && y <= listR.bottom;
+  const rows = [...list.querySelectorAll(".objRow")];
+  if (!rows.length) return inList ? { parent: null, index: Infinity, into: false } : undefined;
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i].getBoundingClientRect();
+    if (y >= r.top && y <= r.bottom) return rowDropDest(rows[i], y);
+    const next = rows[i + 1];
+    if (!next) continue;
+    const n = next.getBoundingClientRect();
+    if (y > r.bottom && y < n.top) {
+      // Gap under an open folder, above its first child: insert at the top of that folder.
+      if (rows[i].dataset.kind === "folder" && next.dataset.parent === rows[i].dataset.id) {
+        return { parent: rows[i].dataset.id, index: 0, into: false, row: next, place: "before" };
+      }
+      const mid = (r.bottom + n.top) / 2;
+      if (y < mid) {
+        return { parent: rows[i].dataset.parent || null, index: +rows[i].dataset.index + 1, into: false, row: rows[i], place: "after" };
+      }
+      return { parent: next.dataset.parent || null, index: +next.dataset.index, into: false, row: next, place: "before" };
+    }
+  }
+  if (!inList) return undefined;
+  const first = rows[0].getBoundingClientRect();
+  if (y < first.top) return { parent: rows[0].dataset.parent || null, index: +rows[0].dataset.index, into: false, row: rows[0], place: "before" };
+  const last = rows[rows.length - 1];
+  return { parent: last.dataset.parent || null, index: +last.dataset.index + 1, into: false, row: last, place: "after" };
 }
 function markDrop(x, y) {
   clearDropMarks();
@@ -4325,12 +4373,15 @@ function markDrop(x, y) {
   const dest = destFromPoint(x, y);
   const line = $("objDropLine");
   if (!dest) return;
-  if (root && !dest.row && dest.parent == null) { root.classList.add("drop"); return; }
+  if (dest.root && root) { root.classList.add("drop"); return; }
   if (dest.into && dest.row) { dest.row.classList.add("drop-into"); return; }
   if (line && dest.row) {
-    const panel = $("scenePanel").getBoundingClientRect();
+    const host = line.offsetParent || $("scenePanel");
+    const hr = host.getBoundingClientRect();
     const r = dest.row.getBoundingClientRect();
-    line.style.top = ((dest.place === "before" ? r.top : r.bottom) - panel.top) + "px";
+    line.style.top = ((dest.place === "before" ? r.top : r.bottom) - hr.top) + "px";
+    line.style.left = Math.max(8, r.left - hr.left) + "px";
+    line.style.right = "8px";
     line.dataset.label = dest.parent ? "Insert" : "Scene root";
     line.classList.add("show");
   }
