@@ -47,7 +47,6 @@
   /* Edge lengths of the active model (and of the vertex selection), top-left. */
   #density {
     position: absolute; left: 10px; top: calc(env(safe-area-inset-top) + 6px);
-    display: flex; gap: 6px; align-items: flex-start;
     max-width: calc(100% - 52px); z-index: 4; pointer-events: none;
   }
   #density.hide { display: none; }
@@ -55,12 +54,6 @@
     font: 11px/1.35 ui-monospace, Menlo, Consolas, monospace;
     color: #d0d3e0; text-shadow: 0 1px 2px #000; white-space: pre-line;
   }
-  #bDensity {
-    pointer-events: auto; flex: none; min-height: 28px; padding: 0 8px;
-    border-radius: 6px; border: 1px solid #fff3; background: #1f2029cc; color: #c8cad6;
-    font: 600 10px ui-monospace, Menlo, Consolas, monospace; touch-action: manipulation;
-  }
-  #bDensity.on { background: #f2f2f4; color: #16171d; border-color: #f2f2f4; }
 
   /* Monochrome inline icons (SVG with currentColor), so nothing renders as colour emoji. */
   .svgic { width: 1em; height: 1em; display: inline-block; vertical-align: -0.125em; fill: currentColor; }
@@ -226,8 +219,8 @@
     display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto;
     min-height: 0; min-width: 0; width: 100%; max-width: 100%; overflow: hidden;
   }
-  #scenePanel .scHead { min-width: 0; width: 100%; overflow: hidden; flex-wrap: wrap; align-items: center; }
-  #scenePanel .scHead .scMeta { flex: 1 1 100%; text-align: left; }
+  #scenePanel .scHead { min-width: 0; width: 100%; overflow: hidden; flex-wrap: nowrap; align-items: center; padding-right: 16px; box-sizing: border-box; }
+  #scenePanel .scHead .scMeta { flex: 1 1 auto; min-width: 0; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #scenePanel .scHead #scFileWrap { flex: 0 0 auto; }
   #scenePanel .scBody { border-radius: 0 10px 0 0; }
   #sceneTab {
@@ -351,9 +344,6 @@
            display: flex; flex-direction: column; gap: 4px; }
   #views.hide { display: none; }
   /* View-cube and pill styles are at the end of this stylesheet. */
-  #biomeName { font: 600 10px ui-monospace, Menlo, Consolas, monospace; color: #fff;
-               text-shadow: 0 0 3px #000, 0 0 2px #000; white-space: nowrap; text-align: right;
-               pointer-events: none; margin-top: -2px; }
   #biomeMenu {
     display: none; position: absolute; z-index: 6;
     right: 46px; top: calc(env(safe-area-inset-top) + 26px);
@@ -496,14 +486,11 @@
   #views .viewPill.on { background: #e0b43a; color: #16171d; }
   #views .viewPill.open { box-shadow: inset 0 0 0 2px #8ec8ff; }
   #views .viewPill:active { filter: brightness(1.2); }
-  #biomeName { font: 600 10px ui-monospace, Menlo, Consolas, monospace; color: #fff;
-               text-shadow: 0 0 3px #000, 0 0 2px #000; white-space: nowrap; text-align: right;
-               pointer-events: none; margin-top: -2px; }
   #views #stats {
-    position: static; align-self: flex-end; width: 180px; max-width: 180px;
-    pointer-events: none; text-align: right; white-space: normal;
-    font: 10px/1.35 ui-monospace, Menlo, Consolas, monospace;
-    color: #8a8ea0; text-shadow: 0 1px 2px #000; margin-top: 6px;
+    position: static; align-self: flex-end; width: auto; max-width: none;
+    pointer-events: none; text-align: right; white-space: pre; margin: 0 10px 2px 0;
+    font: 10px/1.25 ui-monospace, Menlo, Consolas, monospace;
+    color: #8a8ea0; text-shadow: 0 1px 2px #000;
   }
   #biomeMenu { right: 58px; }
   #sunMenu { left: auto; right: 58px; }
@@ -644,10 +631,10 @@
     <canvas id="gl"></canvas>
     <div id="info"></div>
     <div id="density">
-      <button id="bDensity" type="button" aria-pressed="false" title="Mark edges under half or over double the average. They are drawn thick and bright, in the same neutral colour.">Mark</button>
       <div id="densityText" aria-live="polite"></div>
     </div>
     <div id="views" aria-label="View">
+      <div id="stats"></div>
       <div id="viewCubeStage" title="Click a face to snap the view">
         <div id="viewCubeBox">
           <button type="button" class="vcf front" data-view="front" title="Front: from −Y, looking +Y">F</button>
@@ -666,8 +653,6 @@
         <button id="bRock" type="button" class="viewPill" title="Size references: tap to cycle off → rock → rock + player → player"><span id="refIcon">◆︎</span> <span id="refLabel">Rock</span></button>
         <button id="scDim" type="button" class="viewPill" title="Dim the other objects while editing one">Dim</button>
       </div>
-      <div id="biomeName">None</div>
-      <div id="stats"></div>
     </div>
     <div id="biomeMenu" aria-label="Biome filter">
       <div class="biomeHead"><span>Biome filter</span><button id="biomeClose" type="button" title="Close">×</button></div>
@@ -958,8 +943,7 @@
 //  duplicate, combine and separate objects; Make Plane adds a single two-sided quad
 //  (leaves, grass); Import adds models as new objects at the place they came from.
 //  v25: a small edge-density readout (average, shortest, longest) in export world
-//  units, for the active model and for the vertex selection. Mark draws edges that
-//  are far from the average thick and bright, in one neutral colour.
+//  units, for the active model and for the vertex selection.
 //  v26: hold a shape in the view to make it the active object (a drag still orbits).
 //  Shapes adds Plane (one-sided): a flat quad, top faces only. Faces mode picks
 //  triangles; Delete removes them (and a mirror twin, when the mesh has one).
@@ -1127,9 +1111,11 @@ function biomeSnippet(id) {
 }
 function renderBiome() {
   const b = biomeById(biome);
-  $("biomeName").textContent = b.name;
   $("biomeBtn").classList.toggle("on", b.id !== "none");
   $("biomeBtn").setAttribute("aria-label", "Biome filter: " + b.name);
+  $("biomeBtn").title = b.id === "none"
+    ? "Biome screen filter (viewport preview only, never exported)"
+    : b.name + " (viewport preview only, never exported)";
   const list = $("biomeList");
   if (!list.children.length) {
     for (const x of BIOME_FILTERS) {
@@ -4563,13 +4549,9 @@ function renderScenePanel() {
   };
   addRow(scene.tree, 0, null, null);
   renderFolderPrompts();
-  const sel = objSelList().length, faces = editMode() ? selection().length >= 3 : false;
-  const nF = countAllFolders();
+  const sel = objSelList().length;
   $("scTitle").textContent = `Scene · ${scene.objects.length}`;
-  const tris = scene.objects.reduce((n, o) => n + (shapeHidden(o) ? 0 : o.mesh.tris.length / 3 * (o.twoSided ? 2 : 1)), 0);
-  const act = (objSel.size && activeObj() && objSel.has(activeObj().id)) ? activeObj().name : (objSel.size ? "Selection" : "");
-  $("scNote").textContent = objSel.size ? `${act} · ${sel} selected` : "Nothing selected";
-  if (nF) $("scNote").textContent += ` · ${nF} folder${nF === 1 ? "" : "s"}`;
+  $("scNote").textContent = sel + " selected";
   updateSceneActions();
 }
 function updateSceneActions() {
@@ -4740,7 +4722,6 @@ function uploadBatch(batch, data) {
 const faceBatch  = makeBatch();
 const faceHiBatch = makeBatch();  // Face mode: picked triangles, drawn in front
 const edgeBatch  = makeBatch();
-const markBatch  = makeBatch();   // thick bright outlier edges (density Mark)
 const dotBatch   = makeBatch();
 const ringBatch  = makeBatch();   // "will merge" rings
 const gridBatch  = makeBatch();
@@ -6310,12 +6291,7 @@ const zeroAreaNote = (n) => n ? [`// ${n} zero-area triangle${n > 1 ? "s" : ""} 
 // reads as 1 on every model, whatever its bounds. The offset cancels in a length;
 // the scale puts the normalized grid back into those units.
 // With 2+ vertices selected, the second line is only the edges that run between
-// selected vertices. Mark draws edges under half or over double the model's average
-// as thick bright lines: one neutral colour, brighter and thicker than the wireframe.
-const DENSITY_SHORT = 0.5, DENSITY_LONG = 2;
-let densityMark = false;
-let markSegs = [];               // outlier edge endpoints, active mesh local space
-try { densityMark = localStorage.getItem(KEY_PREFIX + "density") === "1"; } catch (e) { /* storage blocked */ }
+// selected vertices.
 
 function edgeSpread(lengths) {
   if (!lengths.length) return null;
@@ -6338,12 +6314,7 @@ function edgeDensity(selSet) {
   }
   const model = edgeSpread(edges.map(e => e.len));
   const sel = selSet ? edgeSpread(edges.filter(e => e.inSel).map(e => e.len)) : null;
-  const marks = [];
-  if (model && model.avg > 0) {
-    const lo = model.avg * DENSITY_SHORT, hi = model.avg * DENSITY_LONG;
-    for (const e of edges) if (e.len < lo || e.len > hi) marks.push([e.a, e.b]);
-  }
-  return { model, sel, marks };
+  return { model, sel };
 }
 
 // Secondary option: the v15 9-float layout (pos3 + color3 + normal3).
@@ -6827,20 +6798,9 @@ function updateUI() {
 function updateStats() {
   const el = $("stats");
   el.classList.toggle("hide", !overlayOn);
-  const o = activeObj(), n = (x) => x.toLocaleString("en-US");
-  if (mode === "object") {                         // Object mode: the whole scene
-    const vis = scene.objects.filter(x => !shapeHidden(x));
-    const t = vis.reduce((s, x) => s + x.mesh.tris.length / 3 * (x.twoSided ? 2 : 1), 0);
-    const nSel = objSelList().length;
-    el.textContent = `${o.name} · ${scene.objects.length} object${scene.objects.length > 1 ? "s" : ""} · ${n(t)} tris · ${n(t * 36)} B` +
-                     (nSel > 1 ? ` · ${nSel} selected` : "");
-    return;
-  }
-  const tris = triCount() * (o.twoSided ? 2 : 1), verts = tris * 3, bytes = verts * 12;
-  const nSel = selection().length;
-  el.textContent = `${o.name} · ${n(verts)} verts · ${n(tris)} tris · ${n(bytes)} B  (${n(vertCount())} unique)` +
-                   (mode === "face" && faceSel.size ? ` · ${faceSel.size} face${faceSel.size === 1 ? "" : "s"}` : "") +
-                   (nSel > 1 ? ` · ${nSel} selected` : "");
+  const n = (x) => x.toLocaleString("en-US");
+  const t = scene.objects.reduce((s, x) => s + x.mesh.tris.length / 3 * (x.twoSided ? 2 : 1), 0);
+  el.textContent = "△ " + n(t) + "\n" + n(t * 36) + " B";
 }
 
 // Edge-length readout. Same world units as the export, so models can be compared.
@@ -6863,14 +6823,7 @@ function updateDensity() {
       ? `sel avg ${fmtEdge(d.sel.avg)} · min ${fmtEdge(d.sel.min)} · max ${fmtEdge(d.sel.max)}`
       : "sel —");
   }
-  if (densityMark) lines.push("thick bright = under ½ or over 2× avg");
   $("densityText").textContent = lines.join("\n");
-  const b = $("bDensity");
-  b.classList.toggle("on", densityMark);
-  b.textContent = densityMark ? "Marked" : "Mark";
-  b.setAttribute("aria-pressed", densityMark ? "true" : "false");
-  markSegs = [];
-  if (densityMark) for (const [a, b2] of d.marks) markSegs.push(...getVert(a), ...getVert(b2));
 }
 
 // Mirror warnings as a short toast, only when a count goes from 0 to something, so a
@@ -7086,13 +7039,6 @@ for (const b of document.querySelectorAll("[data-mode]"))
     mode = next; overlayOn = true; meshDirty = true; updateUI();
   });
 $("bFaceDel").addEventListener("click", cmdDeleteFaces);
-
-$("bDensity").addEventListener("click", (e) => {
-  e.stopPropagation();
-  densityMark = !densityMark;
-  try { localStorage.setItem(KEY_PREFIX + "density", densityMark ? "1" : "0"); } catch (err) { /* ignore */ }
-  updateUI();
-});
 
 $("bBake").addEventListener("click", () => {
   $("sunMenu").classList.toggle("show");
@@ -7961,36 +7907,6 @@ new ResizeObserver(resize).observe(canvas);
 
 
 //----- Draw Loop -----||
-// Outlier edges (density Mark): a thick ribbon in one bright neutral, on top of the
-// thin wireframe. Width is in screen pixels so it stays readable as you zoom.
-// WebGL lines stay 1 px, so thickness is a camera-facing quad, same idea as the gizmo.
-function drawMarkedEdges() {
-  if (!markSegs.length) return;
-  const col = [0.97, 0.97, 0.98], quads = [];
-  for (let i = 0; i < markSegs.length; i += 6) {
-    const p = [markSegs[i], markSegs[i+1], markSegs[i+2]];
-    const q = [markSegs[i+3], markSegs[i+4], markSegs[i+5]];
-    const mid = [(p[0]+q[0]) * 0.5, (p[1]+q[1]) * 0.5, (p[2]+q[2]) * 0.5];
-    const s = project(mid);
-    if (!s) continue;
-    const side = v3.cross(v3.sub(q, p), v3.norm(v3.sub(mid, camEye())));
-    const sl = v3.len(side);
-    if (sl < 1e-12) continue;
-    const w = v3.scale(side, 3.5 * worldPerPx(s.depth) / sl);   // ~7 CSS px, thicker than the 1 px wire
-    const c = [v3.add(p, w), v3.sub(p, w), v3.sub(q, w), v3.add(q, w)];
-    for (const k of [0, 1, 2, 0, 2, 3]) quads.push(...c[k], ...col);
-  }
-  if (!quads.length) return;
-  uploadBatch(markBatch, quads);
-  gl.uniform4f(U.tint, 0, 0, 0, 0);
-  gl.uniform1f(U.alpha, 1);
-  gl.enable(gl.POLYGON_OFFSET_FILL);
-  gl.polygonOffset(-2, -2);
-  gl.bindVertexArray(markBatch.vao);
-  gl.drawArrays(gl.TRIANGLES, 0, markBatch.count);
-  gl.disable(gl.POLYGON_OFFSET_FILL);
-}
-
 function frame() {
   resize();
   stepCamAnim();
@@ -8097,7 +8013,6 @@ function frame() {
     }
     gl.uniform4f(U.tint, 0, 0, 0, 0);
     gl.uniformMatrix4fv(U.mvp, false, mvpA);
-    drawMarkedEdges();
     gl.uniformMatrix4fv(U.mvp, false, viewProj);
     gl.disable(gl.DEPTH_TEST);
     drawGizmo();
@@ -8114,7 +8029,6 @@ function frame() {
     gl.drawArrays(gl.LINES, 0, edgeBatch.count);
   }
   if (mode === "paint") { gl.uniform1f(U.alpha, 1); gl.disable(gl.BLEND); }
-  drawMarkedEdges();
 
   // 4) Mirror plane: translucent, blended over what's behind, and it doesn't write
   //    depth so it never hides anything.
