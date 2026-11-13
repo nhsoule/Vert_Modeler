@@ -339,10 +339,6 @@
   .chips { display: flex; gap: 3px; }
   #shapesPanel .chips button { flex: 1; min-width: 0; min-height: 34px; padding: 0; font-size: 13px; }
   #scenePanel .note, #shapesPanel .note { font-size: 11px; color: #9a9db0; text-align: center; }
-  #exportWhat {
-    flex: 1; min-height: 40px; background: #0d0e12; color: #fff; border: 1px solid #2c2e3a; border-radius: 8px;
-    font: 14px system-ui, sans-serif; padding: 0 6px;
-  }
   #exportName:disabled { opacity: 0.5; }
   /* ----- View Buttons -----|| small, see-through, top-right, under the stats line's row */
   #views { position: absolute; right: 6px; top: calc(env(safe-area-inset-top) + 26px);
@@ -854,14 +850,8 @@
     <button id="mCopy">Copy</button>
     <button id="mClose" class="alt">Close</button>
   </div>
-  <label>Export <select id="exportWhat">
-    <option value="active">Selected</option>
-    <option value="each">Every visible object, separate</option>
-    <option value="merged">All visible, merged into one</option>
-    <option value="folder" id="exportFolderOpt" hidden>Folder as parts</option>
-  </select></label>
+  <div class="note" id="exportHint">Select one folder or one object</div>
   <label>Name <input id="exportName" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" value="model"></label>
-  <label class="chk"><input id="exportFloats" type="checkbox"> 9-float export (pos + color + normal)</label>
   <div class="btnrow"><button id="mDownload" class="alt">Download .h</button></div>
   <textarea id="exportText" readonly spellcheck="false"></textarea>
 </div>
@@ -2374,12 +2364,16 @@ function load() {
       const list = d.scene && readSceneObjects(d.scene.objects);
       if (list) {
         const a = Math.min(Math.max(0, d.scene.active | 0), list.length - 1);
+        const activeId = list[a].id;
         scene = { name: cIdent(d.scene.name || "scene"), active: a, objects: list,
                   tree: Array.isArray(d.scene.tree) ? d.scene.tree : [] };
         ensureTree();
+        syncObjectsToTree();
+        const i = Math.max(0, scene.objects.findIndex(o => o.id === activeId));
+        scene.active = i;
         folderFocus = null; moveEntries = null; folderDeleteId = null;
-        mesh = list[a].mesh;
-        objSel = new Set([list[a].id]);
+        mesh = scene.objects[i].mesh;
+        objSel = new Set([scene.objects[i].id]);
         frameOff = list[a].pos.slice();            // the camera starts on the active object
         sceneVersion++;
         preferVisibleActive();
@@ -2586,9 +2580,38 @@ function preferVisibleActive() {
 
 // Plain data for saving: no partner lists (they're rebuilt from positions on load).
 // `tree` is the folder outline. Old files have no tree: every shape loads at the root.
+// Depth-first, top to bottom: the same order the tree shows, including after a drag.
+function objectsInTreeOrder() {
+  ensureTree();
+  const out = [], seen = new Set();
+  walkTree(scene.tree, (n) => {
+    if (n.kind !== "object" || seen.has(n.id)) return;
+    const o = objById(n.id);
+    if (o) { seen.add(o.id); out.push(o); }
+  });
+  for (const o of scene.objects) if (!seen.has(o.id)) out.push(o);
+  return out;
+}
+function syncObjectsToTree() {
+  const cur = activeObj();
+  const next = objectsInTreeOrder();
+  let same = next.length === scene.objects.length;
+  if (same) for (let i = 0; i < next.length; i++) if (next[i] !== scene.objects[i]) { same = false; break; }
+  if (!same) scene.objects = next;
+  if (cur) {
+    const i = scene.objects.indexOf(cur);
+    scene.active = i >= 0 ? i : 0;
+    mesh = scene.objects[scene.active].mesh;
+  } else if (scene.active >= scene.objects.length) {
+    scene.active = Math.max(0, scene.objects.length - 1);
+  }
+}
 function sceneData() {
   ensureTree();
-  return { name: scene.name, active: scene.active, objects: objs().map(o => ({
+  const list = objectsInTreeOrder();
+  const cur = activeObj();
+  const active = Math.max(0, list.indexOf(cur));
+  return { name: scene.name, active, objects: list.map(o => ({
     id: o.id, name: o.name, pos: o.pos, hidden: o.hidden, twoSided: o.twoSided,
     mesh: { positions: o.mesh.positions, tris: o.mesh.tris, colors: o.mesh.colors, mirror: o.mesh.mirror } })),
     tree: treeData(scene.tree) };
@@ -3861,15 +3884,18 @@ function sceneFromJson(d, replace) {
   if (!list) throw new Error("no objects in that .json");
   if (replace) {
     const a = Math.min(Math.max(0, src.active | 0), list.length - 1);
+    const activeId = list[a].id;
     scene = { name: cIdent(src.name || "scene"), active: a, objects: list,
               tree: Array.isArray(src.tree) ? src.tree : [] };
     folderFocus = null; moveEntries = null; folderDeleteId = null;
     ensureTree();
-    pointActive(a);
+    syncObjectsToTree();
+    const i = Math.max(0, scene.objects.findIndex(o => o.id === activeId));
+    pointActive(i);
     if (typeof d.bakeOn === "boolean") bakeOn = d.bakeOn;
     if (Array.isArray(d.sun) && d.sun.length === 3 && d.sun.every(isFinite)) adoptSun(d.sun);
     if (LIGHT_PRESETS.some(p => p.id === d.light)) { light.preset = d.light; saveLight(); }
-    setActive(a);
+    setActive(scene.active);
     preferVisibleActive();
     return list.length;
   }
@@ -4615,6 +4641,7 @@ function updateSceneActions() {
   if ($("scDup")) $("scDup").disabled = sel === 0;
   if ($("scDim")) $("scDim").classList.toggle("on", dimOthers);
   if ($("shTwo")) $("shTwo").classList.toggle("on", !!shapeTwoSided);
+  syncExportUi();
 }
 
 
@@ -6424,6 +6451,7 @@ function packMeshRows(m, frame) {
 }
 function buildExportFolderParts(folder, nameOverride) {
   if (!folder || folder.kind !== "folder") return "";
+  // Direct children in tree order (top to bottom). A subfolder is one combined part.
   const children = (folder.children || []).filter(c => c && (c.kind === "object" || c.kind === "folder"));
   const parts = [];
   for (const child of children) {
@@ -6589,56 +6617,49 @@ function buildExportFloats(o = activeObj()) {
   });
 }
 
-// Shapes a folder is hiding count as hidden: the .h file is otherwise unchanged.
-function visibleForExport() { return objs().filter(o => !shapeHidden(o)); }
-// What the export window exports: the active object, every visible object (one model
-// each, back to back), or every visible object merged into one model (scene coordinates,
-// named after the scene). "Selected" exports the current object selection (one file each if several).
-function exportTargets() {
-  const what = $("exportWhat") ? $("exportWhat").value : "active";
-  if (what === "each") return visibleForExport();
-  if (what === "merged") {
-    const vis = visibleForExport();
-    const r = mergeMeshes([0, 0, 0], vis);
-    return [{ name: cIdent(scene.name), pos: [0, 0, 0], twoSided: r.twoSided, mesh: r.mesh }];
-  }
-  return objSelList();
+// One .h export: a focused folder (parts, in tree order) or a single selected object.
+// Several objects, or nothing, is not an export — pick one folder or one object.
+function exportTarget() {
+  ensureTree();
+  const folder = folderFocus && findFolderNode(folderFocus);
+  if (folder) return { kind: "folder", folder };
+  const list = objSelList();
+  if (list.length === 1) return { kind: "object", object: list[0] };
+  return { kind: "none" };
 }
 function buildExport() {
-  if ($("exportWhat") && $("exportWhat").value === "folder") {
-    const folder = exportFolderNode();
-    if (!folder) return "";
-    return buildExportFolderParts(folder, $("exportName").value);
+  const t = exportTarget();
+  const name = $("exportName") ? $("exportName").value : "";
+  if (t.kind === "folder") return buildExportFolderParts(t.folder, name);
+  if (t.kind === "object") {
+    const named = Object.assign({}, t.object, { name: cIdent(name) || t.object.name });
+    return buildExportPacked(named);
   }
-  const floats = $("exportFloats") && $("exportFloats").checked;
-  return exportTargets().map(o => floats ? buildExportFloats(o) : buildExportPacked(o)).join("\n");
+  return "";
 }
 function syncExportUi() {
-  const folder = exportFolderNode();
-  const opt = $("exportFolderOpt");
-  if (opt) {
-    opt.hidden = !folder;
-    opt.textContent = folder ? ("Folder as parts: " + folder.name) : "Folder as parts";
+  const t = exportTarget();
+  const name = $("exportName");
+  const hint = $("exportHint");
+  const btn = $("bExport");
+  const none = t.kind === "none";
+  if (name) {
+    name.disabled = none;
+    if (t.kind === "folder") name.value = t.folder.name;
+    else if (t.kind === "object") name.value = t.object.name;
   }
-  if ($("exportWhat") && $("exportWhat").value === "folder" && !folder) $("exportWhat").value = "active";
-  const floats = $("exportFloats");
-  const folderMode = $("exportWhat") && $("exportWhat").value === "folder";
-  if (floats) {
-    floats.disabled = !!folderMode;
-    if (folderMode) floats.checked = false;
+  if (hint) {
+    hint.textContent = t.kind === "folder" ? ("Folder as parts, in tree order: " + t.folder.name)
+      : t.kind === "object" ? ("Single object: " + t.object.name)
+      : "Select one folder or one object";
   }
-  syncExportName();
-}
-function syncExportName() {
-  const w = $("exportWhat").value;
-  const list = objSelList();
-  const folder = exportFolderNode();
-  $("exportName").disabled = w === "each" || (w === "active" && list.length !== 1) || (w === "folder" && !folder);
-  $("exportName").value = w === "merged" ? scene.name
-    : w === "each" ? "(each object's own name)"
-    : w === "folder" ? (folder ? folder.name : "")
-    : list.length === 1 ? list[0].name
-    : list.length ? "(each selected object's own name)" : "";
+  if (btn) {
+    btn.disabled = none;
+    btn.title = none ? "Select one folder or one object"
+      : t.kind === "folder" ? "Export this folder as parts" : "Export this object";
+  }
+  if ($("mDownload")) $("mDownload").disabled = none;
+  if ($("mCopy")) $("mCopy").disabled = none;
 }
 
 // Clipboard API needs a secure context (https or localhost); file:// may refuse,
@@ -6667,13 +6688,14 @@ function toast(msg) {
 }
 
 async function doExport() {
-  const folder = exportFolderNode();
-  if (!objSelList().length && !folder) { toast("Select an object or a folder first"); return; }
-  $("exportWhat").value = (!objSelList().length && folder) ? "folder" : "active";
-  $("exportFloats").checked = false;             // the 12-byte Vert is the default
+  const t = exportTarget();
+  if (t.kind === "none") { toast("Select one folder or one object"); return; }
   syncExportUi();
   const text = buildExport();
-  if ($("exportWhat").value === "folder" && !text) { toast("This folder has no visible parts to export"); return; }
+  if (!text) {
+    toast(t.kind === "folder" ? "This folder has no visible parts to export" : "Select one folder or one object");
+    return;
+  }
   $("exportText").value = text;
   $("modal").classList.add("show");
   const ok = await copyText(text);
@@ -7661,30 +7683,27 @@ $("scOpen").addEventListener("click", () => { fileMode = "replace"; $("fileIn").
 $("scNew").addEventListener("click", cmdNewScene);
 
 $("exportName").addEventListener("input", () => {
-  const w = $("exportWhat").value, v = cIdent($("exportName").value);
-  if (w === "merged") scene.name = v;
-  else if (w === "active") { const o = activeObj(); o.name = uniqueObjName(v, o); }
+  const t = exportTarget();
+  const v = cIdent($("exportName").value);
+  if (t.kind === "object") {
+    t.object.name = uniqueObjName(v, t.object);
+    save();
+  }
   $("exportText").value = buildExport();
-  if (w !== "folder") save();
-  updateUI();
+  if (t.kind === "object") updateUI();
 });
-$("exportWhat").addEventListener("change", () => { syncExportUi(); $("exportText").value = buildExport(); });
 $("mDownload").addEventListener("click", () => {
-  if ($("exportWhat").value === "folder") {
-    const folder = exportFolderNode();
-    const text = buildExport();
-    if (!folder || !text) { toast("This folder has no visible parts to export"); return; }
-    const name = cIdent($("exportName").value || folder.name);
-    downloadText(name + ".h", text);
-    toast("Downloading " + name + ".h");
+  const t = exportTarget();
+  const text = buildExport();
+  if (!text) {
+    toast(t.kind === "folder" ? "This folder has no visible parts to export" : "Select one folder or one object");
     return;
   }
-  const floats = $("exportFloats").checked, list = exportTargets();
-  list.forEach((o, i) => setTimeout(() =>
-    downloadText(cIdent(o.name) + ".h", floats ? buildExportFloats(o) : buildExportPacked(o)), i * 300));
-  toast(list.length > 1 ? `Downloading ${list.length} files` : `Downloading ${cIdent(list[0].name)}.h`);
+  const fallback = t.kind === "folder" ? t.folder.name : (t.object && t.object.name) || "model";
+  const name = cIdent($("exportName").value || fallback);
+  downloadText(name + ".h", text);
+  toast("Downloading " + name + ".h");
 });
-$("exportFloats").addEventListener("change", () => { $("exportText").value = buildExport(); });
 $("mClose").addEventListener("click", () => $("modal").classList.remove("show"));
 $("mCopy").addEventListener("click", async () => {
   const ok = await copyText(buildExport());
