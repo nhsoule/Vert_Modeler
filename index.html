@@ -224,6 +224,13 @@
     flex-direction: column; gap: 6px;
   }
   #scenePanel.show, #shapesPanel.show { display: flex; }
+  /* Cap the panel to the 3D view and stop the whole thing scrolling, so the
+     tree can keep a guaranteed share of the height on a short laptop or phone. */
+  #scenePanel {
+    overflow: hidden;
+    height: calc(100% - env(safe-area-inset-top) - 34px);
+    max-height: calc(100% - env(safe-area-inset-top) - 34px);
+  }
   #scenePanel button, #shapesPanel button {
     min-height: 38px; border: 0; border-radius: 9px; background: #2a2c38; color: #e8e8ee;
     font: inherit; font-size: 12px; touch-action: manipulation; padding: 0 6px;
@@ -237,7 +244,28 @@
   .cutPick { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #c8cad8; padding: 0 2px; }
   .cutPick select { flex: 1; min-height: 32px; font: inherit; font-size: 12px; color: #e8e8ee;
                     background: #2a2c38; border: 1px solid #4a4d5c; border-radius: 8px; padding: 0 6px; }
-  #objList { display: flex; flex-direction: column; gap: 3px; max-height: min(42vh, 380px); overflow-y: auto; }
+  #objList {
+    display: flex; flex-direction: column; gap: 3px;
+    flex: 1 1 auto;
+    min-height: min(160px, 32%);
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+    background: #16171d99; border: 1px solid #3a3d4c; border-radius: 10px; padding: 4px;
+  }
+  .scQuick { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; flex: 0 0 auto; }
+  .scQuick button { font-size: 11px; padding: 0 2px; white-space: nowrap; }
+  .scQuick #scMoreBtn { font-weight: 600; }
+  /* Tree rows a touch shorter so a short laptop can show more names. */
+  #objList button { min-height: 34px; }
+  #scMore {
+    display: none; flex-direction: column; gap: 6px;
+    flex: 0 1 auto; min-height: 0; padding-bottom: 2px;
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
+  /* When More is open, share the leftover height so its buttons stay usable
+     and the tree still keeps a few rows. Both sides scroll if needed. */
+  #scMore.show { display: flex; flex: 1 1 40%; min-height: min(130px, 30%); }
+  #scenePanel .scHead, #scenePanel .scQuick, #scenePanel .note { flex: 0 0 auto; }
+  #scenePanel .folderAsk, #scenePanel .folderPick { flex: 0 0 auto; }
   #objRootDrop {
     display: none; min-height: 30px; border: 1px dashed #e0b43a; border-radius: 8px;
     color: #e0b43a; font-size: 11px; align-items: center; justify-content: center;
@@ -251,7 +279,7 @@
   .objRow .nm { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
                 font: 12px ui-monospace, Menlo, Consolas, monospace !important; }
   .objRow .nm small { color: #9a9db0; }
-  .objRow.sel .nm { box-shadow: inset 0 0 0 2px #e0b43a88; }
+  .objRow.sel .nm { box-shadow: inset 0 0 0 2px #e0b43a88; font-weight: 600 !important; }
   .objRow.active .nm { box-shadow: inset 0 0 0 2px #e0b43a; color: #fff; font-weight: 700 !important; }
   #scenePanel .objRow.folder .nm { font-weight: 600 !important; }
   #scenePanel .objRow.focus .nm { box-shadow: inset 0 0 0 2px #8ec8ff; }
@@ -480,39 +508,44 @@
         <div id="folderPickList"></div>
         <button id="folderPickCancel" type="button">Cancel</button>
       </div>
-      <div class="scGrid">
-        <button id="scDup" type="button" title="Duplicate the selected objects (Ctrl+D)">Duplicate</button>
-        <button id="scCopy" type="button" title="Copy the selected objects, or the selected faces in Move/Select (Ctrl+C)">Copy</button>
-        <button id="scPaste" type="button" title="Paste as new objects (Ctrl+V)">Paste</button>
-        <button id="scCombine" type="button" title="Join the selected objects into the active one (Ctrl+J)">Combine</button>
-        <button id="scSeparate" type="button" title="Move the selected faces into a new object (P)">Separate</button>
-        <button id="scFaces" type="button" title="Copy the selected faces into a new object">Faces → new</button>
-        <button id="scTwo" type="button" title="Two-sided: export every face twice, front and back">Two-sided</button>
-        <button id="scSubdiv" type="button" title="Split every triangle of the active object into 4">Subdivide</button>
+      <div class="scQuick">
+        <button id="scHide" type="button" title="Hide / show the selected objects (H)">Hide</button>
         <button id="scRename" type="button" title="Rename the active object (its export name)">Rename</button>
         <button id="scDelete" type="button" title="Delete the selected objects (Delete in Object mode)">Delete</button>
-        <button id="scDim" type="button" title="Dim the other objects while editing one">Dim others</button>
-        <button id="scHide" type="button" title="Hide / show the selected objects (H)">Hide</button>
-        <button id="scFolder" type="button" title="New folder. Inside the focused folder, or beside the active shape.">+ Folder</button>
-        <button id="scMove" type="button" title="Move the focused folder, or the selected shapes, into a folder">Move to…</button>
-        <button id="scSave" type="button" title="Download the whole scene as a .json project">Save .json</button>
-        <button id="scOpen" type="button" title="Open a scene .json (replaces the scene) or add .h models">Open…</button>
-        <button id="scRefs" type="button" title="Put the rock and player references back beside the start cube">Reset refs</button>
-        <button id="scNew" type="button" title="Start over with one cube">New scene</button>
+        <button id="scDup" type="button" title="Duplicate the selected objects (Ctrl+D)">Dup</button>
+        <button id="scFolder" type="button" title="New folder. Inside the focused folder, or beside the active shape.">Folder</button>
+        <button id="scMoreBtn" type="button" title="More scene actions" aria-expanded="false" aria-controls="scMore">More ▾</button>
       </div>
-      <label class="cutPick" for="scCombineMode">Combine
-        <select id="scCombineMode" title="How Combine treats the overlap. The other shape is left exactly as it is.">
-          <option value="slide">Slide &amp; trim</option>
-          <option value="delete">Delete hidden faces</option>
-        </select>
-      </label>
-      <label class="cutPick" for="scCut">Which shape
-        <select id="scCut" title="Which shape is changed where two overlap. The other shape is left exactly as it is.">
-          <option value="auto">Auto — whichever pokes in</option>
-          <option value="active">The active object</option>
-          <option value="others">The other objects</option>
-        </select>
-      </label>
+      <div id="scMore">
+        <div class="scGrid">
+          <button id="scCopy" type="button" title="Copy the selected objects, or the selected faces in Move/Select (Ctrl+C)">Copy</button>
+          <button id="scPaste" type="button" title="Paste as new objects (Ctrl+V)">Paste</button>
+          <button id="scCombine" type="button" title="Join the selected objects into the active one (Ctrl+J)">Combine</button>
+          <button id="scSeparate" type="button" title="Move the selected faces into a new object (P)">Separate</button>
+          <button id="scFaces" type="button" title="Copy the selected faces into a new object">Faces → new</button>
+          <button id="scTwo" type="button" title="Two-sided: export every face twice, front and back">Two-sided</button>
+          <button id="scSubdiv" type="button" title="Split every triangle of the active object into 4">Subdivide</button>
+          <button id="scDim" type="button" title="Dim the other objects while editing one">Dim others</button>
+          <button id="scMove" type="button" title="Move the focused folder, or the selected shapes, into a folder">Move to…</button>
+          <button id="scSave" type="button" title="Download the whole scene as a .json project">Save .json</button>
+          <button id="scOpen" type="button" title="Open a scene .json (replaces the scene) or add .h models">Open…</button>
+          <button id="scRefs" type="button" title="Put the rock and player references back beside the start cube">Reset refs</button>
+          <button id="scNew" type="button" title="Start over with one cube">New scene</button>
+        </div>
+        <label class="cutPick" for="scCombineMode">Combine
+          <select id="scCombineMode" title="How Combine treats the overlap. The other shape is left exactly as it is.">
+            <option value="slide">Slide &amp; trim</option>
+            <option value="delete">Delete hidden faces</option>
+          </select>
+        </label>
+        <label class="cutPick" for="scCut">Which shape
+          <select id="scCut" title="Which shape is changed where two overlap. The other shape is left exactly as it is.">
+            <option value="auto">Auto — whichever pokes in</option>
+            <option value="active">The active object</option>
+            <option value="others">The other objects</option>
+          </select>
+        </label>
+      </div>
       <div class="note" id="scNote"></div>
     </div>
     <div id="shapesPanel" aria-label="Shapes">
@@ -3974,7 +4007,7 @@ function renderScenePanel() {
     const nObj = objectsUnder(node).length;
     const row = document.createElement("div");
     row.className = "objRow folder" + (folderFocus === node.id ? " focus" : "") + (node.hidden || ancestorHidden(node.id) ? " hid" : "");
-    row.style.marginLeft = (depth * 10) + "px";
+    row.style.marginLeft = (depth * 16) + "px";
     row.dataset.kind = "folder";
     row.dataset.id = node.id;
     row.dataset.parent = parentId || "";
@@ -4027,7 +4060,7 @@ function renderScenePanel() {
     const hid = shapeHidden(o);
     const row = document.createElement("div");
     row.className = "objRow" + (i === scene.active ? " active" : "") + (objSel.has(o.id) ? " sel" : "") + (hid ? " hid" : "");
-    row.style.marginLeft = (depth * 10) + "px";
+    row.style.marginLeft = (depth * 16) + "px";
     row.dataset.kind = "object";
     row.dataset.id = o.id;
     row.dataset.parent = parentId || "";
@@ -6780,6 +6813,14 @@ $("folderAskLift").addEventListener("click", () => finishDeleteFolder("lift"));
 $("folderAskDrop").addEventListener("click", () => finishDeleteFolder("drop"));
 $("folderAskCancel").addEventListener("click", () => { folderDeleteId = null; updateUI(); });
 $("folderPickCancel").addEventListener("click", () => { moveEntries = null; updateUI(); });
+//----- Scene More -----||
+$("scMoreBtn").addEventListener("click", () => {
+  const on = !$("scMore").classList.contains("show");
+  $("scMore").classList.toggle("show", on);
+  $("scMoreBtn").classList.toggle("on", on);
+  $("scMoreBtn").setAttribute("aria-expanded", on ? "true" : "false");
+  $("scMoreBtn").textContent = on ? "More ▴" : "More ▾";
+});
 $("scHide").addEventListener("click", cmdHideSelected);
 $("scDim").addEventListener("click", () => {
   dimOthers = !dimOthers;
