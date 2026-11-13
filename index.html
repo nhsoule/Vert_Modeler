@@ -241,6 +241,7 @@
   .scHead { display: flex; gap: 6px; align-items: center; }
   .scHead .ttl { flex: 1; font-weight: 600; font-size: 13px; padding-left: 4px; }
   .scHead #scClose { width: 40px; min-width: 40px; padding: 0; font-size: 18px; }
+  .scHead #scMoreBtn { padding: 0 10px; font-weight: 600; font-size: 12px; min-width: 0; }
   .cutPick { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #c8cad8; padding: 0 2px; }
   .cutPick select { flex: 1; min-height: 32px; font: inherit; font-size: 12px; color: #e8e8ee;
                     background: #2a2c38; border: 1px solid #4a4d5c; border-radius: 8px; padding: 0 6px; }
@@ -251,7 +252,7 @@
     overflow-y: auto; -webkit-overflow-scrolling: touch;
     background: #16171d99; border: 1px solid #3a3d4c; border-radius: 10px; padding: 4px;
   }
-  .scQuick { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; flex: 0 0 auto; }
+  .scQuick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; flex: 0 0 auto; }
   .scQuick button { font-size: 11px; padding: 0 2px; white-space: nowrap; }
   .scQuick #scMoreBtn { font-weight: 600; }
   /* Tree rows a touch shorter so a short laptop can show more names. */
@@ -319,14 +320,7 @@
   #views { position: absolute; right: 6px; top: calc(env(safe-area-inset-top) + 26px);
            display: flex; flex-direction: column; gap: 4px; }
   #views.hide { display: none; }
-  #views button { width: 34px; height: 24px; padding: 0; border: 1px solid #fff2; border-radius: 6px;
-                  background: #1f2029a0; color: #e8e8eecc; font: 600 11px ui-monospace, Menlo, Consolas, monospace;
-                  touch-action: manipulation; }
-  #views button:active { background: #e0b43a; color: #16171d; }
-  #views { align-items: flex-end; }
-  /* ----- Biome Filter -----|| button under the view buttons, its name always shown */
-  #views #biomeBtn { margin-top: 4px; font-size: 14px; }
-  #views #biomeBtn.on { box-shadow: inset 0 0 0 2px #8ec8ff; }
+  /* View-cube and pill styles are at the end of this stylesheet. */
   #biomeName { font: 600 10px ui-monospace, Menlo, Consolas, monospace; color: #fff;
                text-shadow: 0 0 3px #000, 0 0 2px #000; white-space: nowrap; text-align: right;
                pointer-events: none; margin-top: -2px; }
@@ -423,6 +417,189 @@
     opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 20; max-width: 85vw;
   }
   #toast.show { opacity: 1; }
+  /* ----- View Cube + compact view pills -----|| */
+  #views {
+    position: absolute; z-index: 6;
+    right: 6px; top: calc(env(safe-area-inset-top) + 26px);
+    display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+  }
+  #views.hide { display: none; }
+  #viewCubeStage {
+    width: 92px; height: 92px; perspective: 200px;
+    pointer-events: none;
+  }
+  #viewCubeBox {
+    width: 52px; height: 52px; margin: 20px auto 0;
+    position: relative; transform-style: preserve-3d;
+    pointer-events: auto;
+  }
+  #views .vcf {
+    position: absolute; inset: 0;
+    width: 52px; height: 52px; margin: 0; padding: 0;
+    border: 2px solid #e8e8ee; border-radius: 3px;
+    background: #3a3e4cf2; color: #fff;
+    font: 700 13px ui-monospace, Menlo, Consolas, monospace;
+    text-shadow: 0 1px 2px #000;
+    display: flex; align-items: center; justify-content: center;
+    backface-visibility: hidden; -webkit-backface-visibility: hidden;
+    touch-action: manipulation; cursor: pointer;
+  }
+  #views .vcf:active { background: #e0b43a; color: #16171d; }
+  #views .vcf.front  { transform: rotateY(0deg) translateZ(26px); }
+  #views .vcf.back   { transform: rotateY(180deg) translateZ(26px); }
+  #views .vcf.right  { transform: rotateY(90deg) translateZ(26px); }
+  #views .vcf.left   { transform: rotateY(-90deg) translateZ(26px); }
+  #views .vcf.top    { transform: rotateX(90deg) translateZ(26px); }
+  #views .vcf.bottom { transform: rotateX(-90deg) translateZ(26px); }
+  #viewPills {
+    display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px;
+    width: 92px;
+  }
+  #views .viewPill {
+    flex: 1 1 42px; width: auto; height: auto;
+    min-height: 24px; padding: 0 5px;
+    border: 1px solid #fff3; border-radius: 12px;
+    background: #1f2029c8; color: #e8e8eecc;
+    font: 600 10px system-ui, sans-serif;
+    touch-action: manipulation; cursor: pointer;
+  }
+  #views .viewPill.on { background: #e0b43a; color: #16171d; }
+  #views .viewPill.open { box-shadow: inset 0 0 0 2px #8ec8ff; }
+  #views .viewPill:active { filter: brightness(1.2); }
+  #biomeName { font: 600 10px ui-monospace, Menlo, Consolas, monospace; color: #fff;
+               text-shadow: 0 0 3px #000, 0 0 2px #000; white-space: nowrap; text-align: right;
+               pointer-events: none; margin-top: -2px; }
+  #biomeMenu { right: 104px; }
+  #sunMenu { left: auto; right: 104px; }
+
+  /* ----- Folder colours + tree guides -----|| */
+  /* Palette (by folder order, cycling 6): sky, gold, green, rose, violet, teal.
+     Edges are light and backgrounds are darker, so folders differ in lightness as well as hue. */
+  #objList { position: relative; }
+  .objRow { position: relative; border-radius: 8px;
+            border-left: 4px solid var(--folder-edge, transparent);
+            background: var(--folder-bg, transparent);
+            padding-left: 2px; }
+  .objRow.folder { min-height: 36px; }
+  .objRow.folder .nm { font-weight: 700 !important; }
+  .folderIc {
+    width: 14px; min-width: 14px; height: 11px; margin-right: 2px;
+    border: 1.5px solid currentColor; border-radius: 1px 2px 1px 1px;
+    position: relative; display: inline-block; vertical-align: -1px; opacity: 0.9;
+  }
+  .folderIc::before {
+    content: ""; position: absolute; left: -1px; top: -4px;
+    width: 6px; height: 3px; border: 1.5px solid currentColor; border-bottom: 0;
+    border-radius: 2px 2px 0 0; background: transparent;
+  }
+  .objRow .guides {
+    position: absolute; inset: 0 auto 0 0; width: 0; pointer-events: none;
+  }
+  .objRow .guides i {
+    position: absolute; top: 0; bottom: 0; width: 0;
+    border-left: 1px solid #ffffffaa;
+  }
+
+  /* ----- Tree drop indicators (outline + label, not colour alone) -----|| */
+  #objDropLine {
+    position: absolute; left: 8px; right: 8px; height: 0; z-index: 4;
+    border-top: 3px solid #fff;
+    box-shadow: 0 0 0 1px #000, 0 1px 0 0 #e0b43a;
+    pointer-events: none; display: none;
+  }
+  #objDropLine.show { display: block; }
+  #objDropLine::before {
+    content: "▸"; position: absolute; left: -2px; top: -0.72em;
+    color: #fff; font: 800 14px/1 system-ui, sans-serif;
+    text-shadow: 0 0 2px #000, 0 1px 0 #000;
+  }
+  #objDropLine::after {
+    content: attr(data-label); position: absolute; left: 14px; top: -0.85em;
+    color: #16171d; background: #fff; border: 1px solid #000; border-radius: 6px;
+    font: 700 10px system-ui, sans-serif; padding: 0 5px; white-space: nowrap;
+  }
+  #objList.dragging { touch-action: none; }
+  .objRow.drop-into {
+    box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 5px #e0b43a;
+    outline: 2px dashed #fff; outline-offset: -2px;
+  }
+  .objRow.drop-into::after {
+    content: "Into"; position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    font: 700 10px system-ui, sans-serif; color: #16171d; background: #fff;
+    border: 1px solid #000; border-radius: 6px; padding: 1px 5px;
+    pointer-events: none; z-index: 2;
+  }
+
+  /* ----- Combine / Symm option popovers -----|| */
+  .optWrap { position: relative; display: flex; gap: 0; min-width: 0; }
+  .optWrap > button:first-child { flex: 1; min-width: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+  .optWrap .optBtn {
+    flex: 0 0 22px; width: 22px; min-width: 22px; padding: 0;
+    border-top-left-radius: 0; border-bottom-left-radius: 0;
+    font-weight: 700;
+  }
+  .optPop {
+    display: none; position: absolute; z-index: 8;
+    left: 0; bottom: calc(100% + 4px);
+    min-width: 200px; max-width: 260px;
+    padding: 8px; border-radius: 12px;
+    background: #1f2029f2; border: 1px solid #3a3d4c; box-shadow: 0 8px 24px #000a;
+    flex-direction: column; gap: 6px;
+  }
+  .optPop.show { display: flex; }
+  .optPop.down { bottom: auto; top: calc(100% + 4px); }
+  .optPop button.on { font-weight: 700; }
+  .axisPicks { display: flex; gap: 4px; }
+  .axisPicks button { flex: 1; min-height: 32px; font-weight: 700; }
+
+  /* ----- Toolbar groups + tool vs pill sizes -----|| */
+  #toolbar {
+    display: flex; flex-direction: row; flex-wrap: wrap;
+    align-items: flex-start; gap: 2px 0;
+    padding: 2px 6px calc(env(safe-area-inset-bottom) + 6px);
+    background: #1f2029; border-top: 1px solid #2c2e3a;
+  }
+  .tbGroup {
+    display: flex; flex-wrap: wrap; align-items: stretch; gap: 4px;
+    position: relative; flex: 1 1 auto;
+    padding: 13px 6px 2px; margin: 0;
+    border-left: 1px solid #3a3d4c;
+  }
+  .tbGroup:first-child { border-left: 0; padding-left: 0; flex: 2 1 220px; }
+  .tbGroup::before {
+    content: attr(data-label); position: absolute; top: 1px; left: 6px;
+    font: 600 9px/1 system-ui, sans-serif; color: #9a9db0;
+    text-transform: uppercase; letter-spacing: 0.06em; pointer-events: none;
+  }
+  .tbGroup:first-child::before { left: 0; }
+  #toolbar button.tbTool {
+    flex: 1 1 48px; min-width: 44px; min-height: 52px;
+    background: #2a2c38; color: #e8e8ee; border: 0; border-radius: 10px;
+    font: inherit; font-size: 12px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 2px; touch-action: manipulation;
+  }
+  #toolbar button.tbTool .ic { font-size: 19px; line-height: 1; }
+  #toolbar button.tbPill {
+    flex: 0 0 auto; align-self: center;
+    min-width: 44px; min-height: 28px; height: 28px; padding: 0 8px;
+    background: #2a2c38; color: #e8e8ee; border: 0; border-radius: 14px;
+    font: 600 10px system-ui, sans-serif; display: flex; flex-direction: row;
+    align-items: center; justify-content: center; gap: 3px; touch-action: manipulation;
+  }
+  #toolbar button.tbPill .ic { font-size: 12px; }
+  #toolbar button.on { background: #e0b43a; color: #16171d; }
+  #toolbar button:disabled { opacity: 0.35; }
+  #toolbar button:active { filter: brightness(1.3); }
+  #toolbar button.open { box-shadow: inset 0 0 0 2px #8ec8ff; }
+  #toolbar .optWrap { align-self: center; }
+  #toolbar .optWrap .optBtn { min-height: 28px; height: 28px; border-radius: 0 14px 14px 0; }
+  #toolbar .optWrap > button:first-child { border-radius: 14px 0 0 14px; }
+  #toolbar .optPop { min-width: 160px; }
+  .scCombineWrap { display: flex; gap: 0; min-width: 0; }
+  .scCombineWrap #scCombine { flex: 1; min-width: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+  .scCombineWrap .optBtn { flex: 0 0 22px; min-width: 22px; width: 22px; padding: 0;
+                           border-top-left-radius: 0; border-bottom-left-radius: 0; font-weight: 700; }
+
 </style>
 </head>
 <body>
@@ -436,14 +613,23 @@
       <div id="densityText" aria-live="polite"></div>
     </div>
     <div id="views" aria-label="View">
-      <button data-view="front"  title="Front: from −Y, looking +Y">F</button>
-      <button data-view="back"   title="Back: from +Y, looking −Y">B</button>
-      <button data-view="left"   title="Left: from −X, looking +X">L</button>
-      <button data-view="right"  title="Right: from +X, looking −X">R</button>
-      <button data-view="top"    title="Top: from +Z, looking down">T</button>
-      <button data-view="bottom" title="Bottom: from −Z, looking up">D</button>
-      <button data-view="iso"    title="Iso: front-right, from above">I</button>
-      <button id="biomeBtn" type="button" title="Biome screen filter (viewport preview only, never exported)" aria-haspopup="true">◑</button>
+      <div id="viewCubeStage" title="Click a face to snap the view">
+        <div id="viewCubeBox">
+          <button type="button" class="vcf front" data-view="front" title="Front: from −Y, looking +Y">F</button>
+          <button type="button" class="vcf back" data-view="back" title="Back: from +Y, looking −Y">B</button>
+          <button type="button" class="vcf right" data-view="right" title="Right: from +X, looking −X">R</button>
+          <button type="button" class="vcf left" data-view="left" title="Left: from −X, looking +X">L</button>
+          <button type="button" class="vcf top" data-view="top" title="Top: from +Z, looking down">T</button>
+          <button type="button" class="vcf bottom" data-view="bottom" title="Bottom: from −Z, looking up">D</button>
+        </div>
+      </div>
+      <div id="viewPills">
+        <button id="viewIso" type="button" data-view="iso" class="viewPill" title="Iso: front-right, from above">Iso</button>
+        <button id="bPersp" type="button" class="viewPill" title="Perspective or orthographic (flat) view">Persp</button>
+        <button id="bBake" type="button" class="viewPill" aria-haspopup="true" aria-expanded="false" title="Shade and sun direction">Shade</button>
+        <button id="bRock" type="button" class="viewPill" title="Size references: tap to cycle off → rock → rock + player → player"><span id="refIcon">◆︎</span> <span id="refLabel">Rock</span></button>
+        <button id="biomeBtn" type="button" class="viewPill" title="Biome screen filter (viewport preview only, never exported)" aria-haspopup="true">Biome</button>
+      </div>
       <div id="biomeName">None</div>
     </div>
     <div id="biomeMenu" aria-label="Biome filter">
@@ -492,59 +678,52 @@
     <div id="scenePanel" aria-label="Scene">
       <div class="scHead">
         <span class="ttl" id="scTitle">Scene</span>
-        <button id="scShapes" type="button" title="Shapes: add a cube, plane, prism or pyramid (Shift+A)">＋ Shapes</button>
+        <button id="scMoreBtn" type="button" title="More scene actions" aria-expanded="false" aria-controls="scMore">More ▾</button>
         <button id="scClose" type="button" aria-label="Close">×</button>
       </div>
       <div id="objRootDrop">Drop here for scene root</div>
       <div id="objList"></div>
+      <div id="objDropLine" data-label="Insert" aria-hidden="true"></div>
       <div id="folderAsk" class="folderAsk" hidden>
         <div class="note" id="folderAskText"></div>
         <button id="folderAskLift" type="button" title="Remove the folder and leave every shape and subfolder in its parent">Move contents up</button>
         <button id="folderAskDrop" type="button" title="Delete the folder and every shape inside it. Undo brings them back.">Delete contents too</button>
         <button id="folderAskCancel" type="button">Cancel</button>
       </div>
-      <div id="folderPick" class="folderPick" hidden>
-        <div class="note" id="folderPickTitle">Move to folder</div>
-        <div id="folderPickList"></div>
-        <button id="folderPickCancel" type="button">Cancel</button>
-      </div>
       <div class="scQuick">
-        <button id="scHide" type="button" title="Hide / show the selected objects (H)">Hide</button>
         <button id="scRename" type="button" title="Rename the active object (its export name)">Rename</button>
         <button id="scDelete" type="button" title="Delete the selected objects (Delete in Object mode)">Delete</button>
         <button id="scDup" type="button" title="Duplicate the selected objects (Ctrl+D)">Dup</button>
         <button id="scFolder" type="button" title="New folder. Inside the focused folder, or beside the active shape.">Folder</button>
-        <button id="scMoreBtn" type="button" title="More scene actions" aria-expanded="false" aria-controls="scMore">More ▾</button>
+        <div class="scCombineWrap" id="scCombineWrap">
+          <button id="scCombine" type="button" title="Join the selected objects into the active one (Ctrl+J)">Combine</button>
+          <button id="scCombineOpts" class="optBtn" type="button" title="Combine options" aria-expanded="false" aria-haspopup="true" aria-controls="scCombinePop">⋯</button>
+          <div id="scCombinePop" class="optPop" role="dialog" aria-label="Combine options">
+            <label class="cutPick" for="scCombineMode">Combine
+              <select id="scCombineMode" title="How Combine treats the overlap. The other shape is left exactly as it is.">
+                <option value="slide">Slide &amp; trim</option>
+                <option value="delete">Delete hidden faces</option>
+              </select>
+            </label>
+            <label class="cutPick" for="scCut">Which shape
+              <select id="scCut" title="Which shape is changed where two overlap. The other shape is left exactly as it is.">
+                <option value="auto">Auto — whichever pokes in</option>
+                <option value="active">The active object</option>
+                <option value="others">The other objects</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <button id="scSeparate" type="button" title="Move the selected faces into a new object (P)">Separate</button>
       </div>
       <div id="scMore">
         <div class="scGrid">
-          <button id="scCopy" type="button" title="Copy the selected objects, or the selected faces in Move/Select (Ctrl+C)">Copy</button>
-          <button id="scPaste" type="button" title="Paste as new objects (Ctrl+V)">Paste</button>
-          <button id="scCombine" type="button" title="Join the selected objects into the active one (Ctrl+J)">Combine</button>
-          <button id="scSeparate" type="button" title="Move the selected faces into a new object (P)">Separate</button>
-          <button id="scFaces" type="button" title="Copy the selected faces into a new object">Faces → new</button>
           <button id="scTwo" type="button" title="Two-sided: export every face twice, front and back">Two-sided</button>
-          <button id="scSubdiv" type="button" title="Split every triangle of the active object into 4">Subdivide</button>
           <button id="scDim" type="button" title="Dim the other objects while editing one">Dim others</button>
-          <button id="scMove" type="button" title="Move the focused folder, or the selected shapes, into a folder">Move to…</button>
           <button id="scSave" type="button" title="Download the whole scene as a .json project">Save .json</button>
           <button id="scOpen" type="button" title="Open a scene .json (replaces the scene) or add .h models">Open…</button>
-          <button id="scRefs" type="button" title="Put the rock and player references back beside the start cube">Reset refs</button>
           <button id="scNew" type="button" title="Start over with one cube">New scene</button>
         </div>
-        <label class="cutPick" for="scCombineMode">Combine
-          <select id="scCombineMode" title="How Combine treats the overlap. The other shape is left exactly as it is.">
-            <option value="slide">Slide &amp; trim</option>
-            <option value="delete">Delete hidden faces</option>
-          </select>
-        </label>
-        <label class="cutPick" for="scCut">Which shape
-          <select id="scCut" title="Which shape is changed where two overlap. The other shape is left exactly as it is.">
-            <option value="auto">Auto — whichever pokes in</option>
-            <option value="active">The active object</option>
-            <option value="others">The other objects</option>
-          </select>
-        </label>
       </div>
       <div class="note" id="scNote"></div>
     </div>
@@ -602,27 +781,38 @@
     <div id="swatches"></div>
   </div>
   <div id="toolbar">
-    <div class="row">
-      <button id="bMove"  data-mode="move"><span class="ic">✥</span>Move</button>
-      <button id="bSplit" data-mode="split"><span class="ic">✂︎</span>Split</button>
-      <button id="bPaint" data-mode="paint"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.7 3.3a1 1 0 0 0-1.4 0L10 12.6l1.4 1.4 9.3-9.3a1 1 0 0 0 0-1.4zM8.6 13.4c-1.9 0-3.4 1.5-3.4 3.4 0 1.1-.9 2-2 2.2.8 1.1 2.2 1.8 3.7 1.8 2.6 0 4.6-2 4.6-4.6 0-.4-.1-.8-.2-1.2z"/></svg></span>Paint</button>
-      <button id="bExtrude"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5l5 5h-3.2v4.3h-3.6V6.5H7zM3 13.2l4.4-2.4h2.2v1.8H8l-2 1.1 6 3.3 6-3.3-2-1.1h-1.6v-1.8h2.2l4.4 2.4v5.6L12 23.5l-9-4.7zm1.8 2v2.5l6.3 3.3v-2.5zm14.4 0l-6.3 3.3V21l6.3-3.3z"/></svg></span>Extrude</button>
-      <button id="bUndo"><span class="ic">↶︎</span>Undo</button>
-      <button id="bRedo"><span class="ic">↷︎</span>Redo</button>
-      <button id="bDissolve"><span class="ic">⌫︎</span>Dissolve</button>
-      <button id="bRock" title="Size references: tap to cycle off → rock → rock + player → player"><span class="ic" id="refIcon">◆︎</span><span id="refLabel">Rock</span></button>
+    <div class="tbGroup" data-label="Edit">
+      <button id="bMove" class="tbTool" data-mode="move"><span class="ic">✥</span>Move</button>
+      <button id="bSplit" class="tbTool" data-mode="split"><span class="ic">✂︎</span>Split</button>
+      <button id="bPaint" class="tbTool" data-mode="paint"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.7 3.3a1 1 0 0 0-1.4 0L10 12.6l1.4 1.4 9.3-9.3a1 1 0 0 0 0-1.4zM8.6 13.4c-1.9 0-3.4 1.5-3.4 3.4 0 1.1-.9 2-2 2.2.8 1.1 2.2 1.8 3.7 1.8 2.6 0 4.6-2 4.6-4.6 0-.4-.1-.8-.2-1.2z"/></svg></span>Paint</button>
+      <button id="bExtrude" class="tbTool"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5l5 5h-3.2v4.3h-3.6V6.5H7zM3 13.2l4.4-2.4h2.2v1.8H8l-2 1.1 6 3.3 6-3.3-2-1.1h-1.6v-1.8h2.2l4.4 2.4v5.6L12 23.5l-9-4.7zm1.8 2v2.5l6.3 3.3v-2.5zm14.4 0l-6.3 3.3V21l6.3-3.3z"/></svg></span>Extrude</button>
+      <button id="bSelect" class="tbTool" data-mode="select"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h4v2H5v2H3zm6 0h6v2H9zm8 0h4v4h-2V5h-2zM3 9h2v6H3zm16 0h2v6h-2zM3 17h2v2h2v2H3zm16 0h2v4h-4v-2h2zM9 19h6v2H9z"/></svg></span>Select</button>
+      <button id="bFace" class="tbTool" data-mode="face" title="Face pick: tap triangles on the active object. Tap again to unmark. Delete removes them."><span class="ic">△</span>Faces</button>
+      <button id="bFaceDel" class="tbTool" type="button" title="Delete the picked triangles (Delete or Backspace). A mirror twin is removed with its face."><span class="ic">⌫︎</span>Del</button>
+      <button id="bMirror" class="tbPill"><span class="ic">⇋︎</span><span id="mirrorLabel">Mirror X</span></button>
+      <div class="optWrap" id="symWrap">
+        <button id="bSym" class="tbPill" type="button"><span class="ic">⧓</span><span id="symLabel">Symm X</span></button>
+        <button id="bSymOpts" class="tbPill optBtn" type="button" title="Symmetry axis" aria-expanded="false" aria-haspopup="true" aria-controls="symPop">▾</button>
+        <div id="symPop" class="optPop" role="dialog" aria-label="Symmetry axis">
+          <div class="axisPicks">
+            <button type="button" data-axis="x">X</button>
+            <button type="button" data-axis="y">Y</button>
+            <button type="button" data-axis="z">Z</button>
+          </div>
+        </div>
+      </div>
+      <button id="bCoords" class="tbPill" type="button" title="Move gizmo and X/Y/Z readout: Model (object space) or World (scene space)">World</button>
     </div>
-    <div class="row small">
-      <button id="bMirror"><span class="ic">⇋︎</span><span id="mirrorLabel">Mirror X</span></button>
-      <button id="bSym"><span class="ic">⧓</span>Symm</button>
-      <button id="bSelect" data-mode="select"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h4v2H5v2H3zm6 0h6v2H9zm8 0h4v4h-2V5h-2zM3 9h2v6H3zm16 0h2v6h-2zM3 17h2v2h2v2H3zm16 0h2v4h-4v-2h2zM9 19h6v2H9z"/></svg></span>Select</button>
-      <button id="bFace" data-mode="face" title="Face pick: tap triangles on the active object. Tap again to unmark. Delete removes them."><span class="ic">△</span>Faces</button>
-      <button id="bFaceDel" type="button" title="Delete the picked triangles (Delete or Backspace). A mirror twin is removed with its face."><span class="ic">⌫︎</span>Del</button>
-      <button id="bObject" data-mode="object" title="Object mode: select, move, rotate and scale whole objects (Tab)"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l9 5v10l-9 5-9-5V7zm0 2.3L5.2 8 12 11.7 18.8 8zM5 9.7v6.1l6 3.4v-6.2zm14 0l-6 3.3v6.2l6-3.4z"/></svg></span>Object</button>
-      <button id="bBake" aria-haspopup="true" aria-expanded="false" title="Shade and sun direction"><span class="ic">☀︎</span>Shade</button>
-      <button id="bImport"><span class="ic">⇩</span>Import</button>
-      <button id="bExport"><span class="ic">⇪</span>Export</button>
-      <button id="bScene" aria-haspopup="true" title="Scene: the object list, copy, combine, save; ＋ Shapes adds a cube, plane, prism or pyramid"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h4v4H3zm6 1h12v2H9zM3 10h4v4H3zm6 1h12v2H9zm-6 5h4v4H3zm6 1h12v2H9z"/></svg></span>Scene</button>
+    <div class="tbGroup" data-label="Scene">
+      <button id="bObject" class="tbTool" data-mode="object" title="Object mode: select, move, rotate and scale whole objects (Tab)"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l9 5v10l-9 5-9-5V7zm0 2.3L5.2 8 12 11.7 18.8 8zM5 9.7v6.1l6 3.4v-6.2zm14 0l-6 3.3v6.2l6-3.4z"/></svg></span>Object</button>
+      <button id="bImport" class="tbTool"><span class="ic">⇩</span>Import</button>
+      <button id="bExport" class="tbTool"><span class="ic">⇪</span>Export</button>
+      <button id="bScene" class="tbTool" aria-haspopup="true" title="Scene: the object list, combine, save"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h4v4H3zm6 1h12v2H9zM3 10h4v4H3zm6 1h12v2H9zm-6 5h4v4H3zm6 1h12v2H9z"/></svg></span>Scene</button>
+      <button id="bShapes" class="tbTool" type="button" title="Shapes: add a cube, plane, prism or pyramid (Shift+A)">＋ Shapes</button>
+    </div>
+    <div class="tbGroup" data-label="History">
+      <button id="bUndo" class="tbTool"><span class="ic">↶︎</span>Undo</button>
+      <button id="bRedo" class="tbTool"><span class="ic">↷︎</span>Redo</button>
     </div>
   </div>
 </div>
@@ -1091,6 +1281,18 @@ function mat4Perspective(fovy, aspect, near, far) {
   m[14] = (2 * far * near) / (near - far);
   return m;
 }
+// Symmetric ortho box. halfH is half the visible world height at the target.
+function mat4Ortho(halfH, aspect, near, far) {
+  const halfW = halfH * aspect, m = new Float32Array(16);
+  m[0] = 1 / halfW;
+  m[5] = 1 / halfH;
+  m[10] = -2 / (far - near);
+  m[14] = -(far + near) / (far - near);
+  m[15] = 1;
+  return m;
+}
+// Visible world height that matches the current perspective framing at cam.dist.
+const orthoHeight = () => 2 * cam.dist * Math.tan(FOV_Y / 2);
 
 // Camera matrix looking from eye toward target (same as glm::lookAt). Passing up = +Z
 // makes the camera treat Z as "up", so we can draw the Z-up world directly without the
@@ -1223,7 +1425,7 @@ function splitEdge(a, b, t = 0.5) {
 // The mirror plane passes through the origin, perpendicular to the chosen axis:
 //   "x" -> plane x = 0, left/right symmetry     "y" -> plane y = 0, forward/back symmetry
 // (A function declaration, not an arrow const, so makeCube() can use it before this line runs.)
-function axisIndex(axis) { return axis === "x" ? 0 : axis === "y" ? 1 : -1; }
+function axisIndex(axis) { return axis === "x" ? 0 : axis === "y" ? 1 : axis === "z" ? 2 : -1; }
 
 // Reflect a point across the mirror plane (flip the sign of one coordinate).
 function reflect(p, ax) { const q = p.slice(); q[ax] = -q[ax]; return q; }
@@ -1710,7 +1912,7 @@ const MERGE_PX = 10, MERGE_MAX_EDGE = 0.25;
 
 function mergeTol(v, link) {
   const p = getVert(v), s = project(p);
-  let tol = s ? MERGE_PX * 2 * s.depth * Math.tan(FOV_Y / 2) / viewH : 0;
+  let tol = s ? MERGE_PX * 2 * worldPerPx(s.depth) : 0;
   for (const x of link) tol = Math.min(tol, MERGE_MAX_EDGE * v3.len(v3.sub(getVert(x), p)));
   return tol;
 }
@@ -2148,7 +2350,7 @@ function load() {
     } else if (validMesh(d.mesh)) {               // v2: one model -> a scene of one object
       upgradeColors(d.mesh);
       mesh = d.mesh;
-      if (mesh.mirror !== "x" && mesh.mirror !== "y") mesh.mirror = null;
+      if (mesh.mirror !== "x" && mesh.mirror !== "y" && mesh.mirror !== "z") mesh.mirror = null;
       // Always re-pair twins from positions instead of trusting the saved partner list:
       // an older save can carry a stale or empty list, and then twins silently don't move.
       pairMirror(mesh);
@@ -2240,11 +2442,20 @@ let dimOthers = true;            // dim the other objects while editing one
 let objSnap = true;              // Object mode: move 0.125, rotate 15°, scale 0.125 steps
 let objClipboard = null;         // Copy: JSON list of objects (also kept in localStorage)
 let swapDepth = 0;               // > 0 while withMesh() has swapped `mesh` out
+let coordSpace = "world";         // "world" | "model": gizmo/readout space
+let camOrtho = false;             // orthographic (flat) view
+let symmAxis = "x";               // axis the Symm tool (and Mirror, when on) uses
 try {
   dimOthers = localStorage.getItem(KEY_PREFIX + "dim") !== "0";
   objSnap = localStorage.getItem(KEY_PREFIX + "objsnap") !== "0";
+  const cs = localStorage.getItem(KEY_PREFIX + "coords");
+  if (cs === "model" || cs === "world") coordSpace = cs;
+  camOrtho = localStorage.getItem(KEY_PREFIX + "ortho") === "1";
+  const sa = localStorage.getItem(KEY_PREFIX + "symmaxis");
+  if (sa === "x" || sa === "y" || sa === "z") symmAxis = sa;
 } catch (e) { /* storage blocked */ }
 const OBJ_ROT_STEP = 15 * Math.PI / 180;
+const spaceOff = () => coordSpace === "world" ? frameOff : [0, 0, 0];
 
 const newObjId = () => "o" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 function objs() {
@@ -2353,7 +2564,7 @@ function readSceneObjects(list) {
     if (!r || !validMesh(r.mesh)) continue;
     const m = { positions: r.mesh.positions.map(Number), tris: r.mesh.tris.slice(),
                 colors: r.mesh.colors.map(c => Array.isArray(c) ? c.slice(0, 3) : c), partner: [],
-                mirror: r.mesh.mirror === "x" || r.mesh.mirror === "y" ? r.mesh.mirror : null };
+                mirror: r.mesh.mirror === "x" || r.mesh.mirror === "y" || r.mesh.mirror === "z" ? r.mesh.mirror : null };
     if (m.positions.some(v => !isFinite(v))) continue;
     upgradeColors(m);
     pairMirror(m);
@@ -2620,7 +2831,12 @@ function deleteFolder(id, mode) {
   return { ok: true, moved: kids.length };
 }
 // Returns "ok", "there", "into-self", "missing" or "empty". Already-there is not an undo step.
-function moveItems(entries, destId) {
+function destParent(dest) {
+  if (dest == null) return null;
+  if (typeof dest === "string") return dest;
+  return dest.parent || null;
+}
+function moveItems(entries, dest) {
   ensureTree();
   const skip = new Set();
   entries = (entries || []).filter(e => e && (e.kind === "object" || e.kind === "folder") && e.id);
@@ -2634,21 +2850,38 @@ function moveItems(entries, destId) {
     return true;
   });
   if (!entries.length) return "empty";
-  if (destId && !findFolderNode(destId)) return "missing";
+  const parentId = destParent(dest);
+  const into = typeof dest === "string" || !!(dest && dest.into);
+  if (parentId && !findFolderNode(parentId)) return "missing";
   for (const e of entries) {
-    if (e.kind === "folder" && destId && (e.id === destId || folderContains(e.id, "folder", destId))) return "into-self";
+    if (e.kind === "folder" && parentId && (e.id === parentId || folderContains(e.id, "folder", parentId))) return "into-self";
   }
-  const destKey = destId || null;
-  if (entries.every(e => parentIdOf(e.kind, e.id) === destKey)) return "there";
+  const destList = childList(parentId);
+  let index = (dest && typeof dest === "object" && dest.index != null) ? dest.index : destList.length;
+  if (index < 0) index = 0;
+  if (index > destList.length) index = destList.length;
+  // "Already there": dropping into a folder they all already live in, with no explicit index.
+  if (into && entries.every(e => parentIdOf(e.kind, e.id) === parentId) && !(dest && dest.index != null)) return "there";
+  // Reorder no-op: every item already sits at the requested span.
+  if (!into && entries.length) {
+    const ids = entries.map(e => e.kind + ":" + e.id).join(",");
+    const at = destList.slice(Math.max(0, index - entries.length), index).map(n => n.kind + ":" + n.id).join(",");
+    if (ids === at && entries.every(e => parentIdOf(e.kind, e.id) === parentId)) return "there";
+  }
   pushUndo();
   const locs = [];
   for (const e of entries) { const loc = locate(e.kind, e.id); if (loc) locs.push(loc); }
-  locs.sort((a, b) => b.index - a.index);
+  let adjust = 0;
+  for (const loc of locs) if (loc.list === destList && loc.index < index) adjust++;
+  locs.sort((a, b) => (a.list === b.list ? b.index - a.index : 0));
   const taken = [];
   for (const loc of locs) taken.push(loc.list.splice(loc.index, 1)[0]);
   taken.reverse();
-  childList(destId).push(...taken);
-  if (destId) { const f = findFolderNode(destId); if (f) f.open = true; }
+  index -= adjust;
+  if (index < 0) index = 0;
+  if (index > destList.length) index = destList.length;
+  destList.splice(index, 0, ...taken);
+  if (parentId) { const f = findFolderNode(parentId); if (f) f.open = true; }
   sceneVersion++;
   save();
   updateUI();
@@ -2768,14 +3001,18 @@ function spawnPos() {
 function keepMirrorIfSymmetric(m) {
   if (!m.mirror) { pairMirror(m); return; }
   if (!pairMirror(m)) return;
-  m.mirror = m.mirror === "x" ? "y" : "x";
-  if (!pairMirror(m)) return;
+  const order = ["x", "y", "z"];
+  const i0 = Math.max(0, order.indexOf(m.mirror));
+  for (let k = 1; k < 3; k++) {
+    m.mirror = order[(i0 + k) % 3];
+    if (!pairMirror(m)) return;
+  }
   m.mirror = null;
   pairMirror(m);
 }
 // Import: guess a mirror axis from the shape (X first, then Y, else off).
 function detectMirror(m) {
-  for (const ax of ["x", "y"]) { m.mirror = ax; if (!pairMirror(m)) return; }
+  for (const ax of ["x", "y", "z"]) { m.mirror = ax; if (!pairMirror(m)) return; }
   m.mirror = null;
   pairMirror(m);
 }
@@ -3815,7 +4052,7 @@ function applyTypedObj(axis, scale, rotate) {
     if (Math.abs(f - 1) < 1e-9) return;
     pushUndo(); applyObjScale(starts, c, [axis], f);
   } else {
-    const cur = c[axis] + frameOff[axis];
+    const cur = c[axis] + spaceOff()[axis];
     if (Math.abs(cur - n) < 1e-9) return;
     pushUndo(); applyObjMove(starts, axis, n - cur);
   }
@@ -3854,9 +4091,10 @@ function cmdMoveSelection() {
   if (folderFocus && findFolderNode(folderFocus)) openMovePicker([{ kind: "folder", id: folderFocus }]);
   else openMovePicker([...objSel].map(id => ({ kind: "object", id })));
 }
-function reportMove(r, destId) {
-  const where = destId ? folderPath(destId) : "Scene root";
-  if (r === "ok") toast("Moved to " + where);
+function reportMove(r, dest) {
+  const parentId = destParent(dest);
+  const where = parentId ? folderPath(parentId) : "Scene root";
+  if (r === "ok") toast(dest && dest.into ? "Moved into " + where : "Moved to " + where);
   else if (r === "there") toast("Already in " + where);
   else if (r === "into-self") toast("A folder can't move into itself");
   else if (r !== "empty") toast("Can't move there");
@@ -3888,8 +4126,10 @@ function finishDeleteFolder(mode) {
   else updateUI();
 }
 function renderFolderPrompts() {
-  const ask = $("folderAsk"), pick = $("folderPick");
-  if (!ask || !pick) return;
+  const ask = $("folderAsk");
+  if (!ask) return;
+  const pick = $("folderPick");
+  if (pick) pick.hidden = true;
   const node = folderDeleteId && findFolderNode(folderDeleteId);
   ask.hidden = !node;
   if (node) {
@@ -3903,6 +4143,7 @@ function renderFolderPrompts() {
       ? "Can't delete every object"
       : "Delete the folder and every shape inside it. Undo brings them back.";
   }
+  if (!pick) return;
   pick.hidden = !moveEntries;
   if (!moveEntries) return;
   const one = moveEntries.length === 1 ? moveEntries[0] : null;
@@ -3932,36 +4173,131 @@ function renderFolderPrompts() {
     box.appendChild(b);
   }
 }
+//----- Scene Tree Drag -----||
+// Drag any row (not the eye / expand / checkbox) to move it. Mouse: 8 px slop.
+// Touch: a short hold starts the drag so the list can still be scrolled.
+const FOLDER_PALETTE = [
+  { name: "sky",    bg: "#1a3358cc", edge: "#c5e4ff" },
+  { name: "gold",   bg: "#5a4518cc", edge: "#ffe08a" },
+  { name: "green",  bg: "#14351ecc", edge: "#9fefb0" },
+  { name: "rose",   bg: "#5a2030cc", edge: "#ffc0d0" },
+  { name: "violet", bg: "#2a1e4ccc", edge: "#e0d0ff" },
+  { name: "teal",   bg: "#0e3838cc", edge: "#b8fff5" },
+];
+function folderColorMap() {
+  const map = new Map();
+  let n = 0;
+  walkTree(scene.tree, (node) => { if (node.kind === "folder") map.set(node.id, n++); });
+  return map;
+}
+function paintFolderRow(row, depth, colorIdx) {
+  if (colorIdx != null && colorIdx >= 0) {
+    const pal = FOLDER_PALETTE[colorIdx % FOLDER_PALETTE.length];
+    row.style.setProperty("--folder-edge", pal.edge);
+    row.style.setProperty("--folder-bg", pal.bg);
+  }
+  if (depth > 0) {
+    const g = document.createElement("span");
+    g.className = "guides";
+    for (let d = 1; d <= depth; d++) {
+      const i = document.createElement("i");
+      i.style.left = (6 + (d - 1) * 14) + "px";
+      g.appendChild(i);
+    }
+    row.appendChild(g);
+  }
+  row.style.paddingLeft = (6 + depth * 14) + "px";
+}
 let outlineDrag = null;
 function clearDropMarks() {
   const root = $("objRootDrop");
   if (root) root.classList.remove("drop", "show");
   const list = $("objList");
-  if (list && list.querySelectorAll) for (const row of list.querySelectorAll(".objRow")) row.classList.remove("drop");
+  if (list) {
+    list.classList.remove("dragging");
+    for (const row of list.querySelectorAll(".objRow")) row.classList.remove("drop", "drop-into");
+  }
+  const line = $("objDropLine");
+  if (line) line.classList.remove("show");
+}
+function destFromPoint(x, y) {
+  const el = document.elementFromPoint(x, y);
+  if (!el || !el.closest) return undefined;
+  if (el.closest("#objRootDrop")) return { parent: null, index: 0, into: false };
+  const row = el.closest(".objRow");
+  if (!row) {
+    if (el.closest("#objList") || el.closest("#scenePanel")) return { parent: null, index: Infinity, into: false };
+    return undefined;
+  }
+  const r = row.getBoundingClientRect();
+  const yRel = (y - r.top) / Math.max(1, r.height);
+  const parent = row.dataset.parent || null;
+  const index = +row.dataset.index;
+  if (row.dataset.kind === "folder" && yRel >= 0.28 && yRel <= 0.72) {
+    return { parent: row.dataset.id, index: Infinity, into: true, row };
+  }
+  if (yRel < (row.dataset.kind === "folder" ? 0.28 : 0.5)) {
+    return { parent, index, into: false, row, place: "before" };
+  }
+  return { parent, index: index + 1, into: false, row, place: "after" };
 }
 function markDrop(x, y) {
   clearDropMarks();
   const root = $("objRootDrop");
   if (root) root.classList.add("show");
-  const el = document.elementFromPoint(x, y);
-  if (!el || !el.closest) return;
-  if (el.closest("#objRootDrop")) { if (root) root.classList.add("drop"); return; }
-  const row = el.closest(".objRow");
-  if (row) row.classList.add("drop");
+  const list = $("objList");
+  if (list) list.classList.add("dragging");
+  const dest = destFromPoint(x, y);
+  const line = $("objDropLine");
+  if (!dest) return;
+  if (root && !dest.row && dest.parent == null) { root.classList.add("drop"); return; }
+  if (dest.into && dest.row) { dest.row.classList.add("drop-into"); return; }
+  if (line && dest.row) {
+    const panel = $("scenePanel").getBoundingClientRect();
+    const r = dest.row.getBoundingClientRect();
+    line.style.top = ((dest.place === "before" ? r.top : r.bottom) - panel.top) + "px";
+    line.dataset.label = dest.parent ? "Insert" : "Scene root";
+    line.classList.add("show");
+  }
 }
-function destFromPoint(x, y) {
-  const el = document.elementFromPoint(x, y);
-  if (!el || !el.closest) return undefined;
-  if (el.closest("#objRootDrop")) return null;
-  const row = el.closest(".objRow");
-  if (!row) return el.closest("#objList") ? null : undefined;
-  if (row.dataset.kind === "folder") return row.dataset.id;
-  return row.dataset.parent || null;
+function autoScrollList(y) {
+  const list = $("objList");
+  if (!list) return;
+  const r = list.getBoundingClientRect(), zone = 28;
+  if (y < r.top + zone) list.scrollTop -= 8;
+  else if (y > r.bottom - zone) list.scrollTop += 8;
 }
-function bindGrip(btn, kind, id) {
-  const end = (e) => {
+function bindRowDrag(row, kind, id) {
+  const startDrag = (d) => {
+    if (d.started) return;
+    d.started = true;
+    if (d.hold) { clearTimeout(d.hold); d.hold = 0; }
+    if (d.row) d.row.classList.add("dragging");
+    try { d.row.setPointerCapture(d.pid); } catch (err) { /* already released */ }
+  };
+  const onMove = (e) => {
     const d = outlineDrag;
     if (!d || d.pid !== e.pointerId) return;
+    const dist = Math.hypot(e.clientX - d.x, e.clientY - d.y);
+    if (!d.started) {
+      if (d.touch) {
+        if (dist > 8) { if (d.hold) clearTimeout(d.hold); outlineDrag = null; }
+        return;
+      }
+      if (dist < 8) return;
+      startDrag(d);
+    }
+    if (e.cancelable) e.preventDefault();
+    markDrop(e.clientX, e.clientY);
+    autoScrollList(e.clientY);
+  };
+  const onEnd = (e) => {
+    const d = outlineDrag;
+    if (!d || d.pid !== e.pointerId) return;
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onEnd);
+    window.removeEventListener("pointercancel", onEnd);
+    if (d.hold) clearTimeout(d.hold);
     const started = d.started;
     outlineDrag = null;
     clearDropMarks();
@@ -3971,46 +4307,40 @@ function bindGrip(btn, kind, id) {
     if (dest === undefined) return;
     reportMove(moveItems(entriesFor(kind, id), dest), dest);
   };
-  btn.addEventListener("pointerdown", (e) => {
+  row.addEventListener("pointerdown", (e) => {
     if (e.button) return;
-    e.preventDefault();
-    e.stopPropagation();
-    btn.setPointerCapture(e.pointerId);
-    outlineDrag = { kind, id, x: e.clientX, y: e.clientY, pid: e.pointerId, started: false, row: btn.closest(".objRow") };
-  });
-  btn.addEventListener("pointermove", (e) => {
-    const d = outlineDrag;
-    if (!d || d.pid !== e.pointerId) return;
-    if (!d.started && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
-    d.started = true;
-    if (d.row) d.row.classList.add("dragging");
-    markDrop(e.clientX, e.clientY);
-  });
-  btn.addEventListener("pointerup", end);
-  btn.addEventListener("pointercancel", (e) => {
-    if (!outlineDrag || outlineDrag.pid !== e.pointerId) return;
-    outlineDrag = null;
-    clearDropMarks();
+    if (e.target.closest && e.target.closest(".eye, .tw, .ck")) return;
+    const isTouch = e.pointerType === "touch";
+    outlineDrag = { kind, id, x: e.clientX, y: e.clientY, pid: e.pointerId, started: false, row, hold: 0, touch: isTouch };
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onEnd);
+    window.addEventListener("pointercancel", onEnd);
+    if (isTouch) {
+      outlineDrag.hold = setTimeout(() => { if (outlineDrag && outlineDrag.pid === e.pointerId) startDrag(outlineDrag); }, 350);
+    }
   });
 }
 function renderScenePanel() {
   const el = $("objList");
   el.textContent = "";
   ensureTree();
-  const addRow = (nodes, depth, parentId) => {
-    for (const node of nodes) {
-      if (node.kind === "folder") addFolderRow(node, depth, parentId);
-      else addObjectRow(node.id, depth, parentId);
-    }
+  const cmap = folderColorMap();
+  const addRow = (nodes, depth, parentId, parentColor) => {
+    (nodes || []).forEach((node, index) => {
+      if (node.kind === "folder") addFolderRow(node, depth, parentId, index);
+      else addObjectRow(node.id, depth, parentId, index, parentColor);
+    });
   };
-  const addFolderRow = (node, depth, parentId) => {
+  const addFolderRow = (node, depth, parentId, index) => {
     const nObj = objectsUnder(node).length;
+    const colorIdx = cmap.has(node.id) ? cmap.get(node.id) : 0;
     const row = document.createElement("div");
     row.className = "objRow folder" + (folderFocus === node.id ? " focus" : "") + (node.hidden || ancestorHidden(node.id) ? " hid" : "");
-    row.style.marginLeft = (depth * 16) + "px";
     row.dataset.kind = "folder";
     row.dataset.id = node.id;
     row.dataset.parent = parentId || "";
+    row.dataset.index = String(index);
+    paintFolderRow(row, depth, colorIdx);
     const tw = document.createElement("button");
     tw.className = "tw"; tw.type = "button";
     tw.textContent = node.open ? "▾" : "▸";
@@ -4023,47 +4353,41 @@ function renderScenePanel() {
     eye.textContent = folderHid ? "○" : "◉";
     eye.title = folderHid ? "Show everything in this folder" : "Hide everything in this folder";
     eye.addEventListener("click", () => toggleFolderHidden(node.id));
+    const ic = document.createElement("span");
+    ic.className = "folderIc";
     const nm = document.createElement("button");
     nm.className = "nm"; nm.type = "button";
-    nm.textContent = node.name + " ";
+    nm.appendChild(ic);
+    nm.appendChild(document.createTextNode(" " + node.name + " "));
     const small = document.createElement("small");
     small.textContent = nObj + (nObj === 1 ? " shape" : " shapes");
     nm.appendChild(small);
-    nm.title = "Folder. Rename and Delete use this folder while it is focused.";
-    nm.addEventListener("click", () => { folderFocus = node.id; updateUI(); });
-    const all = document.createElement("button");
-    all.className = "all"; all.type = "button";
-    all.textContent = "All";
-    all.title = "Select every shape in this folder";
-    all.addEventListener("click", () => {
+    nm.title = "Select every shape in this folder. Rename and Delete use it while it is focused.";
+    nm.addEventListener("click", () => {
+      if (outlineDrag && outlineDrag.started) return;
+      folderFocus = node.id;
       const n = selectFolderContents(node.id);
+      if (!n) updateUI();
       toast(n ? "Selected " + n + " in " + node.name : "Folder is empty");
     });
-    const mv = document.createElement("button");
-    mv.className = "mv"; mv.type = "button";
-    mv.textContent = "To";
-    mv.title = "Move this folder into another folder";
-    mv.addEventListener("click", () => openMovePicker([{ kind: "folder", id: node.id }]));
-    const grip = document.createElement("button");
-    grip.className = "grip"; grip.type = "button";
-    grip.textContent = "⋮";
-    grip.title = "Drag into a folder, or onto Scene root";
-    bindGrip(grip, "folder", node.id);
-    row.append(tw, eye, nm, all, mv, grip);
+    row.append(tw, eye, nm);
+    bindRowDrag(row, "folder", node.id);
     el.appendChild(row);
-    if (node.open) addRow(node.children, depth + 1, node.id);
+    if (node.open) addRow(node.children, depth + 1, node.id, colorIdx);
   };
-  const addObjectRow = (id, depth, parentId) => {
+  const addObjectRow = (id, depth, parentId, index, colorIdx) => {
     const o = objById(id);
     if (!o) return;
     const i = scene.objects.indexOf(o);
     const hid = shapeHidden(o);
+    const selected = objSel.has(o.id);
     const row = document.createElement("div");
-    row.className = "objRow" + (i === scene.active ? " active" : "") + (objSel.has(o.id) ? " sel" : "") + (hid ? " hid" : "");
-    row.style.marginLeft = (depth * 16) + "px";
+    row.className = "objRow" + (selected && i === scene.active ? " active" : "") + (selected ? " sel" : "") + (hid ? " hid" : "");
     row.dataset.kind = "object";
     row.dataset.id = o.id;
     row.dataset.parent = parentId || "";
+    row.dataset.index = String(index);
+    paintFolderRow(row, depth, colorIdx);
     const eye = document.createElement("button");
     eye.className = "eye"; eye.type = "button";
     eye.textContent = hid ? "○" : "◉";
@@ -4079,46 +4403,35 @@ function renderScenePanel() {
     small.textContent = (o.mesh.tris.length / 3) + "▵" + (o.twoSided ? " ×2" : "");
     nm.appendChild(small);
     nm.title = "Make active (edit this one)";
-    nm.addEventListener("click", () => showObject(i));
+    nm.addEventListener("click", () => { if (!(outlineDrag && outlineDrag.started)) showObject(i); });
     const ck = document.createElement("button");
-    ck.className = "ck" + (objSel.has(o.id) ? " on" : ""); ck.type = "button";
-    ck.textContent = objSel.has(o.id) ? "✓" : "";
+    ck.className = "ck" + (selected ? " on" : ""); ck.type = "button";
+    ck.textContent = selected ? "✓" : "";
     ck.title = "Select (for Combine, Duplicate, Copy, Export)";
     ck.addEventListener("click", () => {
-      if (i === scene.active) { if (objSel.size > 1) objTap(i); }
+      if (i === scene.active && selected) { if (objSel.size > 1) objTap(i); else objSel.delete(o.id); }
       else if (objSel.has(o.id)) objSel.delete(o.id);
-      else { o.hidden = false; revealObject(o.id); objSel.add(o.id); sceneVersion++; }
+      else { o.hidden = false; revealObject(o.id); objSel.add(o.id); if (!objSel.has(activeObj().id) || !selected) { /* keep last active */ } sceneVersion++; }
       updateUI();
     });
-    const mv = document.createElement("button");
-    mv.className = "mv"; mv.type = "button";
-    mv.textContent = "To";
-    mv.title = "Move to folder";
-    mv.addEventListener("click", () => openMovePicker(entriesFor("object", o.id)));
-    const grip = document.createElement("button");
-    grip.className = "grip"; grip.type = "button";
-    grip.textContent = "⋮";
-    grip.title = "Drag into a folder, or onto Scene root";
-    bindGrip(grip, "object", o.id);
-    row.append(eye, nm, ck, mv, grip);
+    row.append(eye, nm, ck);
+    bindRowDrag(row, "object", o.id);
     el.appendChild(row);
   };
-  addRow(scene.tree, 0, null);
+  addRow(scene.tree, 0, null, null);
   renderFolderPrompts();
   const sel = objSelList().length, faces = editMode() ? selection().length >= 3 : false;
   const nF = countAllFolders();
   $("scTitle").textContent = `Scene · ${scene.objects.length}`;
   $("scCombine").disabled = sel < 2;
   $("scSeparate").disabled = !faces;
-  $("scFaces").disabled = !faces;
-  $("scPaste").disabled = !clipboardText();
   const folderOn = !!(folderFocus && findFolderNode(folderFocus));
-  $("scDelete").disabled = folderOn ? false : sel >= scene.objects.length;
+  $("scDelete").disabled = folderOn ? false : (sel === 0 || sel >= scene.objects.length);
   $("scTwo").classList.toggle("on", !!activeObj().twoSided);
   $("scDim").classList.toggle("on", dimOthers);
   const tris = scene.objects.reduce((n, o) => n + (shapeHidden(o) ? 0 : o.mesh.tris.length / 3 * (o.twoSided ? 2 : 1)), 0);
-  $("scNote").textContent = `Active: ${activeObj().name} · ${sel} selected · ${tris} tris visible`
-    + (nF ? ` · ${nF} folder${nF === 1 ? "" : "s"}` : "");
+  $("scNote").textContent = (objSel.size ? `Active: ${activeObj().name} · ${sel} selected` : "Nothing selected")
+    + ` · ${tris} tris visible` + (nF ? ` · ${nF} folder${nF === 1 ? "" : "s"}` : "");
 }
 
 
@@ -4466,9 +4779,16 @@ function camEye() {
 function updateCamera() {
   // Near plane follows the zoom so close-ups aren't clipped (1% of the orbit distance).
   const near = Math.max(0.0005, Math.min(0.05, cam.dist * 0.01));
-  const proj = mat4Perspective(FOV_Y, viewW / viewH, near, 200);
+  const halfH = orthoHeight() / 2;
+  const proj = camOrtho
+    ? mat4Ortho(halfH, viewW / viewH, -200, 200)
+    : mat4Perspective(FOV_Y, viewW / viewH, near, 200);
   const view = mat4LookAt(camEye(), cam.target, UP);
   viewProj = mat4Multiply(proj, view);
+}
+function viewDepth(p) {
+  const eye = camEye(), fwd = v3.norm(v3.sub(cam.target, eye));
+  return v3.dot(v3.sub(p, eye), fwd);
 }
 
 // World point -> screen position in CSS px. Returns null if behind the camera.
@@ -4478,7 +4798,8 @@ function project(p) {
   const y = m[1]*p[0] + m[5]*p[1] + m[9]*p[2]  + m[13];
   const w = m[3]*p[0] + m[7]*p[1] + m[11]*p[2] + m[15];
   if (w <= 1e-6) return null;
-  return { x: (x / w * 0.5 + 0.5) * viewW, y: (1 - (y / w * 0.5 + 0.5)) * viewH, depth: w };
+  return { x: (x / w * 0.5 + 0.5) * viewW, y: (1 - (y / w * 0.5 + 0.5)) * viewH,
+           depth: camOrtho ? viewDepth(p) : w };
 }
 
 // Screen position (CSS px) -> ray from the eye into the scene.
@@ -4487,8 +4808,13 @@ function screenRay(sx, sy) {
   const fwd = v3.norm(v3.sub(cam.target, eye));
   const right = v3.norm(v3.cross(fwd, UP));
   const up = v3.cross(right, fwd);
-  const t = Math.tan(FOV_Y / 2);
   const nx = (sx / viewW) * 2 - 1, ny = 1 - (sy / viewH) * 2;   // -1..1
+  if (camOrtho) {
+    const hh = orthoHeight() / 2, hw = hh * viewW / viewH;
+    const origin = v3.add(eye, v3.add(v3.scale(right, nx * hw), v3.scale(up, ny * hh)));
+    return { origin, dir: fwd, fwd };
+  }
+  const t = Math.tan(FOV_Y / 2);
   const dir = v3.norm(v3.add(fwd, v3.add(v3.scale(right, nx * t * viewW / viewH), v3.scale(up, ny * t))));
   return { origin: eye, dir, fwd };
 }
@@ -4504,7 +4830,7 @@ function panBy(dxPx, dyPx, depth = cam.dist) {
   const fwd = v3.norm(v3.sub(cam.target, eye));
   const right = v3.norm(v3.cross(fwd, UP));
   const up = v3.cross(right, fwd);
-  const k = 2 * depth * Math.tan(FOV_Y / 2) / viewH;          // world units per CSS px
+  const k = camOrtho ? orthoHeight() / viewH : 2 * depth * Math.tan(FOV_Y / 2) / viewH;
   cam.target = v3.add(cam.target, v3.add(v3.scale(right, -dxPx * k), v3.scale(up, dyPx * k)));
 }
 // Depth (along the view direction) of the model surface under a screen point, or the
@@ -4652,7 +4978,7 @@ function occluded(eye, p, skip) {
 
 // true/false per vertex, from the cache when nothing changed.
 function vertVisibility() {
-  const key = [cam.yaw, cam.pitch, cam.dist, ...cam.target, viewW, viewH].join(",") + "|" +
+  const key = [cam.yaw, cam.pitch, cam.dist, ...cam.target, viewW, viewH, camOrtho ? "o" : "p"].join(",") + "|" +
               mesh.positions.join(",") + "|" + mesh.tris.join(",");
   if (visCache.key === key) return visCache.vis;
   updateCamera();                                  // project() must use this exact camera
@@ -4698,7 +5024,7 @@ function pickVertex(sx, sy) {
 }
 
 // World length of one CSS pixel at view depth w (w = distance along the camera's view axis).
-const worldPerPx = (w) => 2 * w * Math.tan(FOV_Y / 2) / viewH;
+const worldPerPx = (w) => camOrtho ? orthoHeight() / viewH : 2 * w * Math.tan(FOV_Y / 2) / viewH;
 
 // The selected vertex's three axis handles, in world and screen space.
 // Each: { axis, tipW (world), s0/s1 (screen origin/tip), visible, locked }.
@@ -5414,8 +5740,14 @@ function stepCamAnim() {
   cam.pitch = camAnim.p0 + (camAnim.p1 - camAnim.p0) * k;
   if (t >= 1) camAnim = null;
 }
-for (const b of document.querySelectorAll("#views button[data-view]"))
+for (const b of document.querySelectorAll("#views [data-view]"))
   b.addEventListener("click", (e) => { e.stopPropagation(); setView(b.dataset.view); });
+function updateViewCube() {
+  const box = $("viewCubeBox");
+  if (!box) return;
+  const rad = 180 / Math.PI;
+  box.style.transform = "rotateX(" + (-cam.pitch * rad) + "deg) rotateY(" + (-cam.yaw * rad) + "deg)";
+}
 
 
 //----- Taps + Clean Preview -----||
@@ -5465,10 +5797,18 @@ function paintAt(x, y) {
 }
 
 // Empty-space tap: deselect now; if it's the second quick tap, go to clean preview.
+function clearObjSelection() {
+  objSel = new Set();
+  refSel = null;
+  folderFocus = null;
+  meshDirty = true;
+  updateUI();
+}
 function emptyTap(x, y, trulyEmpty) {
   const now = performance.now(), l = lastEmptyTap;
   if (trulyEmpty && l && now - l.t <= DOUBLE_TAP_MS && Math.hypot(x - l.x, y - l.y) <= DOUBLE_TAP_PX) {
     lastEmptyTap = null;
+    if (mode === "object" && (objSel.size || refSel)) { clearObjSelection(); return; }
     setOverlay(false);
     return;
   }
@@ -6262,12 +6602,14 @@ function updateUI() {
   $("bBake").setAttribute("aria-expanded", $("sunMenu").classList.contains("show") ? "true" : "false");
   updateSunMenu();
   $("bMirror").classList.toggle("on", !!mesh.mirror);
-  $("mirrorLabel").textContent = mesh.mirror ? "Mirror " + mesh.mirror.toUpperCase() : "Mirror off";
-  $("bSym").disabled = !mesh.mirror;
+  $("mirrorLabel").textContent = "Mirror " + (mesh.mirror || symmAxis).toUpperCase();
+  if ($("symLabel")) $("symLabel").textContent = "Symm " + symmAxis.toUpperCase();
+  if ($("bCoords")) { $("bCoords").textContent = coordSpace === "world" ? "World" : "Model"; $("bCoords").classList.remove("on"); }
+  if ($("bPersp")) { $("bPersp").textContent = camOrtho ? "Ortho" : "Persp"; $("bPersp").classList.toggle("on", camOrtho); }
+  if ($("symPop")) for (const b of $("symPop").querySelectorAll("[data-axis]")) b.classList.toggle("on", b.dataset.axis === symmAxis);
   $("bUndo").disabled = undoStack.length === 0;
   $("bRedo").disabled = redoStack.length === 0;
   // Dissolve works on exactly one vertex (with several selected it's disabled).
-  $("bDissolve").disabled = !(editMode() && selection().length === 1);
   $("roMerge").classList.toggle("off", !mergeOn);
   // Extrude needs 3+ selected verts (if they cover no face, pressing it says why).
   $("bExtrude").disabled = !(editMode() && selection().length >= 3);
@@ -6369,7 +6711,8 @@ function updateReadout() {
   if (roEditing && roEditing.key !== roKey()) closeCoordEdit(false);
   // One vertex: its position. Several: their centroid (shown with a "c" prefix).
   const multi = om ? objSelList().length > 1 : selection().length > 1;
-  const p = om ? v3.add(objPivot(), frameOff) : selCentroid(), act = gesture && gesture.kind === "axis" ? gesture.axis : -1;
+  const off = spaceOff();
+  const p = om ? v3.add(objPivot(), off) : v3.add(selCentroid(), off), act = gesture && gesture.kind === "axis" ? gesture.axis : -1;
   const locked = (a) => !om && selAxisLocked(a);
   $("roScale").classList.toggle("hide", !(multi || om) || !!refSel);
   $("roScale").classList.toggle("on", scaleActive());
@@ -6432,7 +6775,7 @@ function openCoordEdit(a) {
     roEditing = { key: roKey(), axis: a, obj: true, rotate: rot, scale: sc };
     $("roEditLbl").textContent = rot ? "∠" + "XYZ"[a] + "°" : sc ? "×" + "XYZ"[a] : (objSelList().length > 1 ? "c" : "") + "XYZ"[a];
     $("roEditLbl").className = "xyz"[a];
-    const v = objPivot()[a] + frameOff[a];
+    const v = objPivot()[a] + spaceOff()[a];
     $("roInput").value = rot ? "0" : sc ? "1" : String(+(Math.abs(v) < 5e-5 ? 0 : v).toFixed(4));
     $("roEdit").classList.add("show");
     updateReadout();
@@ -6465,7 +6808,7 @@ function openCoordEdit(a) {
     $("roInput").select();
     return;
   }
-  const v = selCentroid()[a];
+  const v = selCentroid()[a] + spaceOff()[a];
   $("roEditLbl").textContent = (selection().length > 1 ? "c" : "") + "XYZ"[a];
   $("roEditLbl").className = "xyz"[a];
   $("roInput").value = String(+(Math.abs(v) < 5e-5 ? 0 : v).toFixed(4));
@@ -6522,7 +6865,7 @@ function closeCoordEdit(apply) {
     const n = parseCoord($("roInput").value);
     if (n === null) toast("Not a number");
     else {
-      const c = selCentroid()[axis];
+      const c = selCentroid()[axis] + spaceOff()[axis];
       if (Math.abs(c - n) > 1e-9 && !selAxisLocked(axis)) {
         pushUndo();
         moveSelection(selStarts(), axis, n - c);   // twins follow mirrored
@@ -6551,7 +6894,11 @@ $("roNeg").addEventListener("click", () => {
 $("roOk").addEventListener("click", () => closeCoordEdit(true));
 
 for (const b of document.querySelectorAll("[data-mode]"))
-  b.addEventListener("click", () => { mode = b.dataset.mode; overlayOn = true; meshDirty = true; updateUI(); });
+  b.addEventListener("click", () => {
+    const next = b.dataset.mode;
+    if (next !== "object" && !objSel.size && !refSel) { toast("Select an object first"); return; }
+    mode = next; overlayOn = true; meshDirty = true; updateUI();
+  });
 $("bFaceDel").addEventListener("click", cmdDeleteFaces);
 
 $("bDensity").addEventListener("click", (e) => {
@@ -6613,6 +6960,11 @@ document.addEventListener("pointerdown", (e) => {
   $("sunMenu").classList.remove("show");
   updateUI();
 });
+document.addEventListener("pointerdown", (e) => {
+  if (e.target.closest("#scCombinePop") || e.target.closest("#scCombineOpts") ||
+      e.target.closest("#symPop") || e.target.closest("#bSymOpts")) return;
+  closeOptPops();
+});
 
 //----- Mirror + Symm Buttons -----||
 // Mirror cycles X -> Y -> off -> X and re-pairs twins from positions. The toast always
@@ -6634,7 +6986,7 @@ function mirrorSummary() {
 
 $("bMirror").addEventListener("click", () => {
   pushUndo();
-  mesh.mirror = mesh.mirror === "x" ? "y" : mesh.mirror === "y" ? null : "x";
+  mesh.mirror = mesh.mirror ? null : symmAxis;
   const nv = pairMirror(mesh), nt = foldedTriCount();
   lastWarn = { nv, nt };                           // this toast already reports them
   toast(mirrorSummary());
@@ -6657,8 +7009,9 @@ function flipMesh(ax) {
 //  - Which side is kept: the side your selection is on; with nothing selected (or the
 //    selection on the plane), the side with more vertices (+ wins a tie).
 function doSymm() {
+  if (mesh.mirror !== symmAxis) mesh.mirror = symmAxis;
   const ax = axisIndex(mesh.mirror);
-  if (ax < 0) { toast("Turn Mirror on first"); return; }
+  if (ax < 0) { toast("Pick an axis on Symm first"); return; }
   pairMirror(mesh);
   const name = mesh.mirror.toUpperCase();
   if (!unpairedCount() && !foldedTriCount()) { toast(`Already symmetric across ${name}: nothing to change`); meshChanged(); return; }
@@ -6681,6 +7034,35 @@ function doSymm() {
   toast(`Symm: copied the ${from} side onto ${to} (${vertCount()} verts, ${triCount()} tris)`);
 }
 $("bSym").addEventListener("click", doSymm);
+$("bSymOpts").addEventListener("click", (e) => { e.stopPropagation(); toggleOptPop("symPop", $("bSymOpts")); });
+for (const b of $("symPop").querySelectorAll("[data-axis]")) {
+  b.addEventListener("click", () => {
+    const ax = b.dataset.axis;
+    if (ax !== "x" && ax !== "y" && ax !== "z") return;
+    symmAxis = ax;
+    try { localStorage.setItem(KEY_PREFIX + "symmaxis", ax); } catch (err) { /* blocked */ }
+    closeOptPops();
+    if (mesh.mirror && mesh.mirror !== ax) {
+      pushUndo();
+      mesh.mirror = ax;
+      pairMirror(mesh);
+      toast(mirrorSummary());
+      meshChanged();
+    } else updateUI();
+  });
+}
+$("bCoords").addEventListener("click", () => {
+  coordSpace = coordSpace === "world" ? "model" : "world";
+  try { localStorage.setItem(KEY_PREFIX + "coords", coordSpace); } catch (err) { /* blocked */ }
+  toast(coordSpace === "world" ? "World coordinates" : "Model coordinates");
+  meshDirty = true; updateUI();
+});
+$("bPersp").addEventListener("click", () => {
+  camOrtho = !camOrtho;
+  try { localStorage.setItem(KEY_PREFIX + "ortho", camOrtho ? "1" : "0"); } catch (err) { /* blocked */ }
+  toast(camOrtho ? "Orthographic view" : "Perspective view");
+  meshDirty = true; updateUI();
+});
 
 $("bUndo").addEventListener("click", undo);
 $("bRedo").addEventListener("click", redo);
@@ -6697,13 +7079,6 @@ $("roRotate").addEventListener("click", () => {
   gizmoMode = gizmoMode === "rotate" ? "move" : "rotate";
   toast(gizmoMode === "rotate" ? "Rotate: drag a ring (red X, green Y, blue Z) to turn the selection" : "Move");
   meshDirty = true; updateUI();
-});
-$("bDissolve").addEventListener("click", () => {
-  if (selection().length !== 1) return;
-  const before = snapshot();
-  const r = dissolveVertex(selected);
-  if (r === true) { pushUndo(before); clearSelection(); meshChanged(); toast("Vertex dissolved"); }
-  else toast("Can't dissolve: " + r);
 });
 $("bRock").addEventListener("click", () => {
   setRefState(refState + 1);
@@ -6730,7 +7105,6 @@ $("fileIn").addEventListener("change", async () => {
 $("bExport").addEventListener("click", doExport);
 
 //----- Scene Panel Wiring -----||
-$("scRefs").addEventListener("click", resetRefs);
 //----- Shapes Drawer -----||
 // Scene and Shapes share the spot under the Scene button: the Scene panel's "＋ Shapes"
 // tab swaps to the drawer and its "☰ Scene" tab swaps back. Chips pick a prism shape or
@@ -6762,7 +7136,7 @@ for (const n of PYRAMID_SIDES) {
   b.addEventListener("click", () => { pyramidSides = n; remember("pyramid", n); renderShapes(); });
   $("pyramidChips").appendChild(b);
 }
-$("scShapes").addEventListener("click", () => openDrawer("shapes"));
+$("bShapes").addEventListener("click", () => openDrawer("shapes"));
 $("shToScene").addEventListener("click", () => openDrawer("scene"));
 $("shClose").addEventListener("click", () => openDrawer(null));
 $("scPyramid").addEventListener("click", () => cmdAddPyramid(pyramidSides));
@@ -6782,9 +7156,26 @@ $("scPlaneV").addEventListener("click", () => cmdAddPlane("up"));
 $("scPlaneH").addEventListener("click", () => cmdAddPlane("flat"));
 $("scPlane1").addEventListener("click", cmdAddPlane1);
 $("scDup").addEventListener("click", cmdDuplicate);
-$("scCopy").addEventListener("click", cmdCopy);
-$("scPaste").addEventListener("click", cmdPaste);
 $("scCombine").addEventListener("click", cmdCombine);
+function placeOptPop(btn, pop) {
+  const br = btn.getBoundingClientRect(), pr = pop.getBoundingClientRect();
+  const spaceAbove = br.top, spaceBelow = window.innerHeight - br.bottom;
+  pop.classList.toggle("down", spaceAbove < 140 && spaceBelow > spaceAbove);
+}
+function toggleOptPop(popId, btn) {
+  const pop = $(popId), on = !pop.classList.contains("show");
+  closeOptPops();
+  if (on) { pop.classList.add("show"); btn.classList.add("on"); btn.setAttribute("aria-expanded", "true"); placeOptPop(btn, pop); }
+}
+function closeOptPops() {
+  for (const id of ["scCombinePop", "symPop"]) {
+    const el = $(id); if (el) el.classList.remove("show");
+  }
+  for (const id of ["scCombineOpts", "bSymOpts"]) {
+    const el = $(id); if (el) { el.classList.remove("on"); el.setAttribute("aria-expanded", "false"); }
+  }
+}
+$("scCombineOpts").addEventListener("click", (e) => { e.stopPropagation(); toggleOptPop("scCombinePop", $("scCombineOpts")); });
 $("scCut").value = cutMode;
 $("scCut").addEventListener("change", () => {
   cutMode = $("scCut").value === "active" || $("scCut").value === "others" ? $("scCut").value : "auto";
@@ -6796,9 +7187,7 @@ $("scCombineMode").addEventListener("change", () => {
   try { localStorage.setItem(KEY_PREFIX + "combine", combineMode); } catch (e) { /* blocked */ }
 });
 $("scSeparate").addEventListener("click", () => cmdSeparate(false));
-$("scFaces").addEventListener("click", () => cmdSeparate(true));
 $("scTwo").addEventListener("click", cmdTwoSided);
-$("scSubdiv").addEventListener("click", cmdSubdivide);
 $("scRename").addEventListener("click", () => {
   if (folderFocus && findFolderNode(folderFocus)) cmdRenameFolderPrompt(folderFocus);
   else cmdRename();
@@ -6808,11 +7197,9 @@ $("scDelete").addEventListener("click", () => {
   else cmdDelete();
 });
 $("scFolder").addEventListener("click", cmdAddFolder);
-$("scMove").addEventListener("click", cmdMoveSelection);
 $("folderAskLift").addEventListener("click", () => finishDeleteFolder("lift"));
 $("folderAskDrop").addEventListener("click", () => finishDeleteFolder("drop"));
 $("folderAskCancel").addEventListener("click", () => { folderDeleteId = null; updateUI(); });
-$("folderPickCancel").addEventListener("click", () => { moveEntries = null; updateUI(); });
 //----- Scene More -----||
 $("scMoreBtn").addEventListener("click", () => {
   const on = !$("scMore").classList.contains("show");
@@ -6821,7 +7208,6 @@ $("scMoreBtn").addEventListener("click", () => {
   $("scMoreBtn").setAttribute("aria-expanded", on ? "true" : "false");
   $("scMoreBtn").textContent = on ? "More ▴" : "More ▾";
 });
-$("scHide").addEventListener("click", cmdHideSelected);
 $("scDim").addEventListener("click", () => {
   dimOthers = !dimOthers;
   try { localStorage.setItem(KEY_PREFIX + "dim", dimOthers ? "1" : "0"); } catch (e) { /* ignore */ }
@@ -7377,8 +7763,9 @@ function frame() {
   resize();
   stepCamAnim();
   updateCamera();
+  updateViewCube();
   // The dots' grey/white look depends on the camera too, so rebuild when the view moved.
-  if (!meshDirty && visCache.key.split("|")[0] !== [cam.yaw, cam.pitch, cam.dist, ...cam.target, viewW, viewH].join(",")) meshDirty = true;
+  if (!meshDirty && visCache.key.split("|")[0] !== [cam.yaw, cam.pitch, cam.dist, ...cam.target, viewW, viewH, camOrtho ? "o" : "p"].join(",")) meshDirty = true;
   if (!(gesture && gesture.obj)) syncFrame();      // the frame follows the active object
   if (meshDirty) rebuildBuffers();
 
