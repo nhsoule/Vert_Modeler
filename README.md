@@ -186,12 +186,11 @@ The **Rock** button cycles through four states: off (**Ref**), **Rock**, rock + 
 
 ## Export / import
 
-- **Export → Export:** one of three choices.
-  - *This object*: named after the object.
-  - *Each selected, separate*: one header per object.
-  - *All merged*: one model in scene coordinates, named after the scene.
-  - **Download .h** saves one file per model.
-- An object exports in its own coordinates about its pivot. The header notes `placed at (x, y, z)` when the pivot isn't the origin.
+- **Export** writes one `.h` file. There is a single export mode, based on what you have selected:
+  - A focused folder exports as **folder as parts**: one header named after the folder. Each direct child is a part, in the tree's top-to-bottom order. A child object is one part; a child folder is one part with its contents combined. A part table records each part's name, vertex range, and pivot. **Download .h** saves that one file.
+  - A single selected object exports in the existing single-model format, in its own coordinates about its pivot, named after the object.
+  - Anything else (nothing selected, or several objects) disables Export until you select one folder or one object.
+- The header notes `placed at (x, y, z)` when an object's pivot isn't the origin.
 - **Two-sided** faces export twice: the second half of the array repeats every triangle reversed (0,2,1) with its normal flipped, so the triangle and vertex counts double. It works with back-face culling on and needs no engine flag.
 - **Import:**
   - **Add** puts each pasted or opened model in as a new object, in real units, at its `placed at` spot. Several headers in one paste or several files are fine.
