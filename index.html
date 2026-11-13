@@ -853,6 +853,7 @@
     <option value="active">Selected</option>
     <option value="each">Every visible object, separate</option>
     <option value="merged">All visible, merged into one</option>
+    <option value="folder" id="exportFolderOpt" hidden>Folder as parts</option>
   </select></label>
   <label>Name <input id="exportName" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" value="model"></label>
   <label class="chk"><input id="exportFloats" type="checkbox"> 9-float export (pos + color + normal)</label>
@@ -6272,6 +6273,189 @@ function buildExportPacked(o = activeObj()) {
   });
 }
 
+
+//----- Folder Parts Export -----||
+// One .h for a folder. Each direct child is a part: a child object is one part,
+// a child folder is one part with all of its contents combined (they move together).
+// Vertices are written in scene (world) units, packed with one shared offset/scale
+// so the whole array can also be drawn as a single mesh. Hidden shapes are skipped.
+function exportFolderNode() {
+  return (folderFocus && findFolderNode(folderFocus)) || null;
+}
+function frameFromPositions(pos) {
+  const n = pos && pos.length ? pos.length / 3 : 0;
+  if (!n) return { offset: [0, 0, 0], scale: 1 };
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < n; i++) {
+    for (let k = 0; k < 3; k++) {
+      const v = pos[i * 3 + k];
+      if (v < lo[k]) lo[k] = v;
+      if (v > hi[k]) hi[k] = v;
+    }
+  }
+  const offset = [0, 1, 2].map(k => (lo[k] + hi[k]) * 0.5);
+  let scale = 0;
+  for (let k = 0; k < 3; k++) scale = Math.max(scale, (hi[k] - lo[k]) * 0.5);
+  if (!(scale > 0)) scale = 1;
+  return { offset, scale };
+}
+// World-space mesh for a list of objects. Two-sided objects get a reversed copy of
+// every triangle baked in, so lighting (triColor) uses the back-face normal.
+function worldMeshFromObjects(list) {
+  const positions = [], tris = [], colors = [];
+  for (const o of list) {
+    if (shapeHidden(o) || !o.mesh) continue;
+    const m = o.mesh, vn = m.positions.length / 3;
+    const addVerts = () => {
+      const base = positions.length / 3;
+      for (let i = 0; i < vn; i++) {
+        positions.push(m.positions[i * 3] + o.pos[0], m.positions[i * 3 + 1] + o.pos[1], m.positions[i * 3 + 2] + o.pos[2]);
+      }
+      return base;
+    };
+    const base = addVerts();
+    for (const v of m.tris) tris.push(v + base);
+    for (const c of m.colors) colors.push(c.slice());
+    if (o.twoSided) {
+      const back = addVerts();
+      for (let t = 0; t < m.tris.length / 3; t++) {
+        tris.push(back + m.tris[t * 3], back + m.tris[t * 3 + 2], back + m.tris[t * 3 + 1]);
+        colors.push(m.colors[t].slice());
+      }
+    }
+  }
+  return { positions, tris, colors, partner: [], mirror: null };
+}
+// A child object's pivot is its scene position (the "placed at" origin). A child
+// folder uses that folder's own pivot when one has been set; otherwise the first
+// visible object's position, because a new folder's pivot starts at (0,0,0).
+function folderPartPivot(child) {
+  if (child.kind === "object") {
+    const o = objById(child.id);
+    return o ? o.pos.slice() : [0, 0, 0];
+  }
+  const pv = child.pivot;
+  if (Array.isArray(pv) && pv.length === 3 && pv.some(v => Math.abs(v) > 1e-9)) return pv.slice(0, 3).map(Number);
+  const objs = objectsUnder(child);
+  const first = objs.find(o => !shapeHidden(o)) || objs[0];
+  return first ? first.pos.slice() : [0, 0, 0];
+}
+function folderPartObjects(child) {
+  if (child.kind === "object") {
+    const o = objById(child.id);
+    return o && !shapeHidden(o) ? [o] : [];
+  }
+  return objectsUnder(child).filter(o => !shapeHidden(o));
+}
+function uniqueIdent(base, taken) {
+  let id = cIdent(base), n = 2, out = id;
+  while (taken.has(out)) out = id + "_" + n++;
+  taken.add(out);
+  return out;
+}
+function cString(s) {
+  return "\"" + String(s).replace(/\\/g, "\\\\").replace(/"/g, "\\\"") + "\"";
+}
+function packMeshRows(m, frame) {
+  return withMesh(m, () => {
+    const keep = exportTriList(frame);
+    const rows = [];
+    for (const t of keep) {
+      const c = triColor(t).map(colorByte);
+      const nrm = octEncode(triNormal(t));
+      for (let k = 0; k < 3; k++) {
+        const q = quantizePos(getVert(mesh.tris[t * 3 + k]), frame);
+        rows.push("    { { " + q.join(", ") + " }, { " + nrm.join(", ") + " }, { " + c[0] + ", " + c[1] + ", " + c[2] + ", 255 } },");
+      }
+    }
+    return { rows, skipped: triCount() - keep.length, nVerts: keep.length * 3 };
+  });
+}
+function buildExportFolderParts(folder, nameOverride) {
+  if (!folder || folder.kind !== "folder") return "";
+  const children = (folder.children || []).filter(c => c && (c.kind === "object" || c.kind === "folder"));
+  const parts = [];
+  for (const child of children) {
+    const objs = folderPartObjects(child);
+    if (!objs.length) continue;
+    const pname = child.kind === "folder" ? child.name : ((objById(child.id) || {}).name || child.id);
+    parts.push({ name: pname, pivot: folderPartPivot(child), mesh: worldMeshFromObjects(objs) });
+  }
+  if (!parts.length) return "";
+  const allPos = [];
+  for (const part of parts) for (const v of part.mesh.positions) allPos.push(v);
+  const frame = frameFromPositions(allPos);
+  const packed = parts.map(part => Object.assign({ part }, packMeshRows(part.mesh, frame)));
+  const nVerts = packed.reduce((sum, part) => sum + part.nVerts, 0);
+  const nTris = nVerts / 3;
+  const skipped = packed.reduce((sum, part) => sum + part.skipped, 0);
+  const name = cIdent(nameOverride || folder.name);
+  const taken = new Set([name]);
+  const L = [];
+  L.push("#pragma once");
+  L.push("// " + name + ": " + packed.length + " part" + (packed.length === 1 ? "" : "s") + ", " + nTris + " triangles, " + nVerts + " verts, " + (nVerts * 12) + " bytes (exported from Vert Modeler)");
+  L.push("//----- Vert -----||");
+  L.push("// 12 bytes, stride 12, no padding. 3 verts per triangle, CCW seen from outside.");
+  L.push("//   pos  int16x3 @0, GL_SHORT normalized: -32767..32767 maps to -1..1");
+  L.push("//   nrm  int8x2 octahedral @6, GL_BYTE normalized, unit normal (outward)");
+  L.push("//   rgba uint8x4 @8, GL_UNSIGNED_BYTE normalized (alpha is 255)");
+  L.push("// The same face normal is stored on all 3 corners of a triangle.");
+  L.push("// lighting " + lightingComment());
+  L.push(...zeroAreaNote(skipped));
+  L.push("//----- Parts -----||");
+  L.push("// One header for a folder. Each direct child is a part: a child object is one");
+  L.push("// part, a child folder is one part with all of its contents combined (they move");
+  L.push("// together). Vertices are in scene (world) units, packed with one shared");
+  L.push("// offset/scale so the whole file can also be drawn as a single mesh.");
+  L.push("// A part's pivot is its origin in those same world units: an object's \"placed at\"");
+  L.push("// position, or for a combined subfolder, the folder's own pivot if one has been");
+  L.push("// set, otherwise the first object's position (a new folder's pivot starts at the");
+  L.push("// origin and is not yet editable).");
+  L.push("// Draw one part. Decoded positions are already in world units:");
+  L.push("//   world = " + name + "_offset + aPos * " + name + "_scale");
+  L.push("//   model = translate(pivot) * R * translate(-pivot)");
+  L.push("// The Animator applies T * R * S to the decoded positions, so for a rotation R");
+  L.push("// around the part pivot set xf.r = R and xf.p = pivot - R*pivot (scale 1), or");
+  L.push("// compose xf_mul(translate(pivot)*R, translate(-pivot)). Then:");
+  L.push("//   anim_mesh_view(m, &" + name + "_verts[part.first], part.count, " + name + "_offset, " + name + "_scale);");
+  L.push("//   anim_draw(m, xf);");
+  L.push("// To draw the whole folder still, pass " + name + "_verts and " + name + "_vert_count with");
+  L.push("// an identity transform.");
+  L.push("#include \"vert.h\"");
+  L.push("//----- " + name + " -----||");
+  L.push("// Recover world units. aPos is the normalized GL_SHORT (pos/32767, in -1..1):");
+  L.push("//   world = " + name + "_offset + aPos * " + name + "_scale");
+  L.push("// " + name + "_scale is half the longest side of the combined bounds; " + name + "_offset is the centre.");
+  L.push("static const float " + name + "_offset[3] = { " + frame.offset.map(fmtFloat).join(", ") + " };");
+  L.push("static const float " + name + "_scale = " + fmtFloat(frame.scale) + ";");
+  L.push("static const Vert " + name + "_verts[] = {");
+  let first = 0;
+  const table = [];
+  for (const item of packed) {
+    const ident = uniqueIdent(item.part.name, taken);
+    if (item.rows.length) {
+      L.push("    // " + item.part.name);
+      for (const row of item.rows) L.push(row);
+    }
+    table.push({ ident, label: item.part.name, first, count: item.nVerts, pivot: item.part.pivot });
+    first += item.nVerts;
+  }
+  L.push("};");
+  L.push("static const int " + name + "_vert_count = " + nVerts + ";");
+  L.push("struct " + name + "_part { const char *name; int first; int count; float pivot[3]; };");
+  L.push("enum {");
+  for (let i = 0; i < table.length; i++) L.push("    " + name + "_" + table[i].ident + (i + 1 < table.length ? "," : ""));
+  L.push("};");
+  L.push("static const " + name + "_part " + name + "_parts[] = {");
+  for (const t of table) {
+    L.push("    { " + cString(t.label) + ", " + t.first + ", " + t.count + ", { " + t.pivot.map(fmtFloat).join(", ") + " } },");
+  }
+  L.push("};");
+  L.push("static const int " + name + "_part_count = " + table.length + ";");
+  L.push("");
+  return L.join("\n") + "\n";
+}
+
 // Triangles with real area in the export (12-byte grid): a triangle whose 3 corners are on
 // one line or one spot is skipped, so it can't reach the game as a sliver with a junk normal.
 function exportTriList(frame) {
@@ -6370,15 +6554,38 @@ function exportTargets() {
   return objSelList();
 }
 function buildExport() {
+  if ($("exportWhat") && $("exportWhat").value === "folder") {
+    const folder = exportFolderNode();
+    if (!folder) return "";
+    return buildExportFolderParts(folder, $("exportName").value);
+  }
   const floats = $("exportFloats") && $("exportFloats").checked;
   return exportTargets().map(o => floats ? buildExportFloats(o) : buildExportPacked(o)).join("\n");
+}
+function syncExportUi() {
+  const folder = exportFolderNode();
+  const opt = $("exportFolderOpt");
+  if (opt) {
+    opt.hidden = !folder;
+    opt.textContent = folder ? ("Folder as parts: " + folder.name) : "Folder as parts";
+  }
+  if ($("exportWhat") && $("exportWhat").value === "folder" && !folder) $("exportWhat").value = "active";
+  const floats = $("exportFloats");
+  const folderMode = $("exportWhat") && $("exportWhat").value === "folder";
+  if (floats) {
+    floats.disabled = !!folderMode;
+    if (folderMode) floats.checked = false;
+  }
+  syncExportName();
 }
 function syncExportName() {
   const w = $("exportWhat").value;
   const list = objSelList();
-  $("exportName").disabled = w === "each" || (w === "active" && list.length !== 1);
+  const folder = exportFolderNode();
+  $("exportName").disabled = w === "each" || (w === "active" && list.length !== 1) || (w === "folder" && !folder);
   $("exportName").value = w === "merged" ? scene.name
     : w === "each" ? "(each object's own name)"
+    : w === "folder" ? (folder ? folder.name : "")
     : list.length === 1 ? list[0].name
     : list.length ? "(each selected object's own name)" : "";
 }
@@ -6409,11 +6616,13 @@ function toast(msg) {
 }
 
 async function doExport() {
-  $("exportWhat").value = "active";
-  if (!objSelList().length) { toast("Select an object first"); return; }
-  syncExportName();
+  const folder = exportFolderNode();
+  if (!objSelList().length && !folder) { toast("Select an object or a folder first"); return; }
+  $("exportWhat").value = (!objSelList().length && folder) ? "folder" : "active";
   $("exportFloats").checked = false;             // the 12-byte Vert is the default
+  syncExportUi();
   const text = buildExport();
+  if ($("exportWhat").value === "folder" && !text) { toast("This folder has no visible parts to export"); return; }
   $("exportText").value = text;
   $("modal").classList.add("show");
   const ok = await copyText(text);
@@ -7405,11 +7614,20 @@ $("exportName").addEventListener("input", () => {
   if (w === "merged") scene.name = v;
   else if (w === "active") { const o = activeObj(); o.name = uniqueObjName(v, o); }
   $("exportText").value = buildExport();
-  save();
+  if (w !== "folder") save();
   updateUI();
 });
-$("exportWhat").addEventListener("change", () => { syncExportName(); $("exportText").value = buildExport(); });
+$("exportWhat").addEventListener("change", () => { syncExportUi(); $("exportText").value = buildExport(); });
 $("mDownload").addEventListener("click", () => {
+  if ($("exportWhat").value === "folder") {
+    const folder = exportFolderNode();
+    const text = buildExport();
+    if (!folder || !text) { toast("This folder has no visible parts to export"); return; }
+    const name = cIdent($("exportName").value || folder.name);
+    downloadText(name + ".h", text);
+    toast("Downloading " + name + ".h");
+    return;
+  }
   const floats = $("exportFloats").checked, list = exportTargets();
   list.forEach((o, i) => setTimeout(() =>
     downloadText(cIdent(o.name) + ".h", floats ? buildExportFloats(o) : buildExportPacked(o)), i * 300));
