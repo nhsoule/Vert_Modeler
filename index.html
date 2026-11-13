@@ -161,7 +161,7 @@
   .btnrow button { flex: 1; }
   #palList { display: flex; flex-direction: column; gap: 6px; max-height: 32vh; overflow-y: auto; }
   .palItem {
-    display: flex; flex-direction: column; align-items: stretch; gap: 4px; text-align: left;
+    display: flex; flex-direction: column; align-items: stretch; gap: 3px; text-align: left;
     min-height: 48px; padding: 6px 10px !important; background: #2a2c38 !important; color: #e8e8ee !important;
     border: 2px solid #0000 !important; font-weight: 500 !important;
   }
@@ -217,7 +217,7 @@
   #scenePanel, #shapesPanel {
     display: none; position: absolute; z-index: 6;
     left: 8px; top: calc(env(safe-area-inset-top) + 26px);
-    width: min(360px, calc(100% - 52px)); max-height: calc(100% - 40px); overflow-y: auto;
+    width: min(360px, calc(100% - 64px)); max-height: calc(100% - 40px); overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     padding: 8px; border-radius: 14px; box-sizing: border-box;
     background: #1f2029f2; border: 1px solid #3a3d4c; box-shadow: 0 8px 24px #000a;
@@ -238,34 +238,23 @@
   #scenePanel button.on, #shapesPanel button.on { background: #e0b43a; color: #16171d; }
   #scenePanel button:disabled, #shapesPanel button:disabled { opacity: 0.35; }
   #scenePanel button:active, #shapesPanel button:active { filter: brightness(1.3); }
-  .scHead { display: flex; gap: 6px; align-items: center; }
-  .scHead .ttl { flex: 1; font-weight: 600; font-size: 13px; padding-left: 4px; }
-  .scHead #scClose { width: 40px; min-width: 40px; padding: 0; font-size: 18px; }
-  .scHead #scMoreBtn { padding: 0 10px; font-weight: 600; font-size: 12px; min-width: 0; }
+  .scHead { display: flex; gap: 6px; align-items: baseline; flex: 0 0 auto; min-height: 22px; padding: 0 2px; }
+  .scHead .ttl { flex: 0 0 auto; font-weight: 600; font-size: 12px; padding-left: 2px; }
+  .scHead .scMeta { flex: 1; min-width: 0; font-size: 10px; font-weight: 400; color: #9a9db0;
+                    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
   .cutPick { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #c8cad8; padding: 0 2px; }
   .cutPick select { flex: 1; min-height: 32px; font: inherit; font-size: 12px; color: #e8e8ee;
                     background: #2a2c38; border: 1px solid #4a4d5c; border-radius: 8px; padding: 0 6px; }
   #objList {
     display: flex; flex-direction: column; gap: 3px;
     flex: 1 1 auto;
-    min-height: min(160px, 32%);
+    min-height: 0;
     overflow-y: auto; -webkit-overflow-scrolling: touch;
     background: #16171d99; border: 1px solid #3a3d4c; border-radius: 10px; padding: 4px;
   }
-  .scQuick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; flex: 0 0 auto; }
-  .scQuick button { font-size: 11px; padding: 0 2px; white-space: nowrap; }
-  .scQuick #scMoreBtn { font-weight: 600; }
   /* Tree rows a touch shorter so a short laptop can show more names. */
   #objList button { min-height: 34px; }
-  #scMore {
-    display: none; flex-direction: column; gap: 6px;
-    flex: 0 1 auto; min-height: 0; padding-bottom: 2px;
-    overflow-y: auto; -webkit-overflow-scrolling: touch;
-  }
-  /* When More is open, share the leftover height so its buttons stay usable
-     and the tree still keeps a few rows. Both sides scroll if needed. */
-  #scMore.show { display: flex; flex: 1 1 40%; min-height: min(130px, 30%); }
-  #scenePanel .scHead, #scenePanel .scQuick, #scenePanel .note { flex: 0 0 auto; }
+  #scenePanel .scHead, #scenePanel .note { flex: 0 0 auto; }
   #scenePanel .folderAsk, #scenePanel .folderPick { flex: 0 0 auto; }
   #objRootDrop {
     display: none; min-height: 30px; border: 1px dashed #e0b43a; border-radius: 8px;
@@ -280,14 +269,23 @@
   .objRow .nm { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
                 font: 12px ui-monospace, Menlo, Consolas, monospace !important; }
   .objRow .nm small { color: #9a9db0; }
-  .objRow.sel .nm { box-shadow: inset 0 0 0 2px #e0b43a88; font-weight: 600 !important; }
-  .objRow.active .nm { box-shadow: inset 0 0 0 2px #e0b43a; color: #fff; font-weight: 700 !important; }
+  .objRow.sel .nm, .objRow.folder.sel .nm {
+    box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 4px #16171d;
+    font-weight: 700 !important;
+  }
+  .objRow.active .nm {
+    box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 4px #16171d, 0 0 0 1px #e0b43a;
+    font-weight: 800 !important;
+  }
   #scenePanel .objRow.folder .nm { font-weight: 600 !important; }
   #scenePanel .objRow.focus .nm { box-shadow: inset 0 0 0 2px #8ec8ff; }
   .objRow.hid .nm { opacity: 0.45; }
   .objRow.drop { box-shadow: inset 0 0 0 2px #e0b43a; }
   .objRow.dragging { opacity: 0.45; }
-  .objRow .ck.on { background: #e0b43a; color: #16171d; }
+  .objRow .ck.on {
+    box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 4px #16171d;
+    font-weight: 800;
+  }
   .folderAsk, .folderPick { display: flex; flex-direction: column; gap: 4px; }
   .folderAsk[hidden], .folderPick[hidden] { display: none; }
   #folderPickList { display: flex; flex-direction: column; gap: 3px; max-height: 28vh; overflow-y: auto; }
@@ -425,40 +423,40 @@
   }
   #views.hide { display: none; }
   #viewCubeStage {
-    width: 92px; height: 92px; perspective: 200px;
+    width: 48px; height: 48px; perspective: 120px;
     pointer-events: none;
   }
   #viewCubeBox {
-    width: 52px; height: 52px; margin: 20px auto 0;
+    width: 28px; height: 28px; margin: 10px auto 0;
     position: relative; transform-style: preserve-3d;
     pointer-events: auto;
   }
   #views .vcf {
     position: absolute; inset: 0;
-    width: 52px; height: 52px; margin: 0; padding: 0;
-    border: 2px solid #e8e8ee; border-radius: 3px;
+    width: 28px; height: 28px; margin: 0; padding: 0;
+    border: 1.5px solid #e8e8ee; border-radius: 2px;
     background: #3a3e4cf2; color: #fff;
-    font: 700 13px ui-monospace, Menlo, Consolas, monospace;
+    font: 700 9px ui-monospace, Menlo, Consolas, monospace;
     text-shadow: 0 1px 2px #000;
     display: flex; align-items: center; justify-content: center;
     backface-visibility: hidden; -webkit-backface-visibility: hidden;
     touch-action: manipulation; cursor: pointer;
   }
   #views .vcf:active { background: #e0b43a; color: #16171d; }
-  #views .vcf.front  { transform: rotateY(0deg) translateZ(26px); }
-  #views .vcf.back   { transform: rotateY(180deg) translateZ(26px); }
-  #views .vcf.right  { transform: rotateY(90deg) translateZ(26px); }
-  #views .vcf.left   { transform: rotateY(-90deg) translateZ(26px); }
-  #views .vcf.top    { transform: rotateX(90deg) translateZ(26px); }
-  #views .vcf.bottom { transform: rotateX(-90deg) translateZ(26px); }
+  #views .vcf.front  { transform: rotateY(0deg) translateZ(14px); }
+  #views .vcf.back   { transform: rotateY(180deg) translateZ(14px); }
+  #views .vcf.right  { transform: rotateY(90deg) translateZ(14px); }
+  #views .vcf.left   { transform: rotateY(-90deg) translateZ(14px); }
+  #views .vcf.top    { transform: rotateX(90deg) translateZ(14px); }
+  #views .vcf.bottom { transform: rotateX(-90deg) translateZ(14px); }
   #viewPills {
-    display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px;
-    width: 92px;
+    display: flex; flex-direction: column; align-items: stretch; gap: 3px;
+    width: 48px;
   }
   #views .viewPill {
-    flex: 1 1 42px; width: auto; height: auto;
-    min-height: 24px; padding: 0 5px;
-    border: 1px solid #fff3; border-radius: 12px;
+    flex: 0 0 auto; width: 100%; height: 22px;
+    min-height: 22px; padding: 0 2px;
+    border: 1px solid #fff3; border-radius: 7px;
     background: #1f2029c8; color: #e8e8eecc;
     font: 600 10px system-ui, sans-serif;
     touch-action: manipulation; cursor: pointer;
@@ -469,35 +467,29 @@
   #biomeName { font: 600 10px ui-monospace, Menlo, Consolas, monospace; color: #fff;
                text-shadow: 0 0 3px #000, 0 0 2px #000; white-space: nowrap; text-align: right;
                pointer-events: none; margin-top: -2px; }
-  #biomeMenu { right: 104px; }
-  #sunMenu { left: auto; right: 104px; }
+  #biomeMenu { right: 58px; }
+  #sunMenu { left: auto; right: 58px; }
 
-  /* ----- Folder colours + tree guides -----|| */
-  /* Palette (by folder order, cycling 6): sky, gold, green, rose, violet, teal.
-     Edges are light and backgrounds are darker, so folders differ in lightness as well as hue. */
+  /* ----- Folder colours + tree rows -----|| */
+  /* Palette (by folder order, cycling 6) fills every box in the folder and its
+     children. Light and dark fills alternate so folders differ in lightness as
+     well as hue; --folder-ink keeps the text readable on the fill. */
   #objList { position: relative; }
-  .objRow { position: relative; border-radius: 8px;
-            border-left: 4px solid var(--folder-edge, transparent);
-            background: var(--folder-bg, transparent);
-            padding-left: 2px; }
+  .objRow { position: relative; gap: 3px; padding-left: 0; background: transparent; }
   .objRow.folder { min-height: 36px; }
   .objRow.folder .nm { font-weight: 700 !important; }
-  .folderIc {
-    width: 14px; min-width: 14px; height: 11px; margin-right: 2px;
-    border: 1.5px solid currentColor; border-radius: 1px 2px 1px 1px;
-    position: relative; display: inline-block; vertical-align: -1px; opacity: 0.9;
+  #scenePanel .objRow.tint .eye, #scenePanel .objRow.tint .tw,
+  #scenePanel .objRow.tint .nm, #scenePanel .objRow.tint .ck,
+  #scenePanel .objRow.tint .ck.on {
+    background: var(--folder-fill); color: var(--folder-ink);
   }
-  .folderIc::before {
-    content: ""; position: absolute; left: -1px; top: -4px;
-    width: 6px; height: 3px; border: 1.5px solid currentColor; border-bottom: 0;
-    border-radius: 2px 2px 0 0; background: transparent;
-  }
+  #scenePanel .objRow.tint .nm small { color: var(--folder-ink); opacity: 0.8; }
   .objRow .guides {
     position: absolute; inset: 0 auto 0 0; width: 0; pointer-events: none;
   }
   .objRow .guides i {
     position: absolute; top: 0; bottom: 0; width: 0;
-    border-left: 1px solid #ffffffaa;
+    border-left: 1px solid #ffffff88;
   }
 
   /* ----- Tree drop indicators (outline + label, not colour alone) -----|| */
@@ -552,53 +544,59 @@
   .axisPicks { display: flex; gap: 4px; }
   .axisPicks button { flex: 1; min-height: 32px; font-weight: 700; }
 
-  /* ----- Toolbar groups + tool vs pill sizes -----|| */
+  /* ----- Toolbar: one row of large tools + half-height stacks -----|| */
   #toolbar {
-    display: flex; flex-direction: row; flex-wrap: wrap;
-    align-items: flex-start; gap: 2px 0;
-    padding: 2px 6px calc(env(safe-area-inset-bottom) + 6px);
+    display: flex; flex-direction: row; flex-wrap: nowrap;
+    align-items: stretch; gap: 0;
+    padding: 2px 4px calc(env(safe-area-inset-bottom) + 6px);
     background: #1f2029; border-top: 1px solid #2c2e3a;
+    overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
   }
   .tbGroup {
-    display: flex; flex-wrap: wrap; align-items: stretch; gap: 4px;
-    position: relative; flex: 1 1 auto;
+    display: flex; flex-wrap: nowrap; align-items: stretch; gap: 3px;
+    position: relative; flex: 0 0 auto;
     padding: 13px 6px 2px; margin: 0;
     border-left: 1px solid #3a3d4c;
   }
-  .tbGroup:first-child { border-left: 0; padding-left: 0; flex: 2 1 220px; }
+  .tbGroup:first-child { border-left: 0; padding-left: 0; }
   .tbGroup::before {
-    content: attr(data-label); position: absolute; top: 1px; left: 6px;
+    content: attr(data-label); position: absolute; top: 1px; left: 8px;
     font: 600 9px/1 system-ui, sans-serif; color: #9a9db0;
     text-transform: uppercase; letter-spacing: 0.06em; pointer-events: none;
   }
   .tbGroup:first-child::before { left: 0; }
+  .tbStack {
+    display: flex; flex-direction: column; gap: 3px;
+    flex: 0 0 auto; width: 52px; min-width: 52px;
+  }
+  .tbStack.wide { width: 64px; min-width: 64px; }
+  .tbStack.narrow { width: 44px; min-width: 44px; }
   #toolbar button.tbTool {
-    flex: 1 1 48px; min-width: 44px; min-height: 52px;
+    flex: 0 0 auto; width: 56px; min-width: 56px; min-height: 52px; height: 52px;
     background: #2a2c38; color: #e8e8ee; border: 0; border-radius: 10px;
     font: inherit; font-size: 12px; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 2px; touch-action: manipulation;
   }
   #toolbar button.tbTool .ic { font-size: 19px; line-height: 1; }
-  #toolbar button.tbPill {
-    flex: 0 0 auto; align-self: center;
-    min-width: 44px; min-height: 28px; height: 28px; padding: 0 8px;
-    background: #2a2c38; color: #e8e8ee; border: 0; border-radius: 14px;
+  #toolbar button.tbHalf, #toolbar button.tbPill {
+    flex: 1 1 0; width: 100%; min-width: 0; min-height: 0; height: auto;
+    padding: 0 4px; background: #2a2c38; color: #e8e8ee; border: 0; border-radius: 8px;
     font: 600 10px system-ui, sans-serif; display: flex; flex-direction: row;
-    align-items: center; justify-content: center; gap: 3px; touch-action: manipulation;
+    align-items: center; justify-content: center; gap: 2px; touch-action: manipulation;
+    white-space: nowrap; overflow: hidden;
   }
-  #toolbar button.tbPill .ic { font-size: 12px; }
+  #toolbar button.tbHalf .ic, #toolbar button.tbPill .ic { font-size: 11px; }
   #toolbar button.on { background: #e0b43a; color: #16171d; }
   #toolbar button:disabled { opacity: 0.35; }
   #toolbar button:active { filter: brightness(1.3); }
   #toolbar button.open { box-shadow: inset 0 0 0 2px #8ec8ff; }
-  #toolbar .optWrap { align-self: center; }
-  #toolbar .optWrap .optBtn { min-height: 28px; height: 28px; border-radius: 0 14px 14px 0; }
-  #toolbar .optWrap > button:first-child { border-radius: 14px 0 0 14px; }
+  #toolbar .tbStack .optWrap { flex: 1 1 0; display: flex; min-height: 0; width: 100%; }
+  #toolbar .tbStack .optWrap > button:first-child { flex: 1 1 auto; min-width: 0; border-radius: 8px 0 0 8px; }
+  #toolbar .tbStack .optWrap .optBtn {
+    flex: 0 0 18px; width: 18px; min-width: 18px; padding: 0;
+    border-radius: 0 8px 8px 0; font-weight: 700;
+  }
   #toolbar .optPop { min-width: 160px; }
-  .scCombineWrap { display: flex; gap: 0; min-width: 0; }
-  .scCombineWrap #scCombine { flex: 1; min-width: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
-  .scCombineWrap .optBtn { flex: 0 0 22px; min-width: 22px; width: 22px; padding: 0;
-                           border-top-left-radius: 0; border-bottom-left-radius: 0; font-weight: 700; }
 
 </style>
 </head>
@@ -627,8 +625,8 @@
         <button id="viewIso" type="button" data-view="iso" class="viewPill" title="Iso: front-right, from above">Iso</button>
         <button id="bPersp" type="button" class="viewPill" title="Perspective or orthographic (flat) view">Persp</button>
         <button id="bBake" type="button" class="viewPill" aria-haspopup="true" aria-expanded="false" title="Shade and sun direction">Shade</button>
-        <button id="bRock" type="button" class="viewPill" title="Size references: tap to cycle off → rock → rock + player → player"><span id="refIcon">◆︎</span> <span id="refLabel">Rock</span></button>
         <button id="biomeBtn" type="button" class="viewPill" title="Biome screen filter (viewport preview only, never exported)" aria-haspopup="true">Biome</button>
+        <button id="bRock" type="button" class="viewPill" title="Size references: tap to cycle off → rock → rock + player → player"><span id="refIcon">◆︎</span> <span id="refLabel">Rock</span></button>
       </div>
       <div id="biomeName">None</div>
     </div>
@@ -678,8 +676,7 @@
     <div id="scenePanel" aria-label="Scene">
       <div class="scHead">
         <span class="ttl" id="scTitle">Scene</span>
-        <button id="scMoreBtn" type="button" title="More scene actions" aria-expanded="false" aria-controls="scMore">More ▾</button>
-        <button id="scClose" type="button" aria-label="Close">×</button>
+        <span class="scMeta" id="scNote"></span>
       </div>
       <div id="objRootDrop">Drop here for scene root</div>
       <div id="objList"></div>
@@ -690,42 +687,6 @@
         <button id="folderAskDrop" type="button" title="Delete the folder and every shape inside it. Undo brings them back.">Delete contents too</button>
         <button id="folderAskCancel" type="button">Cancel</button>
       </div>
-      <div class="scQuick">
-        <button id="scRename" type="button" title="Rename the active object (its export name)">Rename</button>
-        <button id="scDelete" type="button" title="Delete the selected objects (Delete in Object mode)">Delete</button>
-        <button id="scDup" type="button" title="Duplicate the selected objects (Ctrl+D)">Dup</button>
-        <button id="scFolder" type="button" title="New folder. Inside the focused folder, or beside the active shape.">Folder</button>
-        <div class="scCombineWrap" id="scCombineWrap">
-          <button id="scCombine" type="button" title="Join the selected objects into the active one (Ctrl+J)">Combine</button>
-          <button id="scCombineOpts" class="optBtn" type="button" title="Combine options" aria-expanded="false" aria-haspopup="true" aria-controls="scCombinePop">⋯</button>
-          <div id="scCombinePop" class="optPop" role="dialog" aria-label="Combine options">
-            <label class="cutPick" for="scCombineMode">Combine
-              <select id="scCombineMode" title="How Combine treats the overlap. The other shape is left exactly as it is.">
-                <option value="slide">Slide &amp; trim</option>
-                <option value="delete">Delete hidden faces</option>
-              </select>
-            </label>
-            <label class="cutPick" for="scCut">Which shape
-              <select id="scCut" title="Which shape is changed where two overlap. The other shape is left exactly as it is.">
-                <option value="auto">Auto — whichever pokes in</option>
-                <option value="active">The active object</option>
-                <option value="others">The other objects</option>
-              </select>
-            </label>
-          </div>
-        </div>
-        <button id="scSeparate" type="button" title="Move the selected faces into a new object (P)">Separate</button>
-      </div>
-      <div id="scMore">
-        <div class="scGrid">
-          <button id="scTwo" type="button" title="Two-sided: export every face twice, front and back">Two-sided</button>
-          <button id="scDim" type="button" title="Dim the other objects while editing one">Dim others</button>
-          <button id="scSave" type="button" title="Download the whole scene as a .json project">Save .json</button>
-          <button id="scOpen" type="button" title="Open a scene .json (replaces the scene) or add .h models">Open…</button>
-          <button id="scNew" type="button" title="Start over with one cube">New scene</button>
-        </div>
-      </div>
-      <div class="note" id="scNote"></div>
     </div>
     <div id="shapesPanel" aria-label="Shapes">
       <div class="scHead">
@@ -775,6 +736,7 @@
     <div class="palHead">
       <button id="palName" aria-label="Palettes"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5C6.8 2.5 2.5 6.6 2.5 11.8c0 5 4.1 9.7 9 9.7 1.4 0 2.3-1 2.3-2.2 0-.6-.2-1.1-.6-1.5-.3-.4-.5-.8-.5-1.3 0-1 .8-1.8 1.8-1.8h2.1c3 0 4.9-2.2 4.9-5C21.5 5.9 17.2 2.5 12 2.5zM6.8 12.6a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3-4.2a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm4.4 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3 4.2a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg> <span id="palNameText"></span> ▾</button>
       <button id="palPick" title="Tap a face to take its colour">Pick</button>
+      <button id="palFill" type="button" title="Fill every face of the selected objects with the brush colour">Fill</button>
       <button id="palEdit">✎︎ Edit</button>
     </div>
     <div id="palRead" aria-live="polite"><i id="palReadChip"></i><span id="palReadText"></span><span id="palReadFace" class="face"></span></div>
@@ -783,15 +745,21 @@
   <div id="toolbar">
     <div class="tbGroup" data-label="Edit">
       <button id="bMove" class="tbTool" data-mode="move"><span class="ic">✥</span>Move</button>
-      <button id="bSplit" class="tbTool" data-mode="split"><span class="ic">✂︎</span>Split</button>
-      <button id="bPaint" class="tbTool" data-mode="paint"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.7 3.3a1 1 0 0 0-1.4 0L10 12.6l1.4 1.4 9.3-9.3a1 1 0 0 0 0-1.4zM8.6 13.4c-1.9 0-3.4 1.5-3.4 3.4 0 1.1-.9 2-2 2.2.8 1.1 2.2 1.8 3.7 1.8 2.6 0 4.6-2 4.6-4.6 0-.4-.1-.8-.2-1.2z"/></svg></span>Paint</button>
-      <button id="bExtrude" class="tbTool"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5l5 5h-3.2v4.3h-3.6V6.5H7zM3 13.2l4.4-2.4h2.2v1.8H8l-2 1.1 6 3.3 6-3.3-2-1.1h-1.6v-1.8h2.2l4.4 2.4v5.6L12 23.5l-9-4.7zm1.8 2v2.5l6.3 3.3v-2.5zm14.4 0l-6.3 3.3V21l6.3-3.3z"/></svg></span>Extrude</button>
       <button id="bSelect" class="tbTool" data-mode="select"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h4v2H5v2H3zm6 0h6v2H9zm8 0h4v4h-2V5h-2zM3 9h2v6H3zm16 0h2v6h-2zM3 17h2v2h2v2H3zm16 0h2v4h-4v-2h2zM9 19h6v2H9z"/></svg></span>Select</button>
-      <button id="bFace" class="tbTool" data-mode="face" title="Face pick: tap triangles on the active object. Tap again to unmark. Delete removes them."><span class="ic">△</span>Faces</button>
-      <button id="bFaceDel" class="tbTool" type="button" title="Delete the picked triangles (Delete or Backspace). A mirror twin is removed with its face."><span class="ic">⌫︎</span>Del</button>
-      <button id="bMirror" class="tbPill"><span class="ic">⇋︎</span><span id="mirrorLabel">Mirror X</span></button>
-      <div class="optWrap" id="symWrap">
-        <button id="bSym" class="tbPill" type="button"><span class="ic">⧓</span><span id="symLabel">Symm X</span></button>
+      <button id="bExtrude" class="tbTool"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5l5 5h-3.2v4.3h-3.6V6.5H7zM3 13.2l4.4-2.4h2.2v1.8H8l-2 1.1 6 3.3 6-3.3-2-1.1h-1.6v-1.8h2.2l4.4 2.4v5.6L12 23.5l-9-4.7zm1.8 2v2.5l6.3 3.3v-2.5zm14.4 0l-6.3 3.3V21l6.3-3.3z"/></svg></span>Extrude</button>
+      <button id="bSplit" class="tbTool" data-mode="split"><span class="ic">✂︎</span>Split</button>
+      <div class="tbStack">
+        <button id="bFace" class="tbHalf" data-mode="face" title="Face pick: tap triangles on the active object. Tap again to unmark. Delete removes them."><span class="ic">△</span>Faces</button>
+        <button id="bFaceDel" class="tbHalf" type="button" title="Delete the picked triangles (Delete or Backspace). A mirror twin is removed with its face."><span class="ic">⌫︎</span>Del</button>
+      </div>
+      <div class="tbStack">
+        <button id="bUndo" class="tbHalf"><span class="ic">↶︎</span>Undo</button>
+        <button id="bRedo" class="tbHalf"><span class="ic">↷︎</span>Redo</button>
+      </div>
+      <div class="tbStack wide">
+        <button id="bMirror" class="tbPill"><span id="mirrorLabel">Mirror X</span></button>
+        <div class="optWrap" id="symWrap">
+        <button id="bSym" class="tbPill" type="button"><span id="symLabel">Symm X</span></button>
         <button id="bSymOpts" class="tbPill optBtn" type="button" title="Symmetry axis" aria-expanded="false" aria-haspopup="true" aria-controls="symPop">▾</button>
         <div id="symPop" class="optPop" role="dialog" aria-label="Symmetry axis">
           <div class="axisPicks">
@@ -801,18 +769,64 @@
           </div>
         </div>
       </div>
-      <button id="bCoords" class="tbPill" type="button" title="Move gizmo and X/Y/Z readout: Model (object space) or World (scene space)">World</button>
+      </div>
+      <div class="tbStack narrow">
+        <button id="bCoords" class="tbPill" type="button" title="Move gizmo and X/Y/Z readout: Model (object space) or World (scene space)">World</button>
+      </div>
     </div>
     <div class="tbGroup" data-label="Scene">
       <button id="bObject" class="tbTool" data-mode="object" title="Object mode: select, move, rotate and scale whole objects (Tab)"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l9 5v10l-9 5-9-5V7zm0 2.3L5.2 8 12 11.7 18.8 8zM5 9.7v6.1l6 3.4v-6.2zm14 0l-6 3.3v6.2l6-3.4z"/></svg></span>Object</button>
-      <button id="bImport" class="tbTool"><span class="ic">⇩</span>Import</button>
-      <button id="bExport" class="tbTool"><span class="ic">⇪</span>Export</button>
-      <button id="bScene" class="tbTool" aria-haspopup="true" title="Scene: the object list, combine, save"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h4v4H3zm6 1h12v2H9zM3 10h4v4H3zm6 1h12v2H9zm-6 5h4v4H3zm6 1h12v2H9z"/></svg></span>Scene</button>
-      <button id="bShapes" class="tbTool" type="button" title="Shapes: add a cube, plane, prism or pyramid (Shift+A)">＋ Shapes</button>
-    </div>
-    <div class="tbGroup" data-label="History">
-      <button id="bUndo" class="tbTool"><span class="ic">↶︎</span>Undo</button>
-      <button id="bRedo" class="tbTool"><span class="ic">↷︎</span>Redo</button>
+      <button id="bScene" class="tbTool" aria-haspopup="true" title="Scene tree: tap to show or hide the object list"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h4v4H3zm6 1h12v2H9zM3 10h4v4H3zm6 1h12v2H9zm-6 5h4v4H3zm6 1h12v2H9z"/></svg></span>Scene</button>
+      <button id="bPaint" class="tbTool" data-mode="paint" title="Paint faces on every selected object"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.7 3.3a1 1 0 0 0-1.4 0L10 12.6l1.4 1.4 9.3-9.3a1 1 0 0 0 0-1.4zM8.6 13.4c-1.9 0-3.4 1.5-3.4 3.4 0 1.1-.9 2-2 2.2.8 1.1 2.2 1.8 3.7 1.8 2.6 0 4.6-2 4.6-4.6 0-.4-.1-.8-.2-1.2z"/></svg></span>Paint</button>
+      <div class="tbStack">
+        <button id="bImport" class="tbHalf"><span class="ic">⇩</span>Import</button>
+        <button id="bExport" class="tbHalf"><span class="ic">⇪</span>Export</button>
+      </div>
+      <div class="tbStack">
+        <button id="bShapes" class="tbHalf" type="button" title="Shapes: add a cube, plane, prism or pyramid (Shift+A)">＋ Shapes</button>
+        <button id="scFolder" class="tbPill" type="button" title="New folder. Inside the focused folder, or beside the active shape.">Folder</button>
+      </div>
+      <div class="tbStack">
+        <button id="scRename" class="tbPill" type="button" title="Rename the active object (its export name)">Rename</button>
+        <button id="scDelete" class="tbPill" type="button" title="Delete the selected objects (Delete in Object mode)">Delete</button>
+      </div>
+      <div class="tbStack">
+        <button id="scDup" class="tbPill" type="button" title="Duplicate the selected objects (Ctrl+D)">Dup</button>
+        <button id="scSeparate" class="tbPill" type="button" title="Move the selected faces into a new object (P)">Separate</button>
+      </div>
+      <div class="tbStack wide">
+        <div class="optWrap" id="scCombineWrap">
+        <button id="scCombine" class="tbPill" type="button" title="Join the selected objects into the active one (Ctrl+J)">Combine</button>
+        <button id="scCombineOpts" class="tbPill optBtn" type="button" title="Combine options" aria-expanded="false" aria-haspopup="true" aria-controls="scCombinePop">⋯</button>
+        <div id="scCombinePop" class="optPop" role="dialog" aria-label="Combine options">
+          <label class="cutPick" for="scCombineMode">Combine
+            <select id="scCombineMode" title="How Combine treats the overlap. The other shape is left exactly as it is.">
+              <option value="slide">Slide &amp; trim</option>
+              <option value="delete">Delete hidden faces</option>
+            </select>
+          </label>
+          <label class="cutPick" for="scCut">Which shape
+            <select id="scCut" title="Which shape is changed where two overlap. The other shape is left exactly as it is.">
+              <option value="auto">Auto — whichever pokes in</option>
+              <option value="active">The active object</option>
+              <option value="others">The other objects</option>
+            </select>
+          </label>
+        </div>
+      </div>
+        <button id="scTwo" class="tbPill" type="button" title="Two-sided: export every face twice, front and back">Two-sided</button>
+      </div>
+      <div class="tbStack wide">
+        <button id="scDim" class="tbPill" type="button" title="Dim the other objects while editing one">Dim others</button>
+        <div class="optWrap" id="scFileWrap">
+        <button id="scFileOpts" class="tbHalf" type="button" title="Save, open, or start a new scene" aria-expanded="false" aria-haspopup="true" aria-controls="scFilePop">File ⋯</button>
+        <div id="scFilePop" class="optPop" role="dialog" aria-label="Scene file">
+          <button id="scSave" type="button" title="Download the whole scene as a .json project">Save .json</button>
+          <button id="scOpen" type="button" title="Open a scene .json (replaces the scene) or add .h models">Open…</button>
+          <button id="scNew" type="button" title="Start over with one cube">New scene</button>
+        </div>
+      </div>
+      </div>
     </div>
   </div>
 </div>
@@ -824,7 +838,7 @@
     <button id="mClose" class="alt">Close</button>
   </div>
   <label>Export <select id="exportWhat">
-    <option value="active">This object</option>
+    <option value="active">Selected</option>
     <option value="each">Every visible object, separate</option>
     <option value="merged">All visible, merged into one</option>
   </select></label>
@@ -3657,11 +3671,12 @@ function cmdSeparate(keep) {
   toast(`${keep ? "Copied" : "Separated"} ${R.length} face${R.length > 1 ? "s" : ""} into ${n.name}`);
 }
 function cmdTwoSided() {
-  const o = activeObj();
+  const list = objSelList();
+  if (!list.length) { toast("Select an object first"); return; }
+  const src = (activeObj() && list.includes(activeObj())) ? activeObj() : list[0];
   pushUndo();
-  const on = !o.twoSided;
-  for (const x of objSelList()) x.twoSided = on;
-  o.twoSided = on;
+  const on = !src.twoSided;
+  for (const x of list) x.twoSided = on;
   sceneVersion++;
   meshChanged();
   toast(on ? "Two-sided: the export adds a reversed copy of every face (back faces)" : "One-sided");
@@ -3735,7 +3750,9 @@ function deleteFacesPreview(list) {
   return drop.size;
 }
 function cmdRename() {
-  const o = activeObj();
+  const list = objSelList();
+  if (!list.length) { toast("Select an object first"); return; }
+  const o = (activeObj() && list.includes(activeObj())) ? activeObj() : list[0];
   const n = prompt("Object name (the export uses it for <name>_verts):", o.name);
   if (n === null || !n.trim()) return;
   pushUndo();
@@ -4177,12 +4194,12 @@ function renderFolderPrompts() {
 // Drag any row (not the eye / expand / checkbox) to move it. Mouse: 8 px slop.
 // Touch: a short hold starts the drag so the list can still be scrolled.
 const FOLDER_PALETTE = [
-  { name: "sky",    bg: "#1a3358cc", edge: "#c5e4ff" },
-  { name: "gold",   bg: "#5a4518cc", edge: "#ffe08a" },
-  { name: "green",  bg: "#14351ecc", edge: "#9fefb0" },
-  { name: "rose",   bg: "#5a2030cc", edge: "#ffc0d0" },
-  { name: "violet", bg: "#2a1e4ccc", edge: "#e0d0ff" },
-  { name: "teal",   bg: "#0e3838cc", edge: "#b8fff5" },
+  { name: "sky",    fill: "#8ec8ff", ink: "#082033" },
+  { name: "gold",   fill: "#e0b43a", ink: "#1a1400" },
+  { name: "green",  fill: "#145a38", ink: "#e8fff0" },
+  { name: "rose",   fill: "#ffc0c8", ink: "#3a0a14" },
+  { name: "violet", fill: "#3a1a70", ink: "#f0e8ff" },
+  { name: "teal",   fill: "#0a5c5c", ink: "#e8ffff" },
 ];
 function folderColorMap() {
   const map = new Map();
@@ -4193,20 +4210,55 @@ function folderColorMap() {
 function paintFolderRow(row, depth, colorIdx) {
   if (colorIdx != null && colorIdx >= 0) {
     const pal = FOLDER_PALETTE[colorIdx % FOLDER_PALETTE.length];
-    row.style.setProperty("--folder-edge", pal.edge);
-    row.style.setProperty("--folder-bg", pal.bg);
+    row.style.setProperty("--folder-fill", pal.fill);
+    row.style.setProperty("--folder-ink", pal.ink);
+    row.classList.add("tint");
   }
   if (depth > 0) {
     const g = document.createElement("span");
     g.className = "guides";
     for (let d = 1; d <= depth; d++) {
       const i = document.createElement("i");
-      i.style.left = (6 + (d - 1) * 14) + "px";
+      i.style.left = (8 + (d - 1) * 16) + "px";
       g.appendChild(i);
     }
     row.appendChild(g);
   }
-  row.style.paddingLeft = (6 + depth * 14) + "px";
+  row.style.paddingLeft = (depth * 16) + "px";
+}
+function adoptActiveFromSel() {
+  if (!objSel.size) return;
+  const cur = scene.objects[scene.active];
+  if (cur && objSel.has(cur.id)) return;
+  const next = scene.objects.find(x => objSel.has(x.id));
+  if (!next) return;
+  pointActive(scene.objects.indexOf(next));
+  syncFrame();
+}
+function toggleFolderSelection(id) {
+  ensureTree();
+  const node = findFolderNode(id);
+  if (!node) return 0;
+  const list = objectsUnder(node);
+  if (!list.length) { toast("Folder is empty"); return 0; }
+  const allOn = list.every(o => objSel.has(o.id));
+  folderFocus = id;
+  if (allOn) {
+    for (const o of list) objSel.delete(o.id);
+    adoptActiveFromSel();
+    sceneVersion++;
+    updateUI();
+    toast("Deselected " + list.length + " in " + node.name);
+    return 0;
+  }
+  for (const o of list) { o.hidden = false; objSel.add(o.id); }
+  revealFolderChain(id);
+  adoptActiveFromSel();
+  sceneVersion++;
+  save();
+  updateUI();
+  toast("Selected " + list.length + " in " + node.name);
+  return list.length;
 }
 let outlineDrag = null;
 function clearDropMarks() {
@@ -4341,24 +4393,21 @@ function renderScenePanel() {
     row.dataset.parent = parentId || "";
     row.dataset.index = String(index);
     paintFolderRow(row, depth, colorIdx);
-    const tw = document.createElement("button");
-    tw.className = "tw"; tw.type = "button";
-    tw.textContent = node.open ? "▾" : "▸";
-    tw.title = node.open ? "Collapse" : "Expand";
-    tw.setAttribute("aria-expanded", node.open ? "true" : "false");
-    tw.addEventListener("click", () => toggleFolderOpen(node.id));
     const eye = document.createElement("button");
     eye.className = "eye"; eye.type = "button";
     const folderHid = node.hidden || ancestorHidden(node.id);
     eye.textContent = folderHid ? "○" : "◉";
     eye.title = folderHid ? "Show everything in this folder" : "Hide everything in this folder";
     eye.addEventListener("click", () => toggleFolderHidden(node.id));
-    const ic = document.createElement("span");
-    ic.className = "folderIc";
+    const tw = document.createElement("button");
+    tw.className = "tw"; tw.type = "button";
+    tw.textContent = node.open ? "▾" : "▸";
+    tw.title = node.open ? "Collapse" : "Expand";
+    tw.setAttribute("aria-expanded", node.open ? "true" : "false");
+    tw.addEventListener("click", () => toggleFolderOpen(node.id));
     const nm = document.createElement("button");
     nm.className = "nm"; nm.type = "button";
-    nm.appendChild(ic);
-    nm.appendChild(document.createTextNode(" " + node.name + " "));
+    nm.appendChild(document.createTextNode(node.name + " "));
     const small = document.createElement("small");
     small.textContent = nObj + (nObj === 1 ? " shape" : " shapes");
     nm.appendChild(small);
@@ -4370,7 +4419,16 @@ function renderScenePanel() {
       if (!n) updateUI();
       toast(n ? "Selected " + n + " in " + node.name : "Folder is empty");
     });
-    row.append(tw, eye, nm);
+    const kids = objectsUnder(node);
+    const nSel = kids.filter(o => objSel.has(o.id)).length;
+    const allOn = kids.length > 0 && nSel === kids.length;
+    const ck = document.createElement("button");
+    ck.className = "ck" + (allOn ? " on" : ""); ck.type = "button";
+    ck.textContent = allOn ? "✓" : (nSel ? "–" : "");
+    ck.title = allOn ? "Deselect everything in this folder" : "Select everything in this folder";
+    ck.addEventListener("click", () => toggleFolderSelection(node.id));
+    if (allOn || nSel) row.classList.add("sel");
+    row.append(eye, tw, nm, ck);
     bindRowDrag(row, "folder", node.id);
     el.appendChild(row);
     if (node.open) addRow(node.children, depth + 1, node.id, colorIdx);
@@ -4409,9 +4467,10 @@ function renderScenePanel() {
     ck.textContent = selected ? "✓" : "";
     ck.title = "Select (for Combine, Duplicate, Copy, Export)";
     ck.addEventListener("click", () => {
-      if (i === scene.active && selected) { if (objSel.size > 1) objTap(i); else objSel.delete(o.id); }
-      else if (objSel.has(o.id)) objSel.delete(o.id);
-      else { o.hidden = false; revealObject(o.id); objSel.add(o.id); if (!objSel.has(activeObj().id) || !selected) { /* keep last active */ } sceneVersion++; }
+      if (objSel.has(o.id)) objSel.delete(o.id);
+      else { o.hidden = false; revealObject(o.id); objSel.add(o.id); }
+      adoptActiveFromSel();
+      sceneVersion++;
       updateUI();
     });
     row.append(eye, nm, ck);
@@ -4423,15 +4482,27 @@ function renderScenePanel() {
   const sel = objSelList().length, faces = editMode() ? selection().length >= 3 : false;
   const nF = countAllFolders();
   $("scTitle").textContent = `Scene · ${scene.objects.length}`;
-  $("scCombine").disabled = sel < 2;
-  $("scSeparate").disabled = !faces;
-  const folderOn = !!(folderFocus && findFolderNode(folderFocus));
-  $("scDelete").disabled = folderOn ? false : (sel === 0 || sel >= scene.objects.length);
-  $("scTwo").classList.toggle("on", !!activeObj().twoSided);
-  $("scDim").classList.toggle("on", dimOthers);
   const tris = scene.objects.reduce((n, o) => n + (shapeHidden(o) ? 0 : o.mesh.tris.length / 3 * (o.twoSided ? 2 : 1)), 0);
-  $("scNote").textContent = (objSel.size ? `Active: ${activeObj().name} · ${sel} selected` : "Nothing selected")
-    + ` · ${tris} tris visible` + (nF ? ` · ${nF} folder${nF === 1 ? "" : "s"}` : "");
+  const act = (objSel.size && activeObj() && objSel.has(activeObj().id)) ? activeObj().name : (objSel.size ? "Selection" : "");
+  $("scNote").textContent = objSel.size ? `${act} · ${sel} selected` : "Nothing selected";
+  if (nF) $("scNote").textContent += ` · ${nF} folder${nF === 1 ? "" : "s"}`;
+  updateSceneActions();
+}
+function updateSceneActions() {
+  const sel = objSelList().length, faces = editMode() ? selection().length >= 3 : false;
+  const folderOn = !!(folderFocus && findFolderNode(folderFocus));
+  if ($("scCombine")) $("scCombine").disabled = sel < 2;
+  if ($("scSeparate")) $("scSeparate").disabled = !faces;
+  if ($("scDelete")) $("scDelete").disabled = folderOn ? false : (sel === 0 || sel >= scene.objects.length);
+  if ($("scRename")) $("scRename").disabled = folderOn ? false : sel === 0;
+  if ($("scDup")) $("scDup").disabled = sel === 0;
+  if ($("scTwo")) {
+    const list = objSelList();
+    const src = (activeObj() && list.includes(activeObj())) ? activeObj() : list[0];
+    $("scTwo").classList.toggle("on", !!(src && src.twoSided));
+    $("scTwo").disabled = !list.length;
+  }
+  if ($("scDim")) $("scDim").classList.toggle("on", dimOthers);
 }
 
 
@@ -5167,7 +5238,7 @@ function rayTriangle(o, d, a, b, c) {
   return t > 1e-6 ? t : null;
 }
 
-// Nearest triangle under the tap.
+// Nearest triangle under the tap, on the active mesh.
 function pickFace(sx, sy) {
   const r = screenRay(sx, sy);
   let best = -1, bestT = Infinity;
@@ -5177,6 +5248,22 @@ function pickFace(sx, sy) {
   }
   return best;
 }
+// Paint pick: the nearest face on a selected object (or any visible object, for the eyedropper).
+function pickPaintHit(sx, sy, selectedOnly = true) {
+  const r = screenRay(sx, sy);
+  let best = null, bestT = Infinity;
+  const list = selectedOnly ? objSelList() : objs().filter(o => !shapeHidden(o));
+  for (const o of list) {
+    const off = objOff(o), P = o.mesh.positions, T = o.mesh.tris;
+    const V = (v) => [P[v*3] + off[0], P[v*3+1] + off[1], P[v*3+2] + off[2]];
+    for (let t = 0; t < T.length / 3; t++) {
+      const d = rayTriangle(r.origin, r.dir, V(T[t*3]), V(T[t*3+1]), V(T[t*3+2]));
+      if (d !== null && d < bestT) { bestT = d; best = { o, t }; }
+    }
+  }
+  return best;
+}
+function paintChanged() { meshDirty = true; sceneVersion++; save(); updateUI(); }
 
 const snap = (p) => p.map(c => Math.round(c / SNAP_STEP) * SNAP_STEP);
 
@@ -5297,7 +5384,7 @@ canvas.addEventListener("pointerdown", (e) => {
     gesture = { kind: "paint", startX: p.x, startY: p.y, lastX: p.x, lastY: p.y,
                 before: snapshot(), changed: false, any: false, far: false, t0: performance.now() };
     // Pick: this touch only reads the face's colour; the rest of the stroke paints nothing.
-    if (pickMode && pickFace(p.x, p.y) >= 0) {
+    if (pickMode && pickPaintHit(p.x, p.y, false)) {
       paintAt(p.x, p.y);
       gesture.any = true;
       gesture.done = { has: () => true, add() {} };
@@ -5510,7 +5597,7 @@ function endPointer(e) {
   if (gesture.kind === "paint") {
     const g = gesture;
     gesture = null;
-    if (g.changed) meshChanged();                  // one undo step for the whole stroke
+    if (g.changed) paintChanged();                  // one undo step for the whole stroke
     else if (!g.any && !g.far && e.type === "pointerup") handleTap(g.startX, g.startY);   // empty tap
     return;
   }
@@ -5579,19 +5666,21 @@ function orbitBy(dx, dy) {
 // middle/shift-drag still pans, right-drag orbits).
 const PAINT_GRACE_MS = 250;   // a 2nd finger within this (before moving) cancels the dab
 function paintStroke(x, y) {
-  const g = gesture, t = pickFace(x, y);
-  if (t < 0) return;
+  const g = gesture, hit = pickPaintHit(x, y, true);
+  if (!hit) return;
   g.any = true;
   if (!g.done) g.done = new Set();
-  if (g.done.has(t)) return;
-  g.done.add(t);
-  for (const u of [t, ...mirroredTris(t)]) {
-    g.done.add(u);
-    if (colorEq(mesh.colors[u], currentColor)) continue;
-    if (!g.changed) { pushUndo(g.before); g.changed = true; }
-    mesh.colors[u] = currentColor.slice();
-    meshDirty = true;
-  }
+  const key = hit.o.id + ":" + hit.t;
+  if (g.done.has(key)) return;
+  withMesh(hit.o.mesh, () => {
+    for (const u of [hit.t, ...mirroredTris(hit.t)]) {
+      g.done.add(hit.o.id + ":" + u);
+      if (colorEq(mesh.colors[u], currentColor)) continue;
+      if (!g.changed) { pushUndo(g.before); g.changed = true; }
+      mesh.colors[u] = currentColor.slice();
+      meshDirty = true;
+    }
+  });
   faceRead = "Face: " + colorLabel(currentColor);
 }
 
@@ -5778,22 +5867,37 @@ function setOverlay(on) {
 }
 
 function paintAt(x, y) {
-  const t = pickFace(x, y);
-  if (t < 0) return false;
+  const hit = pickPaintHit(x, y, !pickMode);
+  if (!hit) return false;
   if (pickMode) {                            // Pick: take this face's colour, then back to painting
     pickMode = false;
-    currentColor = mesh.colors[t].slice();
-    faceRead = "Picked: " + colorLabel(mesh.colors[t]);
+    currentColor = hit.o.mesh.colors[hit.t].slice();
+    faceRead = "Picked: " + colorLabel(currentColor);
     save(); updateUI();
     return true;
   }
   faceRead = "Face: " + colorLabel(currentColor);
-  const targets = [t, ...mirroredTris(t)];   // just [t] when mirror is off
-  if (targets.every(u => colorEq(mesh.colors[u], currentColor))) return true;
-  pushUndo();
-  for (const u of targets) mesh.colors[u] = currentColor.slice();
-  meshChanged();
+  let changed = false;
+  withMesh(hit.o.mesh, () => {
+    const targets = [hit.t, ...mirroredTris(hit.t)];
+    if (targets.every(u => colorEq(mesh.colors[u], currentColor))) return;
+    pushUndo();
+    for (const u of targets) mesh.colors[u] = currentColor.slice();
+    changed = true;
+  });
+  if (changed) paintChanged();
   return true;
+}
+function paintFillSelected() {
+  const list = objSelList();
+  if (!list.length) { toast("Select an object first"); return; }
+  let n = 0;
+  for (const o of list) for (const c of o.mesh.colors) if (!colorEq(c, currentColor)) n++;
+  if (!n) { toast("Already that colour"); return; }
+  pushUndo();
+  for (const o of list) for (let t = 0; t < o.mesh.colors.length; t++) o.mesh.colors[t] = currentColor.slice();
+  paintChanged();
+  toast("Filled " + list.length + " object" + (list.length === 1 ? "" : "s") + " (" + n + " face" + (n === 1 ? "" : "s") + ")");
 }
 
 // Empty-space tap: deselect now; if it's the second quick tap, go to clean preview.
@@ -6205,8 +6309,7 @@ function buildExportFloats(o = activeObj()) {
 function visibleForExport() { return objs().filter(o => !shapeHidden(o)); }
 // What the export window exports: the active object, every visible object (one model
 // each, back to back), or every visible object merged into one model (scene coordinates,
-// named after the scene). "This object" still exports the active shape even when a
-// folder hides it, matching the old rule that the active export ignores the eye.
+// named after the scene). "Selected" exports the current object selection (one file each if several).
 function exportTargets() {
   const what = $("exportWhat") ? $("exportWhat").value : "active";
   if (what === "each") return visibleForExport();
@@ -6215,7 +6318,7 @@ function exportTargets() {
     const r = mergeMeshes([0, 0, 0], vis);
     return [{ name: cIdent(scene.name), pos: [0, 0, 0], twoSided: r.twoSided, mesh: r.mesh }];
   }
-  return [activeObj()];
+  return objSelList();
 }
 function buildExport() {
   const floats = $("exportFloats") && $("exportFloats").checked;
@@ -6223,8 +6326,12 @@ function buildExport() {
 }
 function syncExportName() {
   const w = $("exportWhat").value;
-  $("exportName").disabled = w === "each";
-  $("exportName").value = w === "merged" ? scene.name : w === "each" ? "(each object's own name)" : activeObj().name;
+  const list = objSelList();
+  $("exportName").disabled = w === "each" || (w === "active" && list.length !== 1);
+  $("exportName").value = w === "merged" ? scene.name
+    : w === "each" ? "(each object's own name)"
+    : list.length === 1 ? list[0].name
+    : list.length ? "(each selected object's own name)" : "";
 }
 
 // Clipboard API needs a secure context (https or localhost); file:// may refuse,
@@ -6254,6 +6361,7 @@ function toast(msg) {
 
 async function doExport() {
   $("exportWhat").value = "active";
+  if (!objSelList().length) { toast("Select an object first"); return; }
   syncExportName();
   $("exportFloats").checked = false;             // the 12-byte Vert is the default
   const text = buildExport();
@@ -6620,8 +6728,10 @@ function updateUI() {
   $("palette").classList.toggle("show", mode === "paint");
   renderPalette();
   const scOpen = $("scenePanel").classList.contains("show"), shOpen = $("shapesPanel").classList.contains("show");
-  $("bScene").classList.toggle("open", scOpen || shOpen);
-  $("bScene").setAttribute("aria-expanded", scOpen || shOpen ? "true" : "false");
+  $("bScene").classList.toggle("open", scOpen);
+  $("bScene").setAttribute("aria-expanded", scOpen ? "true" : "false");
+  if ($("bShapes")) $("bShapes").classList.toggle("open", shOpen);
+  updateSceneActions();
   if (scOpen) renderScenePanel();
   if (shOpen) renderShapes();
 
@@ -6962,7 +7072,8 @@ document.addEventListener("pointerdown", (e) => {
 });
 document.addEventListener("pointerdown", (e) => {
   if (e.target.closest("#scCombinePop") || e.target.closest("#scCombineOpts") ||
-      e.target.closest("#symPop") || e.target.closest("#bSymOpts")) return;
+      e.target.closest("#symPop") || e.target.closest("#bSymOpts") ||
+      e.target.closest("#scFilePop") || e.target.closest("#scFileOpts")) return;
   closeOptPops();
 });
 
@@ -7106,8 +7217,8 @@ $("bExport").addEventListener("click", doExport);
 
 //----- Scene Panel Wiring -----||
 //----- Shapes Drawer -----||
-// Scene and Shapes share the spot under the Scene button: the Scene panel's "＋ Shapes"
-// tab swaps to the drawer and its "☰ Scene" tab swaps back. Chips pick a prism shape or
+// The Scene button toggles the object tree. ＋ Shapes (in the Scene group) opens the
+// shapes drawer; its "☰ Scene" tab swaps back to the tree. Chips pick a prism shape or
 // pyramid side count (remembered); tapping the tile adds that shape.
 const PRISM_CHIPS = [["3", "▲", "Roof, 3 sides"], ["ramp", "◣", "Ramp wedge"], ["4", "4", "4 sides"],
                      ["5", "5", "5 sides"], ["6", "6", "6 sides"], ["8", "8", "8 sides"]];
@@ -7146,10 +7257,8 @@ document.addEventListener("keydown", (e) => {     // Shift+A: Shapes (as in Blen
     openDrawer($("shapesPanel").classList.contains("show") ? null : "shapes");
 });
 $("bScene").addEventListener("click", () => {
-  const any = $("scenePanel").classList.contains("show") || $("shapesPanel").classList.contains("show");
-  openDrawer(any ? null : "scene");
+  openDrawer($("scenePanel").classList.contains("show") ? null : "scene");
 });
-$("scClose").addEventListener("click", () => { $("scenePanel").classList.remove("show"); updateUI(); });
 $("scCube").addEventListener("click", cmdAddCube);
 $("scPrism").addEventListener("click", () => cmdAddPrism(prismKind));
 $("scPlaneV").addEventListener("click", () => cmdAddPlane("up"));
@@ -7168,14 +7277,15 @@ function toggleOptPop(popId, btn) {
   if (on) { pop.classList.add("show"); btn.classList.add("on"); btn.setAttribute("aria-expanded", "true"); placeOptPop(btn, pop); }
 }
 function closeOptPops() {
-  for (const id of ["scCombinePop", "symPop"]) {
+  for (const id of ["scCombinePop", "symPop", "scFilePop"]) {
     const el = $(id); if (el) el.classList.remove("show");
   }
-  for (const id of ["scCombineOpts", "bSymOpts"]) {
+  for (const id of ["scCombineOpts", "bSymOpts", "scFileOpts"]) {
     const el = $(id); if (el) { el.classList.remove("on"); el.setAttribute("aria-expanded", "false"); }
   }
 }
 $("scCombineOpts").addEventListener("click", (e) => { e.stopPropagation(); toggleOptPop("scCombinePop", $("scCombineOpts")); });
+$("scFileOpts").addEventListener("click", (e) => { e.stopPropagation(); toggleOptPop("scFilePop", $("scFileOpts")); });
 $("scCut").value = cutMode;
 $("scCut").addEventListener("change", () => {
   cutMode = $("scCut").value === "active" || $("scCut").value === "others" ? $("scCut").value : "auto";
@@ -7200,14 +7310,6 @@ $("scFolder").addEventListener("click", cmdAddFolder);
 $("folderAskLift").addEventListener("click", () => finishDeleteFolder("lift"));
 $("folderAskDrop").addEventListener("click", () => finishDeleteFolder("drop"));
 $("folderAskCancel").addEventListener("click", () => { folderDeleteId = null; updateUI(); });
-//----- Scene More -----||
-$("scMoreBtn").addEventListener("click", () => {
-  const on = !$("scMore").classList.contains("show");
-  $("scMore").classList.toggle("show", on);
-  $("scMoreBtn").classList.toggle("on", on);
-  $("scMoreBtn").setAttribute("aria-expanded", on ? "true" : "false");
-  $("scMoreBtn").textContent = on ? "More ▴" : "More ▾";
-});
 $("scDim").addEventListener("click", () => {
   dimOthers = !dimOthers;
   try { localStorage.setItem(KEY_PREFIX + "dim", dimOthers ? "1" : "0"); } catch (e) { /* ignore */ }
@@ -7554,6 +7656,7 @@ function renderPalette() {
   }
 }
 $("palPick").addEventListener("click", () => { pickMode = !pickMode; updateUI(); });
+$("palFill").addEventListener("click", paintFillSelected);
 // Mouse hover in Paint names the face under the pointer (touch has no hover: tap / Pick).
 let hoverT = 0;
 canvas.addEventListener("pointermove", (e) => {
@@ -7561,8 +7664,8 @@ canvas.addEventListener("pointermove", (e) => {
   const now = performance.now();
   if (now - hoverT < 60) return;
   hoverT = now;
-  const p = localPos(e), t = pickFace(p.x, p.y);
-  const s = t >= 0 ? "Face: " + colorLabel(mesh.colors[t]) : "";
+  const p = localPos(e), hit = pickPaintHit(p.x, p.y, true);
+  const s = hit ? "Face: " + colorLabel(hit.o.mesh.colors[hit.t]) : "";
   if (s !== faceRead) { faceRead = s; renderPalRead(); }
 });
 
