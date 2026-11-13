@@ -41,18 +41,12 @@
   }
   #info:empty { display: none; }
 
-  /* ----- Stats Line -----|| */
-  /* One small, dim line in the top-left corner: what the game will upload. */
-  #stats {
-    position: absolute; left: 10px; top: calc(env(safe-area-inset-top) + 6px);
-    pointer-events: none; font: 11px ui-monospace, Menlo, Consolas, monospace;
-    color: #8a8ea0; text-shadow: 0 1px 2px #000; white-space: nowrap;
-  }
+  /* ----- Stats Line -----|| moved into the top-right view column ----- */
   #stats.hide { display: none; }
 
-  /* Edge lengths of the active model (and of the vertex selection), under the stats. */
+  /* Edge lengths of the active model (and of the vertex selection), top-left. */
   #density {
-    position: absolute; left: 10px; top: calc(env(safe-area-inset-top) + 22px);
+    position: absolute; left: 10px; top: calc(env(safe-area-inset-top) + 6px);
     display: flex; gap: 6px; align-items: flex-start;
     max-width: calc(100% - 52px); z-index: 4; pointer-events: none;
   }
@@ -207,15 +201,57 @@
   #roRotate.on { opacity: 1; color: #e0b43a; }
   #roRotate.hide { display: none; }
   #roMerge.hide { display: none; }
-  /* Object mode: snap toggle for whole-object move / rotate / scale. Dim = free. */
-  #roSnap { background: none; border: 0; color: #e8e8ee; font: 600 12px ui-monospace, Menlo, Consolas, monospace;
-            padding: 4px 2px 4px 8px; border-left: 1px solid #fff3; opacity: 0.35; touch-action: manipulation; }
-  #roSnap.on { opacity: 1; color: #e0b43a; }
-  #roSnap.hide { display: none; }
+  /* Model / World coordinates, in the X/Y/Z readout (replaces the old snap toggle). */
+  #roCoords { background: none; border: 0; color: #e8e8ee; font: 600 11px ui-monospace, Menlo, Consolas, monospace;
+              padding: 4px 2px 4px 8px; border-left: 1px solid #fff3; opacity: 0.9; touch-action: manipulation; }
 
-  /* ----- Scene Panel -----|| the object list (outliner) and the object actions */
-  #scenePanel, #shapesPanel {
-    display: none; position: absolute; z-index: 6;
+  /* ----- Scene drawer -----|| full height, left edge, resizable from the tab */
+  #scenePanel {
+    display: flex; position: absolute; z-index: 6;
+    left: 0; top: 0; bottom: 76px; width: var(--scene-w, 280px);
+    overflow: visible; box-sizing: border-box;
+    padding: calc(env(safe-area-inset-top) + 6px) 10px 8px 8px;
+    border: 1px solid #3a3d4c; border-left: 0; border-radius: 0 12px 12px 0;
+    background: #1f2029f2; box-shadow: 4px 0 18px #0008;
+    flex-direction: column; gap: 6px;
+  }
+  #scenePanel.collapsed {
+    width: 0 !important; min-width: 0; padding: 0; border-color: transparent;
+    background: transparent; box-shadow: none;
+  }
+  #scenePanel.collapsed > .scBody { visibility: hidden; pointer-events: none; }
+  #scenePanel.narrow .objRow .ck { display: none; }
+  #scenePanel { min-width: 0; }
+  #scenePanel .scBody {
+    display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto;
+    min-height: 0; min-width: 0; width: 100%; max-width: 100%; overflow: hidden;
+  }
+  #scenePanel .scHead { min-width: 0; width: 100%; overflow: hidden; flex-wrap: wrap; align-items: center; }
+  #scenePanel .scHead .scMeta { flex: 1 1 100%; text-align: left; }
+  #scenePanel .scHead #scFileWrap { flex: 0 0 auto; }
+  #scenePanel .scBody { border-radius: 0 10px 0 0; }
+  #sceneTab {
+    position: absolute; right: -14px; top: 50%; transform: translateY(-50%);
+    width: 14px; height: 56px; min-height: 56px; min-width: 14px; padding: 0;
+    border-radius: 0 8px 8px 0; border: 1px solid #3a3d4c; border-left: 0;
+    background: #2a2c38; color: #9a9db0; cursor: ew-resize; touch-action: none;
+    display: flex; align-items: center; justify-content: center;
+    font: 700 12px/1 system-ui, sans-serif; z-index: 7;
+  }
+  #scenePanel #sceneTab {
+    min-height: 56px; height: 56px; width: 14px; min-width: 14px; padding: 0;
+  }
+  #scenePanel.collapsed #sceneTab {
+    right: auto; left: 0; border-left: 1px solid #3a3d4c; cursor: pointer;
+  }
+  #shapesPanel #shTwo { padding: 0 10px; font-weight: 600; min-width: 0; }
+  #scenePanel .scHead #scFileOpts, #scenePanel .scHead .optWrap #scFileOpts {
+    min-height: 22px; height: 22px; width: 22px; min-width: 22px; padding: 0;
+    font-size: 14px; font-weight: 700; border-radius: 6px;
+  }
+  #scenePanel .optPop button { min-height: 32px; }
+  #shapesPanel {
+    display: none; position: absolute; z-index: 7;
     left: 8px; top: calc(env(safe-area-inset-top) + 26px);
     width: min(360px, calc(100% - 64px)); max-height: calc(100% - 40px); overflow-y: auto;
     -webkit-overflow-scrolling: touch;
@@ -223,14 +259,7 @@
     background: #1f2029f2; border: 1px solid #3a3d4c; box-shadow: 0 8px 24px #000a;
     flex-direction: column; gap: 6px;
   }
-  #scenePanel.show, #shapesPanel.show { display: flex; }
-  /* Cap the panel to the 3D view and stop the whole thing scrolling, so the
-     tree can keep a guaranteed share of the height on a short laptop or phone. */
-  #scenePanel {
-    overflow: hidden;
-    height: calc(100% - env(safe-area-inset-top) - 34px);
-    max-height: calc(100% - env(safe-area-inset-top) - 34px);
-  }
+  #shapesPanel.show { display: flex; }
   #scenePanel button, #shapesPanel button {
     min-height: 38px; border: 0; border-radius: 9px; background: #2a2c38; color: #e8e8ee;
     font: inherit; font-size: 12px; touch-action: manipulation; padding: 0 6px;
@@ -268,6 +297,9 @@
   .objRow .grip { width: 22px; min-width: 22px; padding: 0; font-size: 13px; cursor: grab; touch-action: none; }
   .objRow .nm { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
                 font: 12px ui-monospace, Menlo, Consolas, monospace !important; }
+  .objRow .nmEdit { width: 100%; min-width: 0; box-sizing: border-box; min-height: 32px; margin: 0; padding: 0 6px;
+                    border: 1px solid #e0b43a; border-radius: 6px; background: #0d0e12; color: #fff;
+                    font: 16px ui-monospace, Menlo, Consolas, monospace; }
   .objRow .nm small { color: #9a9db0; }
   .objRow.sel .nm, .objRow.folder.sel .nm {
     box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 4px #16171d;
@@ -467,6 +499,12 @@
   #biomeName { font: 600 10px ui-monospace, Menlo, Consolas, monospace; color: #fff;
                text-shadow: 0 0 3px #000, 0 0 2px #000; white-space: nowrap; text-align: right;
                pointer-events: none; margin-top: -2px; }
+  #views #stats {
+    position: static; align-self: flex-end; width: 180px; max-width: 180px;
+    pointer-events: none; text-align: right; white-space: normal;
+    font: 10px/1.35 ui-monospace, Menlo, Consolas, monospace;
+    color: #8a8ea0; text-shadow: 0 1px 2px #000; margin-top: 6px;
+  }
   #biomeMenu { right: 58px; }
   #sunMenu { left: auto; right: 58px; }
 
@@ -605,7 +643,6 @@
   <div id="view">
     <canvas id="gl"></canvas>
     <div id="info"></div>
-    <div id="stats"></div>
     <div id="density">
       <button id="bDensity" type="button" aria-pressed="false" title="Mark edges under half or over double the average. They are drawn thick and bright, in the same neutral colour.">Mark</button>
       <div id="densityText" aria-live="polite"></div>
@@ -627,8 +664,10 @@
         <button id="bBake" type="button" class="viewPill" aria-haspopup="true" aria-expanded="false" title="Shade and sun direction">Shade</button>
         <button id="biomeBtn" type="button" class="viewPill" title="Biome screen filter (viewport preview only, never exported)" aria-haspopup="true">Biome</button>
         <button id="bRock" type="button" class="viewPill" title="Size references: tap to cycle off → rock → rock + player → player"><span id="refIcon">◆︎</span> <span id="refLabel">Rock</span></button>
+        <button id="scDim" type="button" class="viewPill" title="Dim the other objects while editing one">Dim</button>
       </div>
       <div id="biomeName">None</div>
+      <div id="stats"></div>
     </div>
     <div id="biomeMenu" aria-label="Biome filter">
       <div class="biomeHead"><span>Biome filter</span><button id="biomeClose" type="button" title="Close">×</button></div>
@@ -673,25 +712,10 @@
       </div>
       <div class="note">Hold ↺↻↓↑ to sweep. Shade bakes this sun and the preset's colours into the export.</div>
     </div>
-    <div id="scenePanel" aria-label="Scene">
-      <div class="scHead">
-        <span class="ttl" id="scTitle">Scene</span>
-        <span class="scMeta" id="scNote"></span>
-      </div>
-      <div id="objRootDrop">Drop here for scene root</div>
-      <div id="objList"></div>
-      <div id="objDropLine" data-label="Insert" aria-hidden="true"></div>
-      <div id="folderAsk" class="folderAsk" hidden>
-        <div class="note" id="folderAskText"></div>
-        <button id="folderAskLift" type="button" title="Remove the folder and leave every shape and subfolder in its parent">Move contents up</button>
-        <button id="folderAskDrop" type="button" title="Delete the folder and every shape inside it. Undo brings them back.">Delete contents too</button>
-        <button id="folderAskCancel" type="button">Cancel</button>
-      </div>
-    </div>
     <div id="shapesPanel" aria-label="Shapes">
       <div class="scHead">
         <span class="ttl">Shapes</span>
-        <button id="shToScene" type="button" title="Back to the object list">☰ Scene</button>
+        <button id="shTwo" type="button" title="Two-sided: the export adds a reversed copy of every face. This is the default for new shapes, and applies to the current selection.">Two-sided</button>
         <button id="shClose" type="button" aria-label="Close">×</button>
       </div>
       <div class="shGrid">
@@ -723,7 +747,7 @@
       <button id="roRotate" type="button" aria-label="Rotate" title="Rotate the selection about its centre (2+ verts)"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a8 8 0 1 0 7.7 10.1l-1.9-.6A6 6 0 1 1 12 6c1.7 0 3.2.7 4.3 1.8L13.5 10.5H21V3l-3.3 3.3A8 8 0 0 0 12 4z"/></svg></button>
       <span class="ro x" id="roX" data-axis="0"></span><span class="ro y" id="roY" data-axis="1"></span><span class="ro z" id="roZ" data-axis="2"></span>
       <button id="roMerge" type="button" aria-label="Auto-merge on drag" title="Auto-merge: a vertex dragged flat onto its face (or straight onto its edge) dissolves on release"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h4.5l4.5 6 4.5-6H21v2h-3.5L13.3 12l4.2 5H21v2h-4.5L12 13l-4.5 6H3v-2h3.5l4.2-5-4.2-5H3z"/></svg></button>
-      <button id="roSnap" type="button" aria-label="Object snap" title="Object snap: move 0.125, turn 15°, scale in 0.125 steps">⌗ snap</button>
+      <button id="roCoords" type="button" title="Move gizmo and X/Y/Z readout: Model (object space) or World (scene space)">World</button>
       <span id="roEdit">
         <span id="roEditLbl"></span>
         <input id="roInput" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
@@ -752,10 +776,6 @@
         <button id="bFace" class="tbHalf" data-mode="face" title="Face pick: tap triangles on the active object. Tap again to unmark. Delete removes them."><span class="ic">△</span>Faces</button>
         <button id="bFaceDel" class="tbHalf" type="button" title="Delete the picked triangles (Delete or Backspace). A mirror twin is removed with its face."><span class="ic">⌫︎</span>Del</button>
       </div>
-      <div class="tbStack">
-        <button id="bUndo" class="tbHalf"><span class="ic">↶︎</span>Undo</button>
-        <button id="bRedo" class="tbHalf"><span class="ic">↷︎</span>Redo</button>
-      </div>
       <div class="tbStack wide">
         <button id="bMirror" class="tbPill"><span id="mirrorLabel">Mirror X</span></button>
         <div class="optWrap" id="symWrap">
@@ -770,31 +790,24 @@
         </div>
       </div>
       </div>
-      <div class="tbStack narrow">
-        <button id="bCoords" class="tbPill" type="button" title="Move gizmo and X/Y/Z readout: Model (object space) or World (scene space)">World</button>
-      </div>
     </div>
     <div class="tbGroup" data-label="Scene">
       <button id="bObject" class="tbTool" data-mode="object" title="Object mode: select, move, rotate and scale whole objects (Tab)"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l9 5v10l-9 5-9-5V7zm0 2.3L5.2 8 12 11.7 18.8 8zM5 9.7v6.1l6 3.4v-6.2zm14 0l-6 3.3v6.2l6-3.4z"/></svg></span>Object</button>
-      <button id="bScene" class="tbTool" aria-haspopup="true" title="Scene tree: tap to show or hide the object list"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h4v4H3zm6 1h12v2H9zM3 10h4v4H3zm6 1h12v2H9zm-6 5h4v4H3zm6 1h12v2H9z"/></svg></span>Scene</button>
+      <button id="bShapes" class="tbTool" type="button" title="Shapes: add a cube, plane, prism or pyramid (Shift+A)">＋ Shapes</button>
       <button id="bPaint" class="tbTool" data-mode="paint" title="Paint faces on every selected object"><span class="ic"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.7 3.3a1 1 0 0 0-1.4 0L10 12.6l1.4 1.4 9.3-9.3a1 1 0 0 0 0-1.4zM8.6 13.4c-1.9 0-3.4 1.5-3.4 3.4 0 1.1-.9 2-2 2.2.8 1.1 2.2 1.8 3.7 1.8 2.6 0 4.6-2 4.6-4.6 0-.4-.1-.8-.2-1.2z"/></svg></span>Paint</button>
+      <button id="bUndo" class="tbTool"><span class="ic">↶︎</span>Undo</button>
+      <button id="bRedo" class="tbTool"><span class="ic">↷︎</span>Redo</button>
+      <button id="scDup" class="tbTool" type="button" title="Duplicate the selected objects (Ctrl+D)">Dup</button>
       <div class="tbStack">
         <button id="bImport" class="tbHalf"><span class="ic">⇩</span>Import</button>
         <button id="bExport" class="tbHalf"><span class="ic">⇪</span>Export</button>
       </div>
       <div class="tbStack">
-        <button id="bShapes" class="tbHalf" type="button" title="Shapes: add a cube, plane, prism or pyramid (Shift+A)">＋ Shapes</button>
-        <button id="scFolder" class="tbPill" type="button" title="New folder. Inside the focused folder, or beside the active shape.">Folder</button>
-      </div>
-      <div class="tbStack">
-        <button id="scRename" class="tbPill" type="button" title="Rename the active object (its export name)">Rename</button>
-        <button id="scDelete" class="tbPill" type="button" title="Delete the selected objects (Delete in Object mode)">Delete</button>
-      </div>
-      <div class="tbStack">
-        <button id="scDup" class="tbPill" type="button" title="Duplicate the selected objects (Ctrl+D)">Dup</button>
-        <button id="scSeparate" class="tbPill" type="button" title="Move the selected faces into a new object (P)">Separate</button>
+        <button id="scFolder" class="tbHalf" type="button" title="New folder. Inside the focused folder, or beside the active shape.">Folder</button>
+        <button id="scDelete" class="tbHalf" type="button" title="Delete the selected objects (Delete in Object mode)">Delete</button>
       </div>
       <div class="tbStack wide">
+        <button id="scSeparate" class="tbHalf" type="button" title="Move the selected faces into a new object (P)">Separate</button>
         <div class="optWrap" id="scCombineWrap">
         <button id="scCombine" class="tbPill" type="button" title="Join the selected objects into the active one (Ctrl+J)">Combine</button>
         <button id="scCombineOpts" class="tbPill optBtn" type="button" title="Combine options" aria-expanded="false" aria-haspopup="true" aria-controls="scCombinePop">⋯</button>
@@ -814,21 +827,35 @@
           </label>
         </div>
       </div>
-        <button id="scTwo" class="tbPill" type="button" title="Two-sided: export every face twice, front and back">Two-sided</button>
-      </div>
-      <div class="tbStack wide">
-        <button id="scDim" class="tbPill" type="button" title="Dim the other objects while editing one">Dim others</button>
-        <div class="optWrap" id="scFileWrap">
-        <button id="scFileOpts" class="tbHalf" type="button" title="Save, open, or start a new scene" aria-expanded="false" aria-haspopup="true" aria-controls="scFilePop">File ⋯</button>
-        <div id="scFilePop" class="optPop" role="dialog" aria-label="Scene file">
-          <button id="scSave" type="button" title="Download the whole scene as a .json project">Save .json</button>
-          <button id="scOpen" type="button" title="Open a scene .json (replaces the scene) or add .h models">Open…</button>
-          <button id="scNew" type="button" title="Start over with one cube">New scene</button>
-        </div>
-      </div>
       </div>
     </div>
   </div>
+  <div id="scenePanel" aria-label="Scene">
+      <div class="scBody">
+      <div class="scHead">
+        <span class="ttl" id="scTitle">Scene</span>
+        <div class="optWrap" id="scFileWrap">
+          <button id="scFileOpts" type="button" title="Save, open, or start a new scene" aria-expanded="false" aria-haspopup="true" aria-controls="scFilePop">⋯</button>
+          <div id="scFilePop" class="optPop down" role="dialog" aria-label="Scene file">
+            <button id="scSave" type="button" title="Download the whole scene as a .json project">Save .json</button>
+            <button id="scOpen" type="button" title="Open a scene .json (replaces the scene) or add .h models">Open…</button>
+            <button id="scNew" type="button" title="Start over with one cube">New scene</button>
+          </div>
+        </div>
+        <span class="scMeta" id="scNote"></span>
+      </div>
+      <div id="objRootDrop">Drop here for scene root</div>
+      <div id="objList"></div>
+      <div id="objDropLine" data-label="Insert" aria-hidden="true"></div>
+      <div id="folderAsk" class="folderAsk" hidden>
+        <div class="note" id="folderAskText"></div>
+        <button id="folderAskLift" type="button" title="Remove the folder and leave every shape and subfolder in its parent">Move contents up</button>
+        <button id="folderAskDrop" type="button" title="Delete the folder and every shape inside it. Undo brings them back.">Delete contents too</button>
+        <button id="folderAskCancel" type="button">Cancel</button>
+      </div>
+      </div>
+      <button id="sceneTab" type="button" title="Drag to resize the tree. Tap to hide or show it." aria-label="Resize or hide the scene tree">⋮</button>
+    </div>
 </div>
 
 <div id="modal" class="modal">
@@ -2453,22 +2480,27 @@ let folderDeleteId = null;       // folder waiting on Move-up vs Delete-contents
 let frameOff = [0, 0, 0];
 let sceneVersion = 0;            // bumped when another object's mesh or the list changes
 let dimOthers = true;            // dim the other objects while editing one
-let objSnap = true;              // Object mode: move 0.125, rotate 15°, scale 0.125 steps
 let objClipboard = null;         // Copy: JSON list of objects (also kept in localStorage)
 let swapDepth = 0;               // > 0 while withMesh() has swapped `mesh` out
 let coordSpace = "world";         // "world" | "model": gizmo/readout space
 let camOrtho = false;             // orthographic (flat) view
 let symmAxis = "x";               // axis the Symm tool (and Mirror, when on) uses
+let shapeTwoSided = false;        // default for new shapes; the Shapes-drawer toggle
+let sceneW = 280, sceneWLast = 280, sceneOpen = true;
 try {
   dimOthers = localStorage.getItem(KEY_PREFIX + "dim") !== "0";
-  objSnap = localStorage.getItem(KEY_PREFIX + "objsnap") !== "0";
   const cs = localStorage.getItem(KEY_PREFIX + "coords");
   if (cs === "model" || cs === "world") coordSpace = cs;
   camOrtho = localStorage.getItem(KEY_PREFIX + "ortho") === "1";
   const sa = localStorage.getItem(KEY_PREFIX + "symmaxis");
   if (sa === "x" || sa === "y" || sa === "z") symmAxis = sa;
+  shapeTwoSided = localStorage.getItem(KEY_PREFIX + "twosided") === "1";
+  const sw = parseInt(localStorage.getItem(KEY_PREFIX + "sceneW"), 10);
+  if (sw >= 20 && sw <= 500) { sceneW = sw; sceneWLast = Math.max(sw, 160); }
+  const so = localStorage.getItem(KEY_PREFIX + "sceneOpen");
+  if (so === "0") sceneOpen = false;
+  if (so === "1") sceneOpen = true;
 } catch (e) { /* storage blocked */ }
-const OBJ_ROT_STEP = 15 * Math.PI / 180;
 const spaceOff = () => coordSpace === "world" ? frameOff : [0, 0, 0];
 
 const newObjId = () => "o" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -2504,7 +2536,7 @@ function uniqueObjName(base, self = null) {
 }
 function makeObject(name, m, pos = [0, 0, 0], unique = true) {
   return { id: newObjId(), name: unique ? uniqueObjName(name) : cIdent(name), pos: pos.slice(),
-           hidden: false, twoSided: false, mesh: m };
+           hidden: false, twoSided: !!shapeTwoSided, mesh: m };
 }
 
 function newScene(mirror = "x") {
@@ -3670,16 +3702,18 @@ function cmdSeparate(keep) {
   addObjects([n]);
   toast(`${keep ? "Copied" : "Separated"} ${R.length} face${R.length > 1 ? "s" : ""} into ${n.name}`);
 }
-function cmdTwoSided() {
+function cmdTwoSided(force) {
+  const on = (force === true || force === false) ? force : !shapeTwoSided;
+  shapeTwoSided = on;
+  try { localStorage.setItem(KEY_PREFIX + "twosided", on ? "1" : "0"); } catch (e) { /* blocked */ }
   const list = objSelList();
-  if (!list.length) { toast("Select an object first"); return; }
-  const src = (activeObj() && list.includes(activeObj())) ? activeObj() : list[0];
-  pushUndo();
-  const on = !src.twoSided;
-  for (const x of list) x.twoSided = on;
-  sceneVersion++;
-  meshChanged();
-  toast(on ? "Two-sided: the export adds a reversed copy of every face (back faces)" : "One-sided");
+  if (list.length) {
+    pushUndo();
+    for (const x of list) x.twoSided = on;
+    sceneVersion++;
+    meshChanged();
+  } else updateUI();
+  toast(on ? "Two-sided: new shapes (and the selection) export front and back faces" : "One-sided: new shapes export front faces only");
 }
 function cmdSubdivide() {
   if (triCount() > 20000) { toast("Too many triangles to subdivide"); return; }
@@ -3749,15 +3783,19 @@ function deleteFacesPreview(list) {
   for (const t of list) if (Number.isInteger(t) && t >= 0 && t < triCount()) for (const u of faceGroup(t)) drop.add(u);
   return drop.size;
 }
+function applyObjectRename(o, n) {
+  if (!o || !n || !String(n).trim()) return;
+  const next = uniqueObjName(n, o);
+  if (next === o.name) return;
+  pushUndo();
+  o.name = next;
+  save(); updateUI();
+}
 function cmdRename() {
   const list = objSelList();
   if (!list.length) { toast("Select an object first"); return; }
   const o = (activeObj() && list.includes(activeObj())) ? activeObj() : list[0];
-  const n = prompt("Object name (the export uses it for <name>_verts):", o.name);
-  if (n === null || !n.trim()) return;
-  pushUndo();
-  o.name = uniqueObjName(n, o);
-  save(); updateUI();
+  applyObjectRename(o, o.name);
 }
 function cmdDelete() {
   const list = objSelList();
@@ -3962,8 +4000,7 @@ function objGestureEnd(g) {
 }
 function objScaleFactor(f) {
   if (!isFinite(f)) f = 1;
-  if (objSnap) f = Math.round(f / SCALE_STEP) * SCALE_STEP;
-  return Math.max(objSnap ? SCALE_STEP : SCALE_MIN, f);
+  return Math.max(SCALE_MIN, f);
 }
 function objPointerDown(p) {
   const list = objSelList();
@@ -4012,7 +4049,7 @@ function objGestureMove(p) {
     while (d < -Math.PI) d += 2 * Math.PI;
     g.lastRaw = raw;
     g.angle += d;
-    g.shown = objSnap ? Math.round(g.angle / OBJ_ROT_STEP) * OBJ_ROT_STEP : g.angle;
+    g.shown = g.angle;
     if (g.ref) { g.moved = true; refXf[g.ref].rot = g.refStart.rot + g.shown; placeRef(g.ref); }
     else {
       if (!g.moved) { pushUndo(g.before); g.moved = true; }
@@ -4036,8 +4073,7 @@ function objGestureMove(p) {
     const s = axisParam(screenRay(p.x, p.y), g.p0, g.dir);
     if (s === null) return;
     const a = g.axis;
-    let delta = s - g.sGrab;
-    if (objSnap) { const w0 = g.p0[a] + frameOff[a]; delta = Math.round((w0 + delta) / SNAP_STEP) * SNAP_STEP - w0; }
+    const delta = s - g.sGrab;
     if (g.ref) { g.moved = true; refXf[g.ref].pos[a] = g.refStart.pos[a] + delta; placeRef(g.ref); }
     else {
       if (!g.moved) { pushUndo(g.before); g.moved = true; }
@@ -4194,12 +4230,12 @@ function renderFolderPrompts() {
 // Drag any row (not the eye / expand / checkbox) to move it. Mouse: 8 px slop.
 // Touch: a short hold starts the drag so the list can still be scrolled.
 const FOLDER_PALETTE = [
-  { name: "sky",    fill: "#8ec8ff", ink: "#082033" },
-  { name: "gold",   fill: "#e0b43a", ink: "#1a1400" },
-  { name: "green",  fill: "#145a38", ink: "#e8fff0" },
-  { name: "rose",   fill: "#ffc0c8", ink: "#3a0a14" },
-  { name: "violet", fill: "#3a1a70", ink: "#f0e8ff" },
-  { name: "teal",   fill: "#0a5c5c", ink: "#e8ffff" },
+  { name: "sky",    fill: "#8e96a0", ink: "#16191e" },
+  { name: "gold",   fill: "#5e584c", ink: "#f0eadc" },
+  { name: "green",  fill: "#2c342f", ink: "#d8e0da" },
+  { name: "rose",   fill: "#a39697", ink: "#1a1415" },
+  { name: "violet", fill: "#3a3844", ink: "#e6e2ea" },
+  { name: "teal",   fill: "#465252", ink: "#e2eaea" },
 ];
 function folderColorMap() {
   const map = new Map();
@@ -4361,7 +4397,7 @@ function bindRowDrag(row, kind, id) {
   };
   row.addEventListener("pointerdown", (e) => {
     if (e.button) return;
-    if (e.target.closest && e.target.closest(".eye, .tw, .ck")) return;
+    if (e.target.closest && e.target.closest(".eye, .tw, .ck, .nmEdit, input")) return;
     const isTouch = e.pointerType === "touch";
     outlineDrag = { kind, id, x: e.clientX, y: e.clientY, pid: e.pointerId, started: false, row, hold: 0, touch: isTouch };
     window.addEventListener("pointermove", onMove, { passive: false });
@@ -4372,6 +4408,49 @@ function bindRowDrag(row, kind, id) {
     }
   });
 }
+let lastNmTap = null;
+function startTreeRename(kind, id, nmBtn) {
+  const cur = kind === "folder" ? findFolderNode(id) : objById(id);
+  if (!cur || !nmBtn) return;
+  const prev = cur.name;
+  const input = document.createElement("input");
+  input.className = "nmEdit";
+  input.type = "text";
+  input.value = prev;
+  input.setAttribute("aria-label", "Rename");
+  nmBtn.replaceChildren(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = (ok) => {
+    if (done) return;
+    done = true;
+    const v = input.value.trim();
+    if (ok && v && v !== prev) {
+      if (kind === "folder") renameFolder(id, v);
+      else applyObjectRename(cur, v);
+    } else updateUI();
+  };
+  input.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") { e.preventDefault(); finish(true); }
+    else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener("blur", () => finish(true));
+  input.addEventListener("pointerdown", (e) => e.stopPropagation());
+}
+function nmActivate(kind, id, nmBtn, single) {
+  if (outlineDrag && outlineDrag.started) return;
+  const now = performance.now();
+  if (lastNmTap && lastNmTap.kind === kind && lastNmTap.id === id && now - lastNmTap.t < 350) {
+    lastNmTap = null;
+    startTreeRename(kind, id, nmBtn);
+    return;
+  }
+  lastNmTap = { kind, id, t: now };
+  single();
+}
+
 function renderScenePanel() {
   const el = $("objList");
   el.textContent = "";
@@ -4411,14 +4490,16 @@ function renderScenePanel() {
     const small = document.createElement("small");
     small.textContent = nObj + (nObj === 1 ? " shape" : " shapes");
     nm.appendChild(small);
-    nm.title = "Select every shape in this folder. Rename and Delete use it while it is focused.";
+    nm.title = "Select every shape in this folder. Double-tap the name to rename.";
     nm.addEventListener("click", () => {
-      if (outlineDrag && outlineDrag.started) return;
-      folderFocus = node.id;
-      const n = selectFolderContents(node.id);
-      if (!n) updateUI();
-      toast(n ? "Selected " + n + " in " + node.name : "Folder is empty");
+      nmActivate("folder", node.id, nm, () => {
+        folderFocus = node.id;
+        const n = selectFolderContents(node.id);
+        if (!n) updateUI();
+        toast(n ? "Selected " + n + " in " + node.name : "Folder is empty");
+      });
     });
+    nm.addEventListener("dblclick", (e) => e.preventDefault());
     const kids = objectsUnder(node);
     const nSel = kids.filter(o => objSel.has(o.id)).length;
     const allOn = kids.length > 0 && nSel === kids.length;
@@ -4460,8 +4541,11 @@ function renderScenePanel() {
     const small = document.createElement("small");
     small.textContent = (o.mesh.tris.length / 3) + "▵" + (o.twoSided ? " ×2" : "");
     nm.appendChild(small);
-    nm.title = "Make active (edit this one)";
-    nm.addEventListener("click", () => { if (!(outlineDrag && outlineDrag.started)) showObject(i); });
+    nm.title = "Make active. Double-tap the name to rename.";
+    nm.addEventListener("click", () => {
+      nmActivate("object", o.id, nm, () => { if (!(outlineDrag && outlineDrag.started)) showObject(i); });
+    });
+    nm.addEventListener("dblclick", (e) => e.preventDefault());
     const ck = document.createElement("button");
     ck.className = "ck" + (selected ? " on" : ""); ck.type = "button";
     ck.textContent = selected ? "✓" : "";
@@ -4494,15 +4578,9 @@ function updateSceneActions() {
   if ($("scCombine")) $("scCombine").disabled = sel < 2;
   if ($("scSeparate")) $("scSeparate").disabled = !faces;
   if ($("scDelete")) $("scDelete").disabled = folderOn ? false : (sel === 0 || sel >= scene.objects.length);
-  if ($("scRename")) $("scRename").disabled = folderOn ? false : sel === 0;
   if ($("scDup")) $("scDup").disabled = sel === 0;
-  if ($("scTwo")) {
-    const list = objSelList();
-    const src = (activeObj() && list.includes(activeObj())) ? activeObj() : list[0];
-    $("scTwo").classList.toggle("on", !!(src && src.twoSided));
-    $("scTwo").disabled = !list.length;
-  }
   if ($("scDim")) $("scDim").classList.toggle("on", dimOthers);
+  if ($("shTwo")) $("shTwo").classList.toggle("on", !!shapeTwoSided);
 }
 
 
@@ -6712,7 +6790,7 @@ function updateUI() {
   $("bMirror").classList.toggle("on", !!mesh.mirror);
   $("mirrorLabel").textContent = "Mirror " + (mesh.mirror || symmAxis).toUpperCase();
   if ($("symLabel")) $("symLabel").textContent = "Symm " + symmAxis.toUpperCase();
-  if ($("bCoords")) { $("bCoords").textContent = coordSpace === "world" ? "World" : "Model"; $("bCoords").classList.remove("on"); }
+  if ($("roCoords")) $("roCoords").textContent = coordSpace === "world" ? "World" : "Model";
   if ($("bPersp")) { $("bPersp").textContent = camOrtho ? "Ortho" : "Persp"; $("bPersp").classList.toggle("on", camOrtho); }
   if ($("symPop")) for (const b of $("symPop").querySelectorAll("[data-axis]")) b.classList.toggle("on", b.dataset.axis === symmAxis);
   $("bUndo").disabled = undoStack.length === 0;
@@ -6727,13 +6805,12 @@ function updateUI() {
   // View snaps stay up in the clean preview and with nothing selected.
   $("palette").classList.toggle("show", mode === "paint");
   renderPalette();
-  const scOpen = $("scenePanel").classList.contains("show"), shOpen = $("shapesPanel").classList.contains("show");
-  $("bScene").classList.toggle("open", scOpen);
-  $("bScene").setAttribute("aria-expanded", scOpen ? "true" : "false");
+  const shOpen = $("shapesPanel").classList.contains("show");
   if ($("bShapes")) $("bShapes").classList.toggle("open", shOpen);
   updateSceneActions();
-  if (scOpen) renderScenePanel();
+  renderScenePanel();
   if (shOpen) renderShapes();
+  layoutSceneDrawer();
 
   if (selected >= vertCount()) selected = -1;       // e.g. after a test or tool shrank the mesh
   if (selected < 0) selExtra.clear();
@@ -6811,7 +6888,7 @@ function mirrorWarnings() {
 // Live X / Y / Z chip at the bottom of the view while a vertex is selected in Move mode.
 // The axis being dragged is underlined.
 // Object mode: the same chip for the selected objects (pivot in scene units; with
-// several, the centroid of their pivots). The ⌗ button toggles object snapping.
+// several, the centroid of their pivots). World / Model sits on the readout.
 const roKey = () => mode === "object" ? (refSel ? "ref:" + refSel + ":" : "obj:") + objSelList().map(o => o.id).join(",") : selection().join(",");
 function updateReadout() {
   const om = mode === "object";
@@ -6829,8 +6906,7 @@ function updateReadout() {
   $("roRotate").classList.toggle("hide", !(multi || om));
   $("roRotate").classList.toggle("on", rotateActive());
   $("roMerge").classList.toggle("hide", om);
-  $("roSnap").classList.toggle("hide", !om);
-  $("roSnap").classList.toggle("on", objSnap);
+  if ($("roCoords")) $("roCoords").textContent = coordSpace === "world" ? "World" : "Model";
   if (rotateActive()) {                            // Rotate: live angle per axis, degrees
     const g = gesture && gesture.kind === "axis" && gesture.rotate ? gesture : null;
     ["roX", "roY", "roZ"].forEach((id, a) => {
@@ -7162,7 +7238,7 @@ for (const b of $("symPop").querySelectorAll("[data-axis]")) {
     } else updateUI();
   });
 }
-$("bCoords").addEventListener("click", () => {
+$("roCoords").addEventListener("click", () => {
   coordSpace = coordSpace === "world" ? "model" : "world";
   try { localStorage.setItem(KEY_PREFIX + "coords", coordSpace); } catch (err) { /* blocked */ }
   toast(coordSpace === "world" ? "World coordinates" : "Model coordinates");
@@ -7215,15 +7291,49 @@ $("fileIn").addEventListener("change", async () => {
 });
 $("bExport").addEventListener("click", doExport);
 
-//----- Scene Panel Wiring -----||
-//----- Shapes Drawer -----||
-// The Scene button toggles the object tree. ＋ Shapes (in the Scene group) opens the
-// shapes drawer; its "☰ Scene" tab swaps back to the tree. Chips pick a prism shape or
-// pyramid side count (remembered); tapping the tile adds that shape.
+//----- Scene Drawer + Shapes -----||
+// The scene tree is a full-height left drawer. Drag its tab to resize; tap the tab to
+// hide or restore it. ＋ Shapes opens the shapes panel beside the drawer. Chips pick a
+// prism shape or pyramid side count (remembered); tapping a tile adds that shape.
 const PRISM_CHIPS = [["3", "▲", "Roof, 3 sides"], ["ramp", "◣", "Ramp wedge"], ["4", "4", "4 sides"],
                      ["5", "5", "5 sides"], ["6", "6", "6 sides"], ["8", "8", "8 sides"]];
-function openDrawer(which) {          // "scene", "shapes" or null (close)
-  $("scenePanel").classList.toggle("show", which === "scene");
+const SCENE_W_MIN = 20, SCENE_W_NARROW = 196, SCENE_W_DEFAULT = 280;
+function sceneWMax() { return Math.max(200, Math.min(420, window.innerWidth - 72)); }
+function persistSceneDrawer() {
+  try {
+    localStorage.setItem(KEY_PREFIX + "sceneW", String(sceneW));
+    localStorage.setItem(KEY_PREFIX + "sceneOpen", sceneOpen ? "1" : "0");
+  } catch (e) { /* blocked */ }
+}
+function layoutSceneDrawer() {
+  const el = $("scenePanel");
+  if (!el) return;
+  const tb = $("toolbar");
+  el.style.bottom = ((tb && tb.offsetHeight) || 76) + "px";
+  const max = sceneWMax();
+  if (sceneOpen && sceneW > max) sceneW = max;
+  el.style.setProperty("--scene-w", sceneW + "px");
+  el.classList.toggle("collapsed", !sceneOpen);
+  el.classList.toggle("narrow", sceneOpen && sceneW < SCENE_W_NARROW);
+  const sh = $("shapesPanel");
+  if (sh && sh.classList.contains("show")) {
+    sh.style.left = ((sceneOpen ? sceneW : 0) + 8) + "px";
+  }
+  const den = $("density");
+  if (den) den.style.left = ((sceneOpen ? sceneW : 0) + 10) + "px";
+}
+function toggleSceneDrawer() {
+  if (sceneOpen) {
+    if (sceneW >= 80) sceneWLast = sceneW;
+    sceneOpen = false;
+  } else {
+    sceneOpen = true;
+    sceneW = Math.min(Math.max(sceneWLast || SCENE_W_DEFAULT, 160), sceneWMax());
+  }
+  persistSceneDrawer();
+  layoutSceneDrawer();
+}
+function openDrawer(which) {          // "shapes" or null (close). The tree is its own drawer.
   $("shapesPanel").classList.toggle("show", which === "shapes");
   updateUI();
 }
@@ -7233,6 +7343,7 @@ function renderShapes() {
   const pt = prismKind === "ramp" ? 8 : 4 * +prismKind - 4;
   $("shPrismInfo").textContent = `${prismKind === "ramp" ? "ramp" : prismKind + " sides"} · ${pt}▵`;
   $("shPyrInfo").textContent = `${pyramidSides} sides · ${2 * pyramidSides - 2}▵`;
+  if ($("shTwo")) $("shTwo").classList.toggle("on", !!shapeTwoSided);
 }
 function remember(key, v) { try { localStorage.setItem(KEY_PREFIX + key, String(v)); } catch (e) { /* ignore */ } }
 for (const [v, label, title] of PRISM_CHIPS) {
@@ -7247,18 +7358,47 @@ for (const n of PYRAMID_SIDES) {
   b.addEventListener("click", () => { pyramidSides = n; remember("pyramid", n); renderShapes(); });
   $("pyramidChips").appendChild(b);
 }
-$("bShapes").addEventListener("click", () => openDrawer("shapes"));
-$("shToScene").addEventListener("click", () => openDrawer("scene"));
+$("bShapes").addEventListener("click", () => {
+  openDrawer($("shapesPanel").classList.contains("show") ? null : "shapes");
+});
 $("shClose").addEventListener("click", () => openDrawer(null));
+$("shTwo").addEventListener("click", () => cmdTwoSided(!shapeTwoSided));
 $("scPyramid").addEventListener("click", () => cmdAddPyramid(pyramidSides));
 document.addEventListener("keydown", (e) => {     // Shift+A: Shapes (as in Blender's Add menu)
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
   if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === "a")
     openDrawer($("shapesPanel").classList.contains("show") ? null : "shapes");
 });
-$("bScene").addEventListener("click", () => {
-  openDrawer($("scenePanel").classList.contains("show") ? null : "scene");
-});
+window.addEventListener("resize", layoutSceneDrawer);
+(function bindSceneTab() {
+  const tab = $("sceneTab");
+  if (!tab) return;
+  let drag = null;
+  tab.addEventListener("pointerdown", (e) => {
+    if (e.button) return;
+    drag = { x: e.clientX, w: sceneOpen ? sceneW : 0, open: sceneOpen, moved: false, pid: e.pointerId };
+    try { tab.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+  });
+  tab.addEventListener("pointermove", (e) => {
+    if (!drag || drag.pid !== e.pointerId) return;
+    const dx = e.clientX - drag.x;
+    if (!drag.moved && Math.abs(dx) < 8) return;
+    drag.moved = true;
+    sceneOpen = true;
+    sceneW = Math.max(SCENE_W_MIN, Math.min(sceneWMax(), drag.w + dx));
+    if (sceneW >= 80) sceneWLast = sceneW;
+    layoutSceneDrawer();
+  });
+  const end = (e) => {
+    if (!drag || drag.pid !== e.pointerId) return;
+    const moved = drag.moved;
+    drag = null;
+    if (!moved) toggleSceneDrawer();
+    else persistSceneDrawer();
+  };
+  tab.addEventListener("pointerup", end);
+  tab.addEventListener("pointercancel", end);
+})();
 $("scCube").addEventListener("click", cmdAddCube);
 $("scPrism").addEventListener("click", () => cmdAddPrism(prismKind));
 $("scPlaneV").addEventListener("click", () => cmdAddPlane("up"));
@@ -7297,11 +7437,6 @@ $("scCombineMode").addEventListener("change", () => {
   try { localStorage.setItem(KEY_PREFIX + "combine", combineMode); } catch (e) { /* blocked */ }
 });
 $("scSeparate").addEventListener("click", () => cmdSeparate(false));
-$("scTwo").addEventListener("click", cmdTwoSided);
-$("scRename").addEventListener("click", () => {
-  if (folderFocus && findFolderNode(folderFocus)) cmdRenameFolderPrompt(folderFocus);
-  else cmdRename();
-});
 $("scDelete").addEventListener("click", () => {
   if (folderFocus && findFolderNode(folderFocus)) cmdDeleteFolderAsk(folderFocus);
   else cmdDelete();
@@ -7318,12 +7453,6 @@ $("scDim").addEventListener("click", () => {
 $("scSave").addEventListener("click", cmdSaveJson);
 $("scOpen").addEventListener("click", () => { fileMode = "replace"; $("fileIn").click(); });
 $("scNew").addEventListener("click", cmdNewScene);
-$("roSnap").addEventListener("click", () => {
-  objSnap = !objSnap;
-  try { localStorage.setItem(KEY_PREFIX + "objsnap", objSnap ? "1" : "0"); } catch (e) { /* ignore */ }
-  toast(objSnap ? "Object snap: move 0.125, turn 15°, scale ×0.125 steps" : "Object snap off");
-  updateUI();
-});
 
 $("exportName").addEventListener("input", () => {
   const w = $("exportWhat").value, v = cIdent($("exportName").value);
