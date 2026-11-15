@@ -66,7 +66,7 @@ function loadModeler() {
 let meshDirty = true;
 function updateUI() {}
 function $(id) { return document.getElementById(id); }
-const allPalettes = () => [{ id: "default", colors: DEFAULT_PALETTE }];
+const allPalettes = () => [];
 globalThis.__vertTest = {
   cmdCombine, undo, redo, buildExportPacked, makeObject, makeCube, combineJoined, importMesh, parsePacked: parsePacked,
   get combineMode() { return combineMode; },
@@ -82,7 +82,7 @@ globalThis.__vertTest = {
   get light() { return light; },
   set bakeOn(v) { bakeOn = v; },
   get bakeOn() { return bakeOn; },
-  DEFAULT_PALETTE, POS_Q, triCount, vertCount, setSunFromDir,
+  POS_Q, triCount, vertCount, setSunFromDir,
 };
 `;
   vm.runInThisContext(src, { filename: "index.html" });
@@ -90,7 +90,8 @@ globalThis.__vertTest = {
 }
 
 function parsePacked(text) {
-  const re = /\{\s*\{\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*\}\s*,\s*\{\s*(-?\d+)\s*,\s*(-?\d+)\s*\}\s*,\s*\{\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/g;
+  // Old files: { {x,y,z}, {nx,ny}, {r,g,b,a} }. New files: { {x,y,z}, {nx,ny}, index, 0, 0 }.
+  const re = /\{\s*\{\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*\}\s*,\s*\{\s*(-?\d+)\s*,\s*(-?\d+)\s*\}\s*,\s*(?:\{\s*)?(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/g;
   const verts = [];
   let m;
   while ((m = re.exec(text))) verts.push(m.slice(1, 9).map(Number));
@@ -151,8 +152,8 @@ function assert(cond, msg) {
 
 function main() {
   const api = loadModeler();
-  const { POS_Q, DEFAULT_PALETTE } = api;
-  const grey = DEFAULT_PALETTE[6].slice();
+  const { POS_Q } = api;
+  const grey = [0.76, 0.76, 0.78];
 
   // ----- nothing intersects: two cubes side by side stay two cubes' worth of faces -----
   globalThis.__toasts.length = 0;
@@ -255,11 +256,11 @@ function main() {
     }
     const moved = g.some(v => !origPos.has(v[0] + "," + v[1] + "," + v[2]));
     if (moved) movedFaces++;
-    for (let k = 0; k < 3; k++) for (let c = 5; c < 8; c++) {
-      const d = Math.abs(g[k][c] - e[k][c]);
-      assert(d <= (moved ? 1 : 0), "tri " + i + " colour channel off by " + d);
-    }
+    // No palette is loaded, so every corner is index 0 plus two reserved zeros.
+    // The old header's rgba bytes are not part of this export.
+    for (const v of g) assert(v[5] === 0 && v[6] === 0 && v[7] === 0, "color index should be 0, got " + v.slice(5));
   }
+  assert(/color\s+uint16/.test(api.buildExportPacked()), "header should document the uint16 color index");
   assert(movedFaces === 24, "shortened arm faces should be 24, got " + movedFaces);
   assert(/slid /.test(slideToast) && /deleted /.test(slideToast), "unexpected slide toast: " + slideToast);
   api.undo();
