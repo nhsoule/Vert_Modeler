@@ -86,17 +86,11 @@ The Shade menu (☀) has three named lighting presets. **Pastel Day** is the def
 - **Fog** fades distant faces toward the horizon colour. It only affects the viewport and is never exported.
 - Every preset keeps ambient + sun ≤ 1 per channel, so a fully lit face never clips.
 
-**Export bakes the preset that's showing** into the vertex colours, per channel:
+**Shade lights the viewport only.** The `.h` export does not bake that light. Each vertex stores a palette color index (see Palettes below), and the consumer lights the face from its normal. The formula the viewport uses is still:
 
-    baked = rgb * (ambient + sun * max(0, n · L))   clamped to 1
+    shown = rgb * (ambient + sun * max(0, n · L))   clamped to 1
 
-The header comment states the exact formula and preset. For example:
-
-    // lighting baked into colors (rgb * ((0.56,0.52,0.70) + (0.44,0.42,0.16)*max(0, n.(0.3,0.5,0.8))), clamped to 1, preset Pastel Day)
-
-Classic exports are byte-for-byte the same as before (`0.55 + 0.45*max(0, n.(...))`).
-
-**Import** reads that line back and un-bakes each face with the matching preset and sun. It then snaps to the palette colour that re-bakes to the same bytes. A Pastel export therefore re-imports to the exact palette colours, whatever preset the viewport is showing. Files without a preset line are treated as Classic.
+**Import** of an older file that baked RGB reads that line back and un-bakes each face with the matching preset and sun. It then snaps to a loaded swatch when one is within about 1/255. Files without a preset line are treated as Classic. A current export stores the index directly, so there is nothing to un-bake.
 
 ## Biome filters (v24)
 
@@ -127,21 +121,25 @@ It is the last step of the fragment shader, after fog:
 | Beach | 0.82, 0.98, 1.00 | 0.12 | 1.10 | 1.06 | 0.86, 0.95, 0.98 | 0.40 |
 | Crystal | 0.82, 0.68, 1.00 | 0.20 | 1.12 | 1.02 | 0.72, 0.62, 0.96 | 0.60 |
 
-## World palette (v23)
+## Palettes
 
-A built-in, read-only **World (named)** palette of 36 colours. Every swatch shows its name, and the rows are grouped by material. Most groups run light / mid / dark.
+No palette is built in. The app starts with none loaded. Painting is off until you load one and pick a swatch. New faces are a neutral grey and export as color index 0.
 
-- **Choosing colours you can't tell apart by eye:**
-  - The readout above the swatches always names the brush (`Brush: Leaf · Foliage`).
-  - It also names the last face you painted, picked or hovered.
-  - A colour that isn't in the palette reads as the nearest name, e.g. `≈ Leaf`.
-- **Pick:** tap Pick, then a face. It takes that face's colour as the brush and doesn't paint.
-- **Colour preview** (in the Shade menu) cycles through four views of the viewport and palette: Normal, Greys (value only), Deutan and Protan. It simulates how the scene reads with each kind of colour vision.
-- **Designed for colorblind viewers:**
-  - The shades inside a group step clearly in lightness.
-  - Groups are separated by blue/yellow and lightness as well as red/green, so they stay distinguishable for deutan and protan viewers.
-- **Your own palettes:** Duplicate makes an editable copy, with a name field per swatch. C++ palette export writes `// #hex Name [Group]` comments, and palette import reads them back.
-- **Data:** the full table is `WORLD_TABLE` in index.html. It is also in [examples/world_palette.json](examples/world_palette.json).
+- **Load palette…** (the scene File menu, the ⋯ next to the scene title) reads one or more JSON files and adds them. Loading a file whose name is already loaded replaces that palette. [examples/world_palette.json](examples/world_palette.json) is the old 36-colour table, as a file you load yourself. Its shape is:
+
+      { "name": "World", "groups": [ { "group": "Foliage", "colors": [ { "name": "Leaf", "hex": "#70b454", "rgb": [112, 180, 84] } ] } ] }
+
+  A file may also be `{ "name", "colors": [ ... ] }` or `{ "palettes": [ ... ] }`. The palette manager can still paste hex codes, `r g b` floats, or the older `<name>_palette[][3]` snippet.
+- **Several palettes** can be loaded at once. The name on the paint bar switches the brush. Duplicate, rename, and delete work on any of them. They are remembered in the browser, separate from the scene.
+- **Pick** takes a face's palette colour as the brush. A face with no palette colour cannot be picked.
+- **Colour preview** (in the Shade menu) cycles Normal, Greys, Deutan and Protan on the viewport and the swatches.
+- **Export palettes.h** (same File menu, or Export palettes.h in the palette manager) writes every loaded palette into one header. With nothing loaded it still writes a valid header whose only colour is `PAL_NONE`.
+
+The header is one table. Index 0 is `PAL_NONE` (black). Then the palettes in the order they were loaded, and inside each palette the swatches in file order. The enumerator value is that global index. `Anim_palette[index]` is unlit R, G, B in 0..255, and `Anim_palette_count` is `PAL_COUNT`.
+
+Scenes store `{ "pal": "World", "i": 0 }` on each face (palette name and the 0-based index inside that palette), not RGB. The model `.h` writes the global index, which is `1 + (colours in palettes loaded before this one) + i`. Export palettes.h from the same loaded set and the numbers match. Loading the same files in the same order keeps them stable. An old scene whose faces are `[r, g, b]` still opens. If a loaded swatch is within about 1/255 on every channel, the face becomes that reference. Otherwise the RGB is kept for drawing and the `.h` export uses index 0. A very old face that stored only an integer 0..15 becomes the unpainted grey (that table is gone).
+
+The example file's groups:
 
 | Group | Light | Mid | Dark |
 |---|---|---|---|
@@ -186,7 +184,7 @@ The **Rock** button cycles through four states: off (**Ref**), **Rock**, rock + 
 
 ## Export / import
 
-- **Export** writes one `.h` file. There is a single export mode, based on what you have selected:
+- **Export** writes one model `.h` file. It has no palette RGB in it. Each vertex's color is a `uint16` index into `palettes.h` (0 means no palette colour), then two reserved zero bytes. The Vert stays 12 bytes: `pos` int16x3 at 0, `nrm` int8x2 at 6, `color` uint16 at 8, reserved uint8x2 at 10. Export that header separately with **Export palettes.h**. There is a single model export mode, based on what you have selected:
   - A focused folder exports as **folder as parts**: one header named after the folder. Each direct child is a part, in the tree's top-to-bottom order. A child object is one part; a child folder is one part with its contents combined. A part table records each part's name, vertex range, and pivot. **Download .h** saves that one file.
   - A single selected object exports in the existing single-model format, in its own coordinates about its pivot, named after the object.
   - Anything else (nothing selected, or several objects) disables Export until you select one folder or one object.

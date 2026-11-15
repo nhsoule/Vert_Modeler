@@ -76,8 +76,10 @@
   .swatch.on { border-color: #fff; box-shadow: 0 0 0 2px #000 inset; }
   .swatch.add { background: #2a2c38; color: #e8e8ee; font-size: 22px; line-height: 1; }
   #palette.editing .swatch:not(.add) { border-style: dashed; border-color: #e0b43a; }
-  /* Named palettes (World): one row per material group, the name printed on each swatch. */
+  /* Named palettes: one row per material group, the name printed on each swatch. */
   #swatches.named { display: block; max-height: min(34vh, 250px); }
+  #swatches.empty { display: block; max-height: none; }
+  .palEmpty { font-size: 12px; line-height: 1.35; color: #9a9db0; padding: 4px 2px 2px; }
   .palRow { display: flex; gap: 4px; align-items: stretch; margin-bottom: 4px; }
   .palGroup {
     width: 58px; flex: none; align-self: center; font-size: 10px; line-height: 1.15; color: #9a9db0;
@@ -727,6 +729,7 @@
       <div class="note">Tap a shape to add it at the view centre (it becomes the active object). Shift+A opens this.</div>
     </div>
     <input type="file" id="fileIn" multiple accept=".h,.hpp,.txt,.json,text/plain,application/json" hidden>
+    <input type="file" id="palFile" multiple accept=".json,application/json" hidden>
     <div id="boxSel"></div>
     <div id="readout">
       <button id="roScale" type="button" aria-label="Move / Scale" title="Switch the gizmo between Move and Scale (2+ verts)"><svg class="svgic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v2H6.4l4.3 4.3-1.4 1.4L5 6.4V10H3zm11 0h7v7h-2V6.4l-4.3 4.3-1.4-1.4L17.6 5H14zM9.3 13.3l1.4 1.4L6.4 19H10v2H3v-7h2v3.6zm5.4 0l4.3 4.3V14h2v7h-7v-2h3.6l-4.3-4.3z"/></svg></button>
@@ -825,6 +828,8 @@
           <div id="scFilePop" class="optPop down" role="dialog" aria-label="Scene file">
             <button id="scSave" type="button" title="Download the whole scene as a .json project">Save .json</button>
             <button id="scOpen" type="button" title="Open a scene .json (replaces the scene) or add .h models">Open…</button>
+            <button id="scPal" type="button" title="Load one or more palette .json files. They are added to the palettes already loaded.">Load palette…</button>
+            <button id="scPalExport" type="button" title="Download every loaded palette as one palettes.h">Export palettes.h</button>
             <button id="scNew" type="button" title="Start over with one cube">New scene</button>
           </div>
         </div>
@@ -871,7 +876,7 @@
     <span>Palettes</span>
     <button id="pmClose" class="alt">Close</button>
   </div>
-  <div class="note">Tap a palette to use it. The built-in one can't be changed or deleted: Duplicate it to make your own.</div>
+  <div class="note">Load a palette .json (File → Load palette…), or make a new one. Several can be loaded at once. Export writes every loaded palette into one palettes.h. Nothing is built in.</div>
   <div id="palList"></div>
   <div class="btnrow">
     <button id="pmNew" class="alt">New</button>
@@ -880,7 +885,7 @@
     <button id="pmDelete" class="alt">Delete</button>
   </div>
   <div class="btnrow">
-    <button id="pmExport" class="alt">Export C++</button>
+    <button id="pmExport" class="alt">Export palettes.h</button>
     <button id="pmImport" class="alt">Import</button>
   </div>
   <div id="palIO">
@@ -925,11 +930,12 @@
 //  removes a vertex that sits on a flat area or straight edge (handy for old seams).
 //  Vertices hidden behind the model (or off screen) are greyed out and can't be grabbed.
 //  Tap a number in the X / Y / Z chip to type an exact coordinate. A quick tap on empty
-//  space hides the editing overlay for a clean in-game preview. Colours come from named
-//  palettes you can create, edit, export to C++, and import (Paint mode). Shade opens a
-//  sun menu: swing the light onto a dark side (the same direction is baked on export).
+//  space hides the editing overlay for a clean preview. Colours come from palette
+//  files you load (Paint mode). None are built in. Shade opens a sun menu: it only
+//  lights the viewport. The export stores a palette index, not a lit colour.
 //  The default export is a model header: #pragma once, #include "vert.h", then the
-//  12-byte Vert array (int16 position, octahedral normal, rgba). The struct itself
+//  12-byte Vert array (int16 position, octahedral normal, uint16 color index, 2 reserved
+//  bytes). The struct itself
 //  lives in vert.h so many model headers can be included together. Positions snap to
 //  that 16-bit grid on every edit. An older 9-float export is still in the export
 //  window. Import accepts this header, the v16 packed export, and the old 6-float
@@ -1251,19 +1257,63 @@ function parseSunVector(text) {
   return normalize3(v);
 }
 
-// Built-in palette (PICO-8 colours, 0..255). Faces store their own RGB (0..1 floats), so a
-// palette is just a set of colours to paint with; changing palettes never recolours a model.
-const PALETTE = [
-  [  0,  0,  0], [ 29, 43, 83], [126, 37, 83], [  0,135, 81],
-  [171, 82, 54], [ 95, 87, 79], [194,195,199], [255,241,232],
-  [255,  0, 77], [255,163,  0], [255,236, 39], [  0,228, 54],
-  [ 41,173,255], [131,118,156], [255,119,168], [255,204,170],
-];
-// Palette colours are kept at 3 decimals, the same precision the C++ export prints, so a
-// palette exported and imported again comes back identical.
+// No palette ships with the app. A face colour is a reference into a palette the user
+// loaded, plus an RGB cache so the viewport can draw it:
+//   { pal: "World"|null, i: 0|null, rgb: [r, g, b] }   rgb is 0..1
+// pal is the palette's name. i is the 0-based index of the swatch in that palette
+// (the same order as the file). The .h export turns that into one global index.
+// A face with pal == null has no palette colour. Its rgb is only a display fallback
+// (unpainted grey, or an old file's RGB that matched no loaded swatch). The .h export
+// writes palette index 0 for those.
+// Palette channels stay at 3 decimals, the same precision a round-trip through bytes uses.
 const round3 = (x) => Math.round(x * 1000) / 1000;
-const DEFAULT_PALETTE = PALETTE.map(c => c.map(v => round3(v / 255)));
-const colorEq = (a, b, eps = 1e-6) => Math.abs(a[0]-b[0]) <= eps && Math.abs(a[1]-b[1]) <= eps && Math.abs(a[2]-b[2]) <= eps;
+const UNPAINTED_RGB = [0.76, 0.76, 0.78];
+function blankColor() {
+  return { pal: null, i: null, rgb: UNPAINTED_RGB.slice() };
+}
+// Live swatch when the palette is loaded; otherwise the cached rgb (or the unpainted grey).
+function colorRGB(c) {
+  if (!c) return UNPAINTED_RGB;
+  if (Array.isArray(c)) return c;
+  if (c.pal != null && Number.isInteger(c.i) && typeof paletteByName === "function") {
+    const p = paletteByName(c.pal);
+    if (p && p.colors[c.i]) return p.colors[c.i];
+  }
+  if (Array.isArray(c.rgb)) return c.rgb;
+  return UNPAINTED_RGB;
+}
+function cloneColor(c) {
+  const rgb = colorRGB(c).slice(0, 3);
+  if (c && !Array.isArray(c) && c.pal != null && Number.isInteger(c.i))
+    return { pal: c.pal, i: c.i, rgb };
+  return { pal: null, i: null, rgb };
+}
+// Saved scene colour. A palette reference is just the palette name and the index.
+// RGB is kept only when the face has no palette colour, so an old file still draws.
+function colorToJson(c) {
+  if (c && !Array.isArray(c) && c.pal != null && Number.isInteger(c.i)) return { pal: c.pal, i: c.i };
+  const src = Array.isArray(c) ? c : (c && Array.isArray(c.rgb) ? c.rgb : UNPAINTED_RGB);
+  return { rgb: src.slice(0, 3).map(round3) };
+}
+// Turn a stored colour into a face colour. adoptStoredColor (defined with the palettes)
+// maps an old [r,g,b] onto a loaded swatch when one is close. Tests that don't load
+// that section keep the RGB as a fallback and never crash.
+function normalizeColor(c) {
+  if (typeof adoptStoredColor === "function") return adoptStoredColor(c);
+  if (Number.isInteger(c)) return blankColor();
+  if (Array.isArray(c) && c.length >= 3) return { pal: null, i: null, rgb: c.slice(0, 3).map(Number) };
+  if (c && typeof c === "object" && typeof c.pal === "string" && Number.isInteger(c.i))
+    return { pal: c.pal, i: c.i, rgb: Array.isArray(c.rgb) ? c.rgb.slice(0, 3) : UNPAINTED_RGB.slice() };
+  if (c && Array.isArray(c.rgb)) return { pal: null, i: null, rgb: c.rgb.slice(0, 3).map(Number) };
+  return blankColor();
+}
+function colorEq(a, b, eps = 1e-6) {
+  if (!a || !b) return false;
+  if (!Array.isArray(a) && !Array.isArray(b) && a.pal != null && b.pal != null && a.pal === b.pal && a.i === b.i) return true;
+  const A = Array.isArray(a) ? a : colorRGB(a);
+  const B = Array.isArray(b) ? b : colorRGB(b);
+  return Math.abs(A[0] - B[0]) <= eps && Math.abs(A[1] - B[1]) <= eps && Math.abs(A[2] - B[2]) <= eps;
+}
 
 
 //----- Small Vector Math -----||
@@ -1337,7 +1387,8 @@ function mat4LookAt(eye, target, up) {
 // Struct-of-arrays, just like the game's data:
 //   positions : flat [x0,y0,z0, x1,y1,z1, ...]  (3 floats per vertex, Z-up)
 //   tris      : flat [a0,b0,c0, a1,b1,c1, ...]  (3 vertex indices per triangle, CCW from outside)
-//   colors    : [[r,g,b], ...]                    (one colour per triangle, floats 0..1, unlit)
+//   colors    : [{ pal, i, rgb }, ...]            (one colour per triangle: palette name + swatch
+//                                                  index, and an RGB cache for drawing)
 //   partner   : [p0, p1, ...]                     (mirror partner per vertex: other index,
 //                                                  itself if it lies on the plane, -1 if none)
 //   mirror    : "x" | "y" | null                  (mirror axis; the plane is axis = 0)
@@ -1366,7 +1417,7 @@ function makeCube(mirror = null) {
   ];
   const tris = [];
   for (const q of quads) tris.push(q[0], q[1], q[2],  q[0], q[2], q[3]);
-  const m = { positions, tris, colors: Array.from({ length: 12 }, () => DEFAULT_PALETTE[6].slice()), partner: new Array(8).fill(-1), mirror };
+  const m = { positions, tris, colors: Array.from({ length: 12 }, blankColor), partner: new Array(8).fill(-1), mirror };
   pairMirror(m);
   return m;
 }
@@ -1388,9 +1439,10 @@ function triColor(t) {
 }
 // Same, lit as if the face pointed along n (a two-sided object's back face uses -normal).
 function triColorN(t, n) {
-  if (!bakeOn) return mesh.colors[t].map(c => Math.min(1, c));
+  const rgb = colorRGB(mesh.colors[t]);
+  if (!bakeOn) return rgb.map(c => Math.min(1, Math.max(0, c)));
   const k = bakeRGBFor(n, sunDir, lightPreset());
-  return mesh.colors[t].map((c, i) => Math.min(1, c * k[i]));
+  return rgb.map((c, i) => Math.min(1, Math.max(0, c * k[i])));
 }
 
 // Unique edges as [a, b] pairs (a < b). Each edge is shared by up to 2 triangles.
@@ -2074,7 +2126,7 @@ function extrudeSelection() {
   for (const [a, b, u] of boundary) {
     const a2 = dup.get(a), b2 = dup.get(b), col = mesh.colors[u];
     mesh.tris.push(a, b, b2, a, b2, a2);
-    mesh.colors.push(col.slice(), col.slice());
+    mesh.colors.push(cloneColor(col), cloneColor(col));
   }
   // 4) Pre-offset each cap along its average normal (on-plane verts stay on the plane).
   const cap = [];
@@ -2202,7 +2254,7 @@ const ROCK_BOUNDS = (() => {
 let mode         = "move";  // "move" | "select" | "split" | "paint" | "object" | "face"
 let snapOn       = false;
 let bakeOn       = true;    // bake light into face colours (preview + export)
-let currentColor = DEFAULT_PALETTE[8].slice();   // RGB (0..1) that Paint uses
+let currentColor = blankColor();        // brush: a palette swatch, or blank when none is loaded
 let overlayOn    = true;    // false = clean preview: no dots, edges, gizmo, or mirror plane
 let selected     = -1;      // primary selected vertex (the last one tapped), -1 = none
 let selExtra     = new Set(); // the other selected vertices (multi-select); empty if selected < 0
@@ -2326,20 +2378,30 @@ function redo() {
 
 function save() {
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 3, scene: sceneData(), currentColor, snapOn, bakeOn }));
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 3, scene: sceneData(), currentColor: colorToJson(currentColor), snapOn, bakeOn }));
   } catch (e) { /* storage full or blocked (private mode): ignore */ }
 }
 
-// Old saves stored a palette index (0..15) per face: turn those into RGB.
+// Old saves stored a palette index (0..15) or a raw [r,g,b] per face. Those become a
+// palette reference when a loaded swatch matches, otherwise an RGB fallback.
 function upgradeColors(m) {
-  m.colors = m.colors.map(c => Number.isInteger(c) ? DEFAULT_PALETTE[c & 15].slice() : c);
+  m.colors = m.colors.map(normalizeColor);
 }
 
+function validColorEntry(c) {
+  if (Number.isInteger(c)) return true;
+  if (Array.isArray(c) && c.length >= 3 && c.slice(0, 3).every(isFinite)) return true;
+  if (c && typeof c === "object") {
+    if (typeof c.pal === "string" && Number.isInteger(c.i) && c.i >= 0) return true;
+    if (Array.isArray(c.rgb) && c.rgb.length >= 3 && c.rgb.slice(0, 3).every(isFinite)) return true;
+  }
+  return false;
+}
 function validMesh(m) {
   return m && Array.isArray(m.positions) && Array.isArray(m.tris) && Array.isArray(m.colors)
     && m.positions.length % 3 === 0 && m.tris.length % 3 === 0
     && m.colors.length === m.tris.length / 3
-    && m.colors.every(c => Number.isInteger(c) || (Array.isArray(c) && c.length === 3 && c.every(isFinite)))
+    && m.colors.every(validColorEntry)
     && m.tris.every(i => Number.isInteger(i) && i >= 0 && i < m.positions.length / 3);
 }
 
@@ -2367,7 +2429,8 @@ function load() {
         const activeId = list[a].id;
         scene = { name: cIdent(d.scene.name || "scene"), active: a, objects: list,
                   tree: Array.isArray(d.scene.tree) ? d.scene.tree : [] };
-        ensureTree();
+        mesh = list[a].mesh;                       // before ensureTree: objs() would otherwise
+        ensureTree();                              // write the previous mesh onto this object
         syncObjectsToTree();
         const i = Math.max(0, scene.objects.findIndex(o => o.id === activeId));
         scene.active = i;
@@ -2388,8 +2451,7 @@ function load() {
       scene.objects[scene.active].mesh = mesh;
       if (typeof d.modelName === "string") scene.objects[scene.active].name = cIdent(d.modelName);
     }
-    if (Number.isInteger(d.currentColor)) currentColor = DEFAULT_PALETTE[d.currentColor & 15].slice();
-    else if (Array.isArray(d.currentColor) && d.currentColor.length === 3) currentColor = d.currentColor;
+    if (d.currentColor != null) currentColor = normalizeColor(d.currentColor);
     snapOn = false;                                // Snap has no button any more (v14): always off
     if (typeof d.bakeOn === "boolean") bakeOn = d.bakeOn;
   } catch (e) { /* corrupt save: start fresh */ }
@@ -2613,7 +2675,7 @@ function sceneData() {
   const active = Math.max(0, list.indexOf(cur));
   return { name: scene.name, active, objects: list.map(o => ({
     id: o.id, name: o.name, pos: o.pos, hidden: o.hidden, twoSided: o.twoSided,
-    mesh: { positions: o.mesh.positions, tris: o.mesh.tris, colors: o.mesh.colors, mirror: o.mesh.mirror } })),
+    mesh: { positions: o.mesh.positions, tris: o.mesh.tris, colors: o.mesh.colors.map(colorToJson), mirror: o.mesh.mirror } })),
     tree: treeData(scene.tree) };
 }
 // The .json project file: the scene plus the light, so it opens looking the same.
@@ -2628,7 +2690,7 @@ function readSceneObjects(list) {
   for (const r of list) {
     if (!r || !validMesh(r.mesh)) continue;
     const m = { positions: r.mesh.positions.map(Number), tris: r.mesh.tris.slice(),
-                colors: r.mesh.colors.map(c => Array.isArray(c) ? c.slice(0, 3) : c), partner: [],
+                colors: r.mesh.colors.map(normalizeColor), partner: [],
                 mirror: r.mesh.mirror === "x" || r.mesh.mirror === "y" || r.mesh.mirror === "z" ? r.mesh.mirror : null };
     if (m.positions.some(v => !isFinite(v))) continue;
     upgradeColors(m);
@@ -2744,6 +2806,7 @@ function folderHidesShape(o) {
   return false;
 }
 function shapeHidden(o) { return !o || o.hidden || folderHidesShape(o); }
+function visibleForExport() { return objs().filter(o => o && o.mesh && !shapeHidden(o)); }
 function ancestorHidden(folderId) {
   let n = parentOf("folder", folderId);
   while (n) { if (n.hidden) return true; n = parentOf("folder", n.id); }
@@ -3097,7 +3160,7 @@ function extractTris(m, list) {
       if (!remap.has(v)) { remap.set(v, positions.length / 3); positions.push(m.positions[v*3], m.positions[v*3+1], m.positions[v*3+2]); }
       tris.push(remap.get(v));
     }
-    colors.push(m.colors[t].slice());
+    colors.push(cloneColor(m.colors[t]));
   }
   return { positions, tris, colors, partner: [], mirror: m.mirror };
 }
@@ -3118,12 +3181,12 @@ function mergeMeshes(origin, list) {
     };
     const base = addVerts();
     for (const v of m.tris) tris.push(v + base);
-    for (const c of m.colors) colors.push(c.slice());
+    for (const c of m.colors) colors.push(cloneColor(c));
     if (o.twoSided && !allTwo) {
       const back = addVerts();
       for (let t = 0; t < m.tris.length / 3; t++) {
         tris.push(back + m.tris[t*3], back + m.tris[t*3+2], back + m.tris[t*3+1]);
-        colors.push(m.colors[t].slice());
+        colors.push(cloneColor(m.colors[t]));
       }
     }
   }
@@ -3490,8 +3553,7 @@ function makePlane(kind = "up", mirror = "x") {
     ? [-h, -h, 0,   h, -h, 0,   h, h, 0,   -h, h, 0]     // normal +Z
     : [-h, 0, 0,    h, 0, 0,    h, 0, 1,   -h, 0, 1];    // normal -Y
   const tris = [0, 1, 2, 0, 2, 3];
-  const col = DEFAULT_PALETTE.find(c => c[1] > c[0] * 1.3 && c[1] > c[2] * 1.3) || DEFAULT_PALETTE[6];
-  const m = { positions, tris, colors: [col.slice(), col.slice()], partner: [], mirror };
+  const m = { positions, tris, colors: [blankColor(), blankColor()], partner: [], mirror };
   pairMirror(m);
   return m;
 }
@@ -3524,7 +3586,7 @@ function makePrism(kind = "3") {
     const j = (k + 1) % n, f0 = k, f1 = j, b0 = n + k, b1 = n + j;
     tris.push(f0, b0, b1,  f0, b1, f1);
   }
-  const m = { positions, tris, colors: Array.from({ length: tris.length / 3 }, () => DEFAULT_PALETTE[6].slice()),
+  const m = { positions, tris, colors: Array.from({ length: tris.length / 3 }, blankColor),
               partner: [], mirror: kind === "ramp" ? null : "x" };
   pairMirror(m);
   return m;
@@ -3549,7 +3611,7 @@ function makePyramid(n = 4) {
   const tris = [];
   for (let k = 1; k + 1 < n; k++) tris.push(0, k + 1, k);      // base, faces -Z
   for (let k = 0; k < n; k++) tris.push(k, (k + 1) % n, n);    // sides, outward
-  const m = { positions, tris, colors: Array.from({ length: tris.length / 3 }, () => DEFAULT_PALETTE[6].slice()),
+  const m = { positions, tris, colors: Array.from({ length: tris.length / 3 }, blankColor),
               partner: [], mirror: "x" };
   pairMirror(m);
   return m;
@@ -3571,7 +3633,7 @@ function subdivideMesh() {
     const [a, b, c] = [mesh.tris[t*3], mesh.tris[t*3+1], mesh.tris[t*3+2]];
     const ab = midOf(a, b), bc = midOf(b, c), ca = midOf(c, a);
     tris.push(a, ab, ca,  ab, b, bc,  ca, bc, c,  ab, bc, ca);
-    for (let k = 0; k < 4; k++) colors.push(mesh.colors[t].slice());
+    for (let k = 0; k < 4; k++) colors.push(cloneColor(mesh.colors[t]));
   }
   mesh.tris = tris; mesh.colors = colors;
   pairMirror(mesh);
@@ -3887,8 +3949,9 @@ function sceneFromJson(d, replace) {
     const activeId = list[a].id;
     scene = { name: cIdent(src.name || "scene"), active: a, objects: list,
               tree: Array.isArray(src.tree) ? src.tree : [] };
+    mesh = list[a].mesh;                           // before ensureTree: objs() would otherwise
     folderFocus = null; moveEntries = null; folderDeleteId = null;
-    ensureTree();
+    ensureTree();                                  // write the previous mesh onto this object
     syncObjectsToTree();
     const i = Math.max(0, scene.objects.findIndex(o => o.id === activeId));
     pointActive(i);
@@ -5804,6 +5867,7 @@ function orbitBy(dx, dy) {
 // middle/shift-drag still pans, right-drag orbits).
 const PAINT_GRACE_MS = 250;   // a 2nd finger within this (before moving) cancels the dab
 function paintStroke(x, y) {
+  if (typeof brushReady === "function" && !brushReady()) return;
   const g = gesture, hit = pickPaintHit(x, y, true);
   if (!hit) return;
   g.any = true;
@@ -5815,7 +5879,7 @@ function paintStroke(x, y) {
       g.done.add(hit.o.id + ":" + u);
       if (colorEq(mesh.colors[u], currentColor)) continue;
       if (!g.changed) { pushUndo(g.before); g.changed = true; }
-      mesh.colors[u] = currentColor.slice();
+      mesh.colors[u] = cloneColor(currentColor);
       meshDirty = true;
     }
   });
@@ -6009,31 +6073,35 @@ function paintAt(x, y) {
   if (!hit) return false;
   if (pickMode) {                            // Pick: take this face's colour, then back to painting
     pickMode = false;
-    currentColor = hit.o.mesh.colors[hit.t].slice();
+    const picked = hit.o.mesh.colors[hit.t];
+    if (!picked || picked.pal == null) { toast("That face has no palette colour"); updateUI(); return true; }
+    currentColor = cloneColor(picked);
     faceRead = "Picked: " + colorLabel(currentColor);
     save(); updateUI();
     return true;
   }
+  if (typeof brushReady === "function" && !brushReady()) { toast("Load a palette and pick a colour"); return false; }
   faceRead = "Face: " + colorLabel(currentColor);
   let changed = false;
   withMesh(hit.o.mesh, () => {
     const targets = [hit.t, ...mirroredTris(hit.t)];
     if (targets.every(u => colorEq(mesh.colors[u], currentColor))) return;
     pushUndo();
-    for (const u of targets) mesh.colors[u] = currentColor.slice();
+    for (const u of targets) mesh.colors[u] = cloneColor(currentColor);
     changed = true;
   });
   if (changed) paintChanged();
   return true;
 }
 function paintFillSelected() {
+  if (typeof brushReady === "function" && !brushReady()) { toast("Load a palette and pick a colour"); return; }
   const list = objSelList();
   if (!list.length) { toast("Select an object first"); return; }
   let n = 0;
   for (const o of list) for (const c of o.mesh.colors) if (!colorEq(c, currentColor)) n++;
   if (!n) { toast("Already that colour"); return; }
   pushUndo();
-  for (const o of list) for (let t = 0; t < o.mesh.colors.length; t++) o.mesh.colors[t] = currentColor.slice();
+  for (const o of list) for (let t = 0; t < o.mesh.colors.length; t++) o.mesh.colors[t] = cloneColor(currentColor);
   paintChanged();
   toast("Filled " + list.length + " object" + (list.length === 1 ? "" : "s") + " (" + n + " face" + (n === 1 ? "" : "s") + ")");
 }
@@ -6282,19 +6350,49 @@ function lightingComment() {
   return bakeOn ? "baked into colors (" + sunFormulaText() + ")" : "not baked (flat palette colors)";
 }
 
+// The model header does not contain palette RGB and does not bake light.
+// Vert.color is the global index from palettes.h (Anim_palette[color]).
+// 0 is PAL_NONE. paletteColorSlot / paletteColorTag live with the palettes;
+// a test build that doesn't include that section writes 0.
+function palColorIndex(cell) {
+  return typeof paletteColorSlot === "function" ? paletteColorSlot(cell) : 0;
+}
+function palColorTag(cell) {
+  return typeof paletteColorTag === "function" ? paletteColorTag(cell) : "PAL_NONE";
+}
+function vertLayoutLines() {
+  return [
+    `//----- Vert -----||`,
+    `// 12 bytes, stride 12, no padding. 3 verts per triangle, CCW seen from outside.`,
+    `//   pos   int16x3 @0, GL_SHORT normalized: -32767..32767 maps to -1..1`,
+    `//   nrm   int8x2  @6, octahedral, GL_BYTE normalized, unit normal (outward)`,
+    `//   color uint16  @8, index into Anim_palette[] in palettes.h. 0 = PAL_NONE`,
+    `//   _res  uint8x2 @10, reserved, written 0, 0`,
+    `// Struct (the copy in vert.h; this header only documents it):`,
+    `//   int16_t pos[3]; int8_t nrm[2]; uint16_t color; uint8_t reserved[2];`,
+    `// The same face normal and the same color index are stored on all 3 corners.`,
+    `// color is unlit. Lighting is not in this file. Light the face from its normal.`,
+    `// Resolve with palettes.h: Anim_palette[color] is R, G, B in 0..255.`,
+    `// This file has no palette RGB. Export palettes.h from the same loaded set.`,
+  ];
+}
+function vertLine(q, nrm, cell) {
+  return `    { { ${q.join(", ")} }, { ${nrm.join(", ")} }, ${palColorIndex(cell)}, 0, 0 }, // ${palColorTag(cell)}`;
+}
+
 // Default: a standalone model header for models/<name>.h. Many of these are included
 // into one render.cpp, so the Vert struct lives in vert.h (one copy) and the attribute
 // setup and octDecode stay in the renderer. 3 verts per triangle, CCW from outside.
 // The face's outward unit normal is octahedral-encoded and repeated on all 3 corners.
-// Shade on writes the baked colour into rgba; Shade off writes the raw palette colour.
+// The color field is a palette index (see vertLayoutLines). The viewport's Shade
+// preview is not written: the consumer lights from the normal.
 //
 // Scene objects (v18): each object exports on its own, in its LOCAL coordinates (its
 // pivot is the model origin), so a model looks the same wherever it stood in the scene.
 // If the pivot isn't at the scene origin, a "placed at" comment records it and Import
 // puts the object back there. Two-sided objects: after the front triangles, every
-// triangle is written again reversed (a, c, b) with the flipped normal (and colour lit
-// from that side), so back-face culling in the game shows both sides. That doubles
-// the vertex count; the comment says so.
+// triangle is written again reversed (a, c, b) with the flipped normal and the same
+// color index, so back-face culling shows both sides. That doubles the vertex count.
 function exportComments(o) {
   const L = [];
   if (o.twoSided) L.push(`// two-sided: the second half repeats every triangle reversed, normal flipped (back faces)`);
@@ -6310,13 +6408,7 @@ function buildExportPacked(o = activeObj()) {
   const L = [];
   L.push(`#pragma once`);
   L.push(`// ${name}: ${nTris} triangles, ${nVerts} verts, ${nVerts * 12} bytes (exported from Vert Modeler)`);
-  L.push(`//----- Vert -----||`);
-  L.push(`// 12 bytes, stride 12, no padding. 3 verts per triangle, CCW seen from outside.`);
-  L.push(`//   pos  int16x3 @0, GL_SHORT normalized: -32767..32767 maps to -1..1`);
-  L.push(`//   nrm  int8x2 octahedral @6, GL_BYTE normalized, unit normal (outward)`);
-  L.push(`//   rgba uint8x4 @8, GL_UNSIGNED_BYTE normalized (alpha is 255)`);
-  L.push(`// The same face normal is stored on all 3 corners of a triangle.`);
-  L.push(`// lighting ${lightingComment()}`);
+  L.push(...vertLayoutLines());
   L.push(...exportComments(o));
   L.push(...zeroAreaNote(triCount() - keep.length));
   L.push(`#include "vert.h"`);
@@ -6329,19 +6421,18 @@ function buildExportPacked(o = activeObj()) {
   L.push(`static const float ${name}_scale = ${fmtFloat(frame.scale)};`);
   L.push(`static const Vert ${name}_verts[] = {`);
   for (const t of keep) {
-    const c = triColor(t).map(colorByte);
     const nrm = octEncode(triNormal(t));
+    const cell = mesh.colors[t];
     for (let k = 0; k < 3; k++) {
       const q = quantizePos(getVert(mesh.tris[t*3 + k]), frame);
-      L.push(`    { { ${q.join(", ")} }, { ${nrm.join(", ")} }, { ${c[0]}, ${c[1]}, ${c[2]}, 255 } },`);
+      L.push(vertLine(q, nrm, cell));
     }
   }
-  if (two) for (const t of keep) {                         // back faces
-    const n = v3.scale(triNormal(t), -1);
-    const c = triColorN(t, n).map(colorByte), nrm = octEncode(n);
+  if (two) for (const t of keep) {                         // back faces, same unlit index
+    const n = v3.scale(triNormal(t), -1), nrm = octEncode(n);
     for (const k of [0, 2, 1]) {
       const q = quantizePos(getVert(mesh.tris[t*3 + k]), frame);
-      L.push(`    { { ${q.join(", ")} }, { ${nrm.join(", ")} }, { ${c[0]}, ${c[1]}, ${c[2]}, 255 } },`);
+      L.push(vertLine(q, nrm, mesh.colors[t]));
     }
   }
   L.push(`};`);
@@ -6393,12 +6484,12 @@ function worldMeshFromObjects(list) {
     };
     const base = addVerts();
     for (const v of m.tris) tris.push(v + base);
-    for (const c of m.colors) colors.push(c.slice());
+    for (const c of m.colors) colors.push(cloneColor(c));
     if (o.twoSided) {
       const back = addVerts();
       for (let t = 0; t < m.tris.length / 3; t++) {
         tris.push(back + m.tris[t * 3], back + m.tris[t * 3 + 2], back + m.tris[t * 3 + 1]);
-        colors.push(m.colors[t].slice());
+        colors.push(cloneColor(m.colors[t]));
       }
     }
   }
@@ -6439,11 +6530,11 @@ function packMeshRows(m, frame) {
     const keep = exportTriList(frame);
     const rows = [];
     for (const t of keep) {
-      const c = triColor(t).map(colorByte);
       const nrm = octEncode(triNormal(t));
+      const cell = mesh.colors[t];
       for (let k = 0; k < 3; k++) {
         const q = quantizePos(getVert(mesh.tris[t * 3 + k]), frame);
-        rows.push("    { { " + q.join(", ") + " }, { " + nrm.join(", ") + " }, { " + c[0] + ", " + c[1] + ", " + c[2] + ", 255 } },");
+        rows.push(vertLine(q, nrm, cell));
       }
     }
     return { rows, skipped: triCount() - keep.length, nVerts: keep.length * 3 };
@@ -6473,13 +6564,7 @@ function buildExportFolderParts(folder, nameOverride) {
   const L = [];
   L.push("#pragma once");
   L.push("// " + name + ": " + packed.length + " part" + (packed.length === 1 ? "" : "s") + ", " + nTris + " triangles, " + nVerts + " verts, " + (nVerts * 12) + " bytes (exported from Vert Modeler)");
-  L.push("//----- Vert -----||");
-  L.push("// 12 bytes, stride 12, no padding. 3 verts per triangle, CCW seen from outside.");
-  L.push("//   pos  int16x3 @0, GL_SHORT normalized: -32767..32767 maps to -1..1");
-  L.push("//   nrm  int8x2 octahedral @6, GL_BYTE normalized, unit normal (outward)");
-  L.push("//   rgba uint8x4 @8, GL_UNSIGNED_BYTE normalized (alpha is 255)");
-  L.push("// The same face normal is stored on all 3 corners of a triangle.");
-  L.push("// lighting " + lightingComment());
+  L.push(...vertLayoutLines());
   L.push(...zeroAreaNote(skipped));
   L.push("//----- Parts -----||");
   L.push("// One header for a folder. Each direct child is a part: a child object is one");
@@ -6577,7 +6662,10 @@ function edgeDensity(selSet) {
   }
   const model = edgeSpread(edges.map(e => e.len));
   const sel = selSet ? edgeSpread(edges.filter(e => e.inSel).map(e => e.len)) : null;
-  return { model, sel };
+  // Outliers: under half the average, or over double. The test and the readout
+  // both use this list. a < b, same order as uniqueEdges.
+  const marks = model ? edges.filter(e => e.len < model.avg * 0.5 || e.len > model.avg * 2).map(e => [e.a, e.b]) : [];
+  return { model, sel, marks };
 }
 
 // Secondary option: the v15 9-float layout (pos3 + color3 + normal3).
@@ -6591,20 +6679,20 @@ function buildExportFloats(o = activeObj()) {
   L.push(`// layout per vertex: pos3 (x, y, z in Z-up world units) + color3 (r, g, b in 0..1) + normal3 (nx, ny, nz, unit, outward)`);
   L.push(`//   ${EXPORT_FLOATS} floats, stride ${EXPORT_FLOATS}*sizeof(float); 3 verts per triangle, CCW seen from outside`);
   L.push(`//   normal3 is the face normal, repeated on the triangle's 3 vertices`);
-  L.push(`//   base sits on z = 0; lighting ${lightingComment()}`);
+  L.push(`//   base sits on z = 0; color3 is the unlit swatch (0..1), not a baked light and not the packed index`);
   L.push(...exportComments(o));
   L.push(...zeroAreaNote(triCount() - keep.length));
   L.push(`// usage: mesh_upload(&g_mesh, ${name}_verts, ${name}_vert_count);`);
   L.push(`static const float ${name}_verts[] = {`);
   for (const t of keep) {
-    const c = triColor(t), n = triNormal(t);
+    const c = colorRGB(mesh.colors[t]), n = triNormal(t);
     for (let k = 0; k < 3; k++) {
       const p = getVert(mesh.tris[t*3 + k]);
       L.push(`    ${p.map(f4).join(", ")},  ${c.map(f3).join(", ")},  ${n.map(f4).join(", ")},`);
     }
   }
-  if (two) for (const t of keep) {                         // back faces
-    const n = v3.scale(triNormal(t), -1), c = triColorN(t, n);
+  if (two) for (const t of keep) {                         // back faces, same unlit colour
+    const n = v3.scale(triNormal(t), -1), c = colorRGB(mesh.colors[t]);
     for (const k of [0, 2, 1]) {
       const p = getVert(mesh.tris[t*3 + k]);
       L.push(`    ${p.map(f4).join(", ")},  ${c.map(f3).join(", ")},  ${n.map(f4).join(", ")},`);
@@ -6710,8 +6798,10 @@ async function doExport() {
 //     extra numbers that must not be read as vertices):
 //       12-byte Vert  — a v17 header (#include "vert.h"), a v16 export ("struct Vert",
 //                       "int16_t pos", "octDecode"), "Vert name_verts", or a run of
-//                       { {x,y,z}, {nx,ny}, {r,g,b,a} }.
-//                       World position = offset + (short/32767)*scale. Colour = rgb/255.
+//                       { {x,y,z}, {nx,ny}, {r,g,b,a} } (old), or
+//                       { {x,y,z}, {nx,ny}, color, 0, 0 } (palette index).
+//                       World position = offset + (short/32767)*scale.
+//                       Old colour = rgb/255. New colour = Anim_palette index.
 //                       Stored normals are dropped; the next export rebuilds them from
 //                       the triangle winding.
 //       9-float       — header says normal3 / stride 9, or the count only fits 9.
@@ -6727,8 +6817,10 @@ async function doExport() {
 //     comment says "baked into colors" or "not baked"; for bare numbers we guess by
 //     which reading matches palette colours more (tie = flat). The sun is the
 //     n.(x,y,z) in that comment (missing, or the original 0.3,0.5,0.8, means the
-//     original sun). A baked import points the editor's sun the same way. Colours
-//     that aren't in the active palette are added to a palette called "Imported".
+//     original sun). A baked import points the editor's sun the same way. An RGB
+//     that matches a loaded swatch (about 1/255) becomes that palette reference.
+//     Anything else keeps its RGB for display and exports as palette index 0.
+//     A new index export looks the index up in the palettes that are loaded.
 // A 12-byte file is turned into the same pos3+color3 list, so one weld path serves
 // all three. The editor has no stored normals: they come from the winding.
 function isPackedExport(text) {
@@ -6737,6 +6829,7 @@ function isPackedExport(text) {
   if (/int16_t\s+pos\s*\[/.test(text)) return true;         // v16
   if (/octDecode\s*\(/.test(text)) return true;             // v16
   if (/\bVert\s+[A-Za-z_][A-Za-z0-9_]*_verts\s*\[/.test(text)) return true;
+  if (/color\s+uint16/.test(text)) return true;
   return /\{\s*\{\s*-?\d+\s*,\s*-?\d+\s*,\s*-?\d+\s*\}\s*,\s*\{\s*-?\d+\s*,\s*-?\d+\s*\}\s*,\s*\{\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\}\s*\}/.test(text);
 }
 
@@ -6749,20 +6842,47 @@ function parsePacked(text) {
   const scale = parseFloat(scM[1]);
   if (offset.length !== 3 || offset.some(n => !isFinite(n)) || !(scale > 0))
     throw new Error("12-byte export has a bad offset or scale.");
-  const re = /\{\s*\{\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*\}\s*,\s*\{\s*(-?\d+)\s*,\s*(-?\d+)\s*\}\s*,\s*\{\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\}\s*\}/g;
-  const nums = [];
+  const reOld = /\{\s*\{\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*\}\s*,\s*\{\s*(-?\d+)\s*,\s*(-?\d+)\s*\}\s*,\s*\{\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\}\s*\}/g;
+  const reNew = /\{\s*\{\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*\}\s*,\s*\{\s*(-?\d+)\s*,\s*(-?\d+)\s*\}\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\}/g;
+  const indexed = /color\s+uint16/.test(text);
+  const nums = [], colorIds = [];
   let m;
+  const re = indexed ? reNew : reOld;
   while ((m = re.exec(text))) {
     nums.push(
       offset[0] + (+m[1] / POS_Q) * scale,
       offset[1] + (+m[2] / POS_Q) * scale,
       offset[2] + (+m[3] / POS_Q) * scale,
-      +m[6] / 255, +m[7] / 255, +m[8] / 255);
+      indexed ? 0 : +m[6] / 255, indexed ? 0 : +m[7] / 255, indexed ? 0 : +m[8] / 255);
+    if (indexed) colorIds.push(+m[6]);
   }
   if (nums.length < 18 || nums.length % 18)
-    throw new Error("12-byte export needs whole triangles of Vert { pos, nrm, rgba }.");
-  const lighting = /baked into colors/.test(text) ? "baked" : /not baked/.test(text) ? "flat" : null;
-  return { name: nameMatch ? nameMatch[1] : null, nums, lighting, sun: parseSunVector(text), bake: parseBake(text), stride: 6, kind: "packed", placed: parsePlaced(text) };
+    throw new Error(indexed
+      ? "12-byte export needs whole triangles of Vert { pos, nrm, color, 0, 0 }."
+      : "12-byte export needs whole triangles of Vert { pos, nrm, rgba }.");
+  const lighting = indexed ? "index" : /baked into colors/.test(text) ? "baked" : /not baked/.test(text) ? "flat" : null;
+  return { name: nameMatch ? nameMatch[1] : null, nums, colorIds: indexed ? colorIds : null, lighting, sun: parseSunVector(text), bake: parseBake(text), stride: 6, kind: "packed", placed: parsePlaced(text) };
+}
+
+// Anim_palette index (0 = PAL_NONE) back into a face colour, using the palettes
+// loaded now. Numbering matches palettes.h: 0 is none, then each palette in load
+// order, colours in file order.
+function colorFromPaletteIndex(idx) {
+  const pals = typeof allPalettes === "function" ? allPalettes() : [];
+  const n = idx | 0;
+  if (n <= 0) return blankColor();
+  let base = 1;
+  for (const p of pals) {
+    const count = (p.colors && p.colors.length) || 0;
+    if (n < base + count) {
+      const i = n - base;
+      const src = p.colors[i];
+      const rgb = Array.isArray(src) ? src.slice(0, 3) : UNPAINTED_RGB.slice();
+      return { pal: p.name || null, i, rgb };
+    }
+    base += count;
+  }
+  return blankColor();
 }
 
 // "// placed at (x, y, z)" from a v18 scene export: where the object's pivot stood.
@@ -6830,7 +6950,8 @@ function importMesh(nums, mirror, lighting = null, light = null, stride = 6, opt
     cells.get(k).push(i);
     return i;
   }
-  const tris = [], rgb = [];
+  const tris = [], rgb = [], idAt = [];
+  const srcIds = opts.colorIds || null;
   const perTri = stride * 3;
   let degenerate = 0;
   for (let t = 0; t < nums.length / perTri; t++) {
@@ -6838,6 +6959,7 @@ function importMesh(nums, mirror, lighting = null, light = null, stride = 6, opt
     const idx = [0, 1, 2].map(k => weld(nums.slice(base + k*stride, base + k*stride + 3)));
     if (idx[0] === idx[1] || idx[1] === idx[2] || idx[0] === idx[2]) { degenerate++; continue; }   // degenerate
     tris.push(...idx);
+    idAt.push(srcIds ? (srcIds[t * 3] | 0) : 0);
     // Triangle colour = average of its 3 vertex colours (they're equal in our exports).
     // Colour stays at offset 3 for both the old 6-float layout and pos+color+normal.
     rgb.push([0, 1, 2].map(ch => {
@@ -6866,10 +6988,11 @@ function importMesh(nums, mirror, lighting = null, light = null, stride = 6, opt
   let twoSided = false, backRgb = null;
   if (backs.size && backs.size * 2 === tris.length / 3) {
     twoSided = true;
-    const keepT = [], keepC = [], keepB = [];
-    for (let t = 0; t < tris.length / 3; t++) if (!backs.has(t)) { keepT.push(tris[t*3], tris[t*3+1], tris[t*3+2]); keepC.push(rgb[t]); keepB.push(rgb[backOf.get(t)]); }
+    const keepT = [], keepC = [], keepB = [], keepI = [];
+    for (let t = 0; t < tris.length / 3; t++) if (!backs.has(t)) { keepT.push(tris[t*3], tris[t*3+1], tris[t*3+2]); keepC.push(rgb[t]); keepB.push(rgb[backOf.get(t)]); keepI.push(idAt[t]); }
     tris.length = 0; tris.push(...keepT);
     rgb.length = 0; rgb.push(...keepC);
+    idAt.length = 0; idAt.push(...keepI);
     backRgb = keepB;
   } else if (backs.size) {
     const copy = new Map();
@@ -6880,6 +7003,12 @@ function importMesh(nums, mirror, lighting = null, light = null, stride = 6, opt
     }
   }
   const m = { positions, tris, colors: [], partner: [], mirror };
+  const L0 = (light && light.length === 3) ? light : SUN_DEFAULT;
+  if (srcIds) {
+    m.colors = idAt.map(id => colorFromPaletteIndex(id));
+    pairMirror(m);
+    return { mesh: m, baked: false, dropped: degenerate, light: L0, twoSided, indexed: true };
+  }
 
   const normal = (t) => {
     const P = (i) => positions.slice(i*3, i*3 + 3);
@@ -6893,8 +7022,8 @@ function importMesh(nums, mirror, lighting = null, light = null, stride = 6, opt
   // differently), so take the middle of the range that rounds to both, if there is one.
   const H = 0.5 / 255;
   // A palette colour that bakes back to exactly the file's numbers wins over the raw
-  // division, so a dark-lit face comes back as "Cap Red", not a near miss of it.
-  const known = allPalettes().flatMap(p => p.colors);
+  // division, so a dark-lit face comes back as that swatch, not a near miss of it.
+  const known = (typeof allPalettes === "function" ? allPalettes() : []).flatMap(p => p.colors || []);
   const same = opts.packed ? (a, b) => colorByte(a) === colorByte(b) : (a, b) => Math.abs(a - b) <= 0.0005 + 1e-9;
   const rebakes = (p, k, v) => p.every((x, i) => same(Math.min(1, x * k[i]), v[i]));
   const unbaked = rgb.map((c, t) => {
@@ -6910,11 +7039,11 @@ function importMesh(nums, mirror, lighting = null, light = null, stride = 6, opt
   let useBaked = lighting === "baked";
   if (lighting === null) {
     // Guess: count faces whose colour is a palette colour under each reading.
-    const known = allPalettes().flatMap(p => p.colors);
-    const hits = (list) => list.filter(c => known.some(k => colorEq(k, c, 0.0026))).length;
+    const knownFlat = (typeof allPalettes === "function" ? allPalettes() : []).flatMap(p => p.colors || []);
+    const hits = (list) => list.filter(c => knownFlat.some(k => colorEq(k, c, 0.0026))).length;
     useBaked = hits(unbaked) > hits(rgb);
   }
-  m.colors = (useBaked ? unbaked : rgb).map(c => c.slice());
+  m.colors = (useBaked ? unbaked : rgb).map(c => normalizeColor(c));
   pairMirror(m);
   return { mesh: m, baked: useBaked, dropped: degenerate, light: L, twoSided };
 }
@@ -6932,11 +7061,17 @@ function openImport() {
 // input: one text, or a list of texts (one per file). One undo step for all of it.
 function doImport(input, how = "add") {
   const texts = Array.isArray(input) ? input : [input];
-  const chunks = [], jsons = [], errors = [];
+  const chunks = [], jsons = [], palDocs = [], errors = [];
   for (const t of texts) {
     const s = String(t || "").trim();
     if (!s) continue;
-    if (s[0] === "{") { try { jsons.push(JSON.parse(s)); } catch (e) { errors.push("bad .json: " + e.message); } }
+    if (s[0] === "{") {
+      try {
+        const d = JSON.parse(s);
+        if (typeof isPaletteDoc === "function" && isPaletteDoc(d)) palDocs.push(d);
+        else jsons.push(d);
+      } catch (e) { errors.push("bad .json: " + e.message); }
+    }
     else chunks.push(...splitExports(s));
   }
   const models = [];
@@ -6945,12 +7080,17 @@ function doImport(input, how = "add") {
       const parsed = parseExport(c);
       const keepMirror = how === "replace" && !models.length;
       const res = importMesh(parsed.nums, keepMirror ? mesh.mirror : null, parsed.lighting, parsed.sun || SUN_DEFAULT.slice(), parsed.stride,
-        { bake: parsed.bake, packed: parsed.kind === "packed" });
+        { bake: parsed.bake, packed: parsed.kind === "packed" && !parsed.colorIds, colorIds: parsed.colorIds });
       if (!keepMirror) detectMirror(res.mesh);
       models.push({ parsed, res });
     } catch (e) { errors.push(e.message); }
   }
-  if (!models.length && !jsons.length) { toast("Import failed: " + (errors[0] || "nothing to import")); return false; }
+  if (!models.length && !jsons.length && !palDocs.length) { toast("Import failed: " + (errors[0] || "nothing to import")); return false; }
+  if (!models.length && !jsons.length) {
+    const r = ingestPaletteDocs(palDocs);
+    toast(r.note || "Palette loaded");
+    return !r.failed;
+  }
   pushUndo();                                      // the old scene, so Undo brings it back
   try {
     for (const d of jsons) sceneFromJson(d, how === "replace");
@@ -6961,9 +7101,8 @@ function doImport(input, how = "add") {
     else if (how === "replace") bakeOn = false;
   }
   const added = [];
-  let colours = 0;
+  const palNote = palDocs.length && typeof ingestPaletteDocs === "function" ? ingestPaletteDocs(palDocs).note : "";
   models.forEach(({ parsed, res }, i) => {
-    colours += addToImportedPalette(res.mesh.colors);
     if (how === "replace" && i === 0) {
       const o = activeObj();
       mesh = res.mesh; o.mesh = res.mesh;
@@ -6990,7 +7129,7 @@ function doImport(input, how = "add") {
     if (res.dropped) notes.push(`${res.dropped} zero-area tris dropped`);
   } else if (models.length) notes.push(`${models.length} models`);
   if (jsons.length) notes.push(`${jsons.length} scene file${jsons.length > 1 ? "s" : ""}`);
-  if (colours) notes.push(`${colours} new colour${colours > 1 ? "s" : ""} added to the "Imported" palette`);
+  if (palNote) notes.push(palNote);
   if (errors.length) notes.push(`${errors.length} skipped (${errors[0]})`);
   const nm = models.length === 1 ? (how === "replace" ? activeObj().name : added[0].name) : "";
   toast(`Imported ${nm}${nm ? ": " : ""}` + notes.join(", "));
@@ -7712,172 +7851,180 @@ $("mCopy").addEventListener("click", async () => {
 
 
 //----- Palettes: Data -----||
-// Palettes live in localStorage under their own key, separate from the model, so they
-// survive New / Import and are shared by every model. The built-in palette ("default")
-// is not stored: it's always there as a fallback, read-only, and can't be deleted.
-//   { v: 1, active: "<id>", list: [ { id, name, colors: [[r,g,b] 0..1, ...] }, ... ] }
+// Nothing is built in. Palettes are files the user loads, kept in localStorage so they
+// survive New / Import and are shared by every model.
+//   { v: 2, active: "<id>"|null, list: [ { id, name, colors: [[r,g,b] 0..1], names?, groups? } ] }
+// A face stores the palette NAME and the swatch index, so a saved scene still finds the
+// colour after the browser makes new ids. Index 0 in a palette is its first swatch.
 const PAL_KEY = KEY_PREFIX + "palettes";
-const BUILTIN = { id: "default", name: "PICO-8 (built-in)", colors: DEFAULT_PALETTE, builtin: true };
-
-//----- Palettes: World (named) -----||
-// The default palette for the pastel world: every colour has a NAME (shown on the swatch,
-// in the readout, and when you Pick a face), grouped by material. Each group is a
-// light -> dark ramp with clear steps in lightness, so colours can be told apart by value,
-// not only by hue (red-green colour blindness). To extend it, add a row here (0..255);
-// examples/world_palette.json and the README table list the same colours.
-const WORLD_TABLE = [
-  { group: "Foliage", colors: [
-    ["Leaf Light",       [190, 228, 120]],
-    ["Leaf",             [112, 180,  84]],
-    ["Leaf Dark",        [ 32,  92,  74]],
-  ] },
-  { group: "Grass", colors: [
-    ["Grass Light",      [132, 220, 172]],
-    ["Grass Teal",       [ 60, 170, 152]],
-    ["Grass Deep",       [ 28,  92, 112]],
-  ] },
-  { group: "Ground", colors: [
-    ["Sand",             [248, 226, 168]],
-    ["Path",             [196, 148, 104]],
-    ["Dirt",             [112,  72,  74]],
-  ] },
-  { group: "Warm Rock", colors: [
-    ["Warm Stone Light", [238, 222, 210]],
-    ["Warm Stone",       [166, 142, 140]],
-    ["Warm Stone Dark",  [ 96,  80, 100]],
-  ] },
-  { group: "Cool Rock", colors: [
-    ["Cool Stone Light", [196, 204, 232]],
-    ["Cool Stone",       [120, 132, 176]],
-    ["Cool Stone Dark",  [ 66,  70, 116]],
-  ] },
-  { group: "Wood", colors: [
-    ["Wood Light",       [240, 192, 134]],
-    ["Wood",             [192, 128,  84]],
-    ["Wood Dark",        [ 88,  52,  62]],
-  ] },
-  { group: "Water", colors: [
-    ["Water Light",      [176, 240, 250]],
-    ["Water",            [ 80, 166, 224]],
-    ["Water Deep",       [ 44,  84, 166]],
-  ] },
-  { group: "Mushroom", colors: [
-    ["Cream",            [252, 240, 214]],
-    ["Gill Pink",        [226, 178, 176]],
-    ["Cap Pink",         [246, 128, 138]],
-    ["Cap Red",          [220,  62,  84]],
-    ["Cap Red Dark",     [150,  36,  72]],
-  ] },
-  { group: "Blossom", colors: [
-    ["Blossom Pink",     [255, 186, 216]],
-    ["Petal Rose",       [240, 122, 182]],
-    ["Berry Plum",       [132,  56, 132]],
-  ] },
-  { group: "Glow", colors: [
-    ["Glow Yellow",      [255, 240, 130]],
-    ["Crystal Cyan",     [ 90, 220, 214]],
-    ["Crystal Violet",   [160, 116, 240]],
-  ] },
-  { group: "Roof", colors: [
-    ["Roof Coral",       [250, 152, 126]],
-    ["Roof Slate",       [ 84,  90, 152]],
-  ] },
-  { group: "Sky & Misc", colors: [
-    ["Sky Blue",         [170, 208, 252]],
-    ["Ink",              [ 40,  34,  62]],
-  ] },
-];
-const WORLD = {
-  id: "world", name: "World (named)", builtin: true,
-  colors: WORLD_TABLE.flatMap(g => g.colors.map(([, c]) => c.map(v => round3(v / 255)))),
-  names:  WORLD_TABLE.flatMap(g => g.colors.map(([n]) => n)),
-  groups: WORLD_TABLE.flatMap(g => g.colors.map(() => g.group)),
-};
-// "world: 1" marks that the World palette was introduced: older saves switch to it once.
-let palStore = { v: 1, active: "world", list: [], world: 1 };
+const PAL_MATCH_EPS = 0.004;   // about 1/255: a saved byte colour can still find its swatch
+let palStore = { v: 2, active: null, list: [] };
 let palEditMode = false;
 
-function palLoad() {
-  try {
-    const d = JSON.parse(localStorage.getItem(PAL_KEY));
-    if (d && d.v === 1 && Array.isArray(d.list)) {
-      palStore.list = d.list.filter(p => p && typeof p.id === "string" && typeof p.name === "string" && Array.isArray(p.colors))
-        .map(p => ({ id: p.id, name: p.name, colors: p.colors.filter(c => Array.isArray(c) && c.length === 3 && c.every(isFinite)) }));
-      palStore.active = typeof d.active === "string" ? d.active : "default";
-      d.list.forEach((p, i) => {
-        const q = palStore.list.find(x => x.id === p.id);
-        if (!q) return;
-        if (Array.isArray(p.names)) q.names = p.names.map(n => String(n || ""));
-        if (Array.isArray(p.groups)) q.groups = p.groups.map(n => String(n || ""));
-      });
-      if (!d.world) { palStore.active = "world"; palStore.world = 1; palSave(); }
-    }
-  } catch (e) { /* corrupt: start with just the built-in */ }
+function allPalettes() { return palStore.list; }
+function paletteByName(name) { return palStore.list.find(p => p.name === name) || null; }
+function activePalette() { return palStore.list.find(p => p.id === palStore.active) || null; }
+function brushReady() {
+  const p = currentColor && currentColor.pal != null && paletteByName(currentColor.pal);
+  return !!(p && Number.isInteger(currentColor.i) && p.colors[currentColor.i]);
 }
-function palSave() {
-  try { localStorage.setItem(PAL_KEY, JSON.stringify(palStore)); } catch (e) { /* ignore */ }
+// With palettes loaded and no swatch chosen, the brush becomes the first swatch.
+function ensureBrush() {
+  if (brushReady()) return;
+  const p = activePalette() || palStore.list[0] || null;
+  if (!p || !p.colors.length) return;
+  if (!activePalette()) palStore.active = p.id;
+  currentColor = { pal: p.name, i: 0, rgb: p.colors[0].slice() };
 }
-const allPalettes = () => [WORLD, BUILTIN, ...palStore.list];
-const activePalette = () => allPalettes().find(p => p.id === palStore.active) || WORLD;
 const newPalId = () => "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 function uniqueName(base) {
   let name = base, n = 2;
   while (allPalettes().some(p => p.name === name)) name = base + " " + n++;
   return name;
 }
+function palLoad() {
+  try {
+    const d = JSON.parse(localStorage.getItem(PAL_KEY));
+    if (!d || (d.v !== 1 && d.v !== 2) || !Array.isArray(d.list)) return;
+    palStore.list = d.list.filter(p => p && typeof p.id === "string" && typeof p.name === "string"
+        && p.id !== "world" && p.id !== "default" && Array.isArray(p.colors))
+      .map(p => {
+        const colors = p.colors.filter(c => Array.isArray(c) && c.length >= 3 && c.slice(0, 3).every(isFinite))
+          .map(c => c.slice(0, 3).map(round3));
+        const q = { id: p.id, name: String(p.name), colors };
+        if (Array.isArray(p.names) && p.names.length === colors.length) q.names = p.names.map(n => String(n || ""));
+        if (Array.isArray(p.groups) && p.groups.length === colors.length) q.groups = p.groups.map(n => String(n || ""));
+        return q;
+      }).filter(p => p.colors.length);
+    palStore.active = palStore.list.some(p => p.id === d.active) ? d.active : (palStore.list[0] ? palStore.list[0].id : null);
+    palStore.v = 2;
+  } catch (e) { /* corrupt: start with no palettes */ }
+}
+function palSave() {
+  try { localStorage.setItem(PAL_KEY, JSON.stringify(palStore)); } catch (e) { /* ignore */ }
+}
 function createPalette(name, colors, names, groups) {
-  const p = { id: newPalId(), name: uniqueName(name), colors: colors.map(c => c.map(round3)) };
-  if (names && names.length === colors.length) p.names = names.slice();
-  if (groups && groups.length === colors.length) p.groups = groups.slice();
+  const cols = colors.map(c => c.slice(0, 3).map(round3));
+  const p = { id: newPalId(), name: uniqueName(String(name || "Palette").trim() || "Palette"), colors: cols };
+  if (names && names.length === cols.length) p.names = names.slice();
+  if (groups && groups.length === cols.length) p.groups = groups.slice();
   palStore.list.push(p);
   palStore.active = p.id;
   palSave();
   return p;
 }
-
-// After a model import: colours not in the active palette go into "Imported" (made if
-// needed). The active palette doesn't change. Returns how many colours were added.
-// Colours closer than IMPORT_EPS (about 2/3 of one 8-bit step) count as the same, so tiny
-// rounding differences from un-baking light don't add near-duplicate swatches.
-const IMPORT_EPS = 0.0026;
-function addToImportedPalette(colors) {
-  const act = activePalette(), fresh = [];
-  for (const c of colors) {
-    const r = c.map(v => round3(Math.min(1, Math.max(0, v))));
-    if (act.colors.some(k => colorEq(k, r, IMPORT_EPS)) || fresh.some(k => colorEq(k, r, IMPORT_EPS))) continue;
-    fresh.push(r);
+// Same name replaces that palette in place (indices stay put). A new name is added.
+function addLoadedPalette(spec) {
+  const colors = spec.colors.map(c => c.slice(0, 3).map(round3));
+  if (!colors.length) throw new Error("no colours");
+  if (colors.length > 4096) throw new Error("more than 4096 colours in one palette");
+  const name = String(spec.name || "Palette").trim() || "Palette";
+  const names = spec.names && spec.names.length === colors.length ? spec.names.map(n => String(n || "")) : null;
+  const groups = spec.groups && spec.groups.length === colors.length ? spec.groups.map(n => String(n || "")) : null;
+  let existing = palStore.list.find(p => p.name === name);
+  if (existing) {
+    existing.colors = colors;
+    if (names) existing.names = names; else delete existing.names;
+    if (groups) existing.groups = groups; else delete existing.groups;
+    palStore.active = existing.id;
+    return { palette: existing, updated: true };
   }
-  if (!fresh.length) return 0;
-  let imp = palStore.list.find(p => p.name === "Imported");
-  if (!imp) { imp = { id: newPalId(), name: "Imported", colors: [] }; palStore.list.push(imp); }
-  let added = 0;
-  for (const r of fresh) if (!imp.colors.some(k => colorEq(k, r, IMPORT_EPS))) { imp.colors.push(r); added++; }
-  palSave();
-  return added;
+  const total = palStore.list.reduce((n, p) => n + p.colors.length, 0) + colors.length;
+  if (total > 65534) throw new Error("too many colours for a uint16 index");
+  const p = { id: newPalId(), name, colors };
+  if (names) p.names = names;
+  if (groups) p.groups = groups;
+  palStore.list.push(p);
+  palStore.active = p.id;
+  return { palette: p, updated: false };
+}
+
+// Old [r,g,b] (or {rgb}) becomes a palette reference when a loaded swatch is within
+// about 1/255 on every channel. Otherwise the RGB stays, for drawing only, and the
+// .h export uses index 0. A very old integer index (0..15) has no table any more:
+// it becomes the unpainted grey.
+function nearestSwatch(rgb, eps) {
+  let best = null, bestD = eps;
+  for (const p of allPalettes()) {
+    p.colors.forEach((c, i) => {
+      const d = Math.max(Math.abs(c[0] - rgb[0]), Math.abs(c[1] - rgb[1]), Math.abs(c[2] - rgb[2]));
+      if (d <= bestD) { bestD = d; best = { name: p.name, i, rgb: c }; }
+    });
+  }
+  return best;
+}
+function adoptStoredColor(c) {
+  if (Number.isInteger(c)) return blankColor();
+  if (c && !Array.isArray(c) && typeof c.pal === "string" && Number.isInteger(c.i) && c.i >= 0) {
+    const p = paletteByName(c.pal);
+    if (p && p.colors[c.i]) return { pal: p.name, i: c.i, rgb: p.colors[c.i].slice() };
+    const rgb = Array.isArray(c.rgb) ? c.rgb.slice(0, 3).map(round3) : UNPAINTED_RGB.slice();
+    return { pal: c.pal, i: c.i, rgb };
+  }
+  const src = Array.isArray(c) ? c : (c && Array.isArray(c.rgb) ? c.rgb : null);
+  if (!src || src.length < 3 || !src.slice(0, 3).every(v => typeof v === "number" && isFinite(v))) return blankColor();
+  const rgb = src.slice(0, 3).map(v => round3(Math.min(1, Math.max(0, v))));
+  const hit = nearestSwatch(rgb, PAL_MATCH_EPS);
+  if (hit) return { pal: hit.name, i: hit.i, rgb: hit.rgb.slice() };
+  return { pal: null, i: null, rgb };
+}
+// After a palette load or edit, loose RGB may now match a swatch, and live swatches
+// repaint the faces that already point at them.
+function refreshSceneColors() {
+  const seen = new Set();
+  const touch = (c) => {
+    if (c && !Array.isArray(c) && seen.has(c)) return c;
+    if (c && !Array.isArray(c)) seen.add(c);
+    if (c && !Array.isArray(c) && c.pal != null && Number.isInteger(c.i)) {
+      const p = paletteByName(c.pal);
+      if (p && p.colors[c.i]) return { pal: p.name, i: c.i, rgb: p.colors[c.i].slice() };
+      if (p) return { pal: null, i: null, rgb: colorRGB(c).slice() };
+      return c;
+    }
+    return adoptStoredColor(c);
+  };
+  if (scene && Array.isArray(scene.objects)) {
+    for (const o of scene.objects) if (o.mesh && Array.isArray(o.mesh.colors)) o.mesh.colors = o.mesh.colors.map(touch);
+    if (scene.objects[scene.active]) mesh = scene.objects[scene.active].mesh;
+  }
+  currentColor = touch(currentColor);
+  if (typeof meshDirty !== "undefined") meshDirty = true;
+  if (typeof sceneVersion === "number") sceneVersion++;
+}
+function retargetRemovedSwatch(name, removed) {
+  const seen = new Set();
+  const fix = (c) => {
+    if (!c || Array.isArray(c) || seen.has(c)) return;
+    seen.add(c);
+    if (c.pal !== name || !Number.isInteger(c.i)) return;
+    if (c.i === removed) { c.pal = null; c.i = null; }
+    else if (c.i > removed) c.i--;
+  };
+  for (const o of scene.objects) for (const c of o.mesh.colors) fix(c);
+  fix(currentColor);
+}
+function renamePaletteRefs(oldName, newName) {
+  const seen = new Set();
+  const fix = (c) => {
+    if (!c || Array.isArray(c) || seen.has(c)) return;
+    seen.add(c);
+    if (c.pal === oldName) c.pal = newName;
+  };
+  for (const o of scene.objects) for (const c of o.mesh.colors) fix(c);
+  fix(currentColor);
 }
 
 // Hex <-> 0..1 floats.
-const toHex = (c) => "#" + c.map(v => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, "0")).join("");
-// Name of a colour: an exact (within IMPORT_EPS) named swatch, the active palette first,
-// else the nearest World colour ("≈ Leaf"). Nearness is a "redmean" weighted RGB distance.
-function colorInfo(c) {
-  const pals = [activePalette(), ...allPalettes()];
-  for (const p of pals) {
-    if (!p.names) continue;
-    const i = p.colors.findIndex((k, j) => p.names[j] && colorEq(k, c, IMPORT_EPS));
-    if (i >= 0) return { name: p.names[i], group: (p.groups && p.groups[i]) || "", exact: true };
-  }
-  let best = 0, bestD = Infinity;
-  WORLD.colors.forEach((k, i) => {
-    const r = (k[0] + c[0]) / 2, d0 = k[0] - c[0], d1 = k[1] - c[1], d2 = k[2] - c[2];
-    const d = (2 + r) * d0 * d0 + 4 * d1 * d1 + (3 - r) * d2 * d2;
-    if (d < bestD) { bestD = d; best = i; }
-  });
-  return { name: WORLD.names[best], group: WORLD.groups[best], exact: false };
-}
+const toHex = (c) => "#" + colorRGB(c).map(v => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, "0")).join("");
 function colorLabel(c) {
-  const n = colorInfo(c);
-  return (n.exact ? "" : "≈ ") + n.name + (n.group ? " · " + n.group : "");
+  if (c && !Array.isArray(c) && c.pal != null && Number.isInteger(c.i)) {
+    const p = paletteByName(c.pal);
+    if (!p) return c.pal + "[" + c.i + "] (not loaded)";
+    const name = (p.names && p.names[c.i]) || ("#" + (c.i + 1));
+    const group = (p.groups && p.groups[c.i]) || "";
+    return name + (group ? " · " + group : "") + " · " + p.name;
+  }
+  return toHex(c);
 }
 function fromHex(h) {
   let t = String(h).trim().replace(/^#/, "");
@@ -7885,33 +8032,209 @@ function fromHex(h) {
   if (!/^[0-9a-fA-F]{6}$/.test(t)) return null;
   return [0, 2, 4].map(i => round3(parseInt(t.slice(i, i + 2), 16) / 255));
 }
-
-
-//----- Palettes: C++ Export / Import -----||
-// Export matches the vertex export's style and precision (3 decimals + f):
-//   static const float <name>_palette[][3] = { {r, g, b}, ... };
-//   static const int <name>_palette_count = N;
-function buildPaletteExport(p) {
-  const name = cIdent(p.name);
-  const L = [];
-  L.push(`// ${name}: ${p.colors.length} colors (exported from Vert Modeler), r, g, b in 0..1`);
-  L.push(`static const float ${name}_palette[][3] = {`);
-  p.colors.forEach((c, i) => L.push(`    {${c.map(f3).join(", ")}},   // ${toHex(c)}${p.names && p.names[i] ? " " + p.names[i] : ""}${p.groups && p.groups[i] ? " [" + p.groups[i] + "]" : ""}`));
-  L.push(`};`);
-  L.push(`static const int ${name}_palette_count = ${p.colors.length};`);
-  return L.join("\n") + "\n";
+function rgbAny(v) {
+  if (!Array.isArray(v) || v.length < 3 || !v.slice(0, 3).every(n => typeof n === "number" && isFinite(n))) return null;
+  const scale = v.slice(0, 3).some(n => n > 1) ? 255 : 1;
+  return v.slice(0, 3).map(x => round3(x / scale));
+}
+function rgbFromEntry(e) {
+  if (Array.isArray(e)) return rgbAny(e);
+  if (!e || typeof e !== "object") return null;
+  if (typeof e.hex === "string") { const h = fromHex(e.hex); if (h) return h; }
+  if (Array.isArray(e.rgb)) return rgbAny(e.rgb);
+  return null;
 }
 
-// Accepts: that C++ snippet (name from "<name>_palette"), or a list of hex codes
-// (#rrggbb / rrggbb / #rgb, separated by commas, spaces, or new lines), or bare float
-// triples in 0..1. Throws an Error with a readable message for anything else.
+//----- Palettes: JSON -----||
+// examples/world_palette.json is the shape this reads:
+//   { "name", "groups": [ { "group", "colors": [ { "name", "hex", "rgb": [0..255] } ] } ] }
+// Also: { "name", "colors": [ {name, hex, rgb} | [r,g,b] ] }
+// and { "palettes": [ ...those... ] } so one file can hold several.
+function isPaletteDoc(d) {
+  if (!d || typeof d !== "object" || Array.isArray(d)) return false;
+  if (d.format === "vert-modeler-scene" || Array.isArray(d.objects) || d.mesh) return false;
+  if (Array.isArray(d.palettes)) return true;
+  if (Array.isArray(d.groups)) return true;
+  if (typeof d.name === "string" && Array.isArray(d.colors)) return true;
+  return false;
+}
+function paletteFromDoc(d) {
+  if (Array.isArray(d)) return d.flatMap(paletteFromDoc);
+  if (!d || typeof d !== "object") return [];
+  if (Array.isArray(d.palettes)) return d.palettes.flatMap(paletteFromDoc);
+  const take = (entries, groupName) => {
+    const colors = [], names = [], groups = [];
+    for (const e of entries) {
+      const rgb = rgbFromEntry(e);
+      if (!rgb) continue;
+      colors.push(rgb);
+      names.push(e && !Array.isArray(e) && e.name ? String(e.name) : "");
+      groups.push(groupName || (e && !Array.isArray(e) && e.group ? String(e.group) : ""));
+    }
+    return { colors, names, groups };
+  };
+  let pack = null;
+  if (Array.isArray(d.groups)) {
+    const colors = [], names = [], groups = [];
+    for (const g of d.groups) {
+      if (!g || !Array.isArray(g.colors)) continue;
+      const part = take(g.colors, g.group ? String(g.group) : "");
+      colors.push(...part.colors); names.push(...part.names); groups.push(...part.groups);
+    }
+    pack = { colors, names, groups };
+  } else if (Array.isArray(d.colors)) pack = take(d.colors, "");
+  if (!pack || !pack.colors.length) return [];
+  return [{ name: d.name ? String(d.name) : "Palette", colors: pack.colors, names: pack.names, groups: pack.groups }];
+}
+function ingestPaletteDocs(docs) {
+  const loaded = [];
+  const errors = [];
+  for (const d of docs) {
+    let specs = [];
+    try { specs = paletteFromDoc(d); }
+    catch (e) { errors.push(e.message); continue; }
+    if (!specs.length) { errors.push("no colours"); continue; }
+    for (const spec of specs) {
+      try { loaded.push(addLoadedPalette(spec)); }
+      catch (e) { errors.push(e.message); }
+    }
+  }
+  if (loaded.length) {
+    palSave();
+    refreshSceneColors();
+    ensureBrush();
+    if (typeof updateUI === "function") updateUI();
+  }
+  const names = loaded.map(r => (r.updated ? "updated " : "") + r.palette.name + " (" + r.palette.colors.length + ")");
+  let note = names.length ? names.join(", ") : "";
+  if (errors.length) note += (note ? "; " : "") + errors[0];
+  return { note: note || "No palette colours found", failed: !loaded.length, count: loaded.length };
+}
+async function loadPaletteFiles(fileList) {
+  const docs = [], errors = [];
+  for (const f of fileList) {
+    let text;
+    try { text = await f.text(); } catch (e) { errors.push(f.name); continue; }
+    let d;
+    try { d = JSON.parse(text); } catch (e) { errors.push(f.name + " is not JSON"); continue; }
+    const doc = Array.isArray(d) ? { palettes: d } : d;
+    if (!isPaletteDoc(doc)) { errors.push(f.name + " is not a palette"); continue; }
+    docs.push(doc);
+  }
+  const r = docs.length ? ingestPaletteDocs(docs) : { note: "No palette loaded", failed: true, count: 0 };
+  const extra = errors.length ? (r.count ? "; " : "") + errors[0] : "";
+  toast((r.count ? "Loaded " + r.note : r.note) + extra);
+  return r;
+}
+
+//----- Palettes: palettes.h -----||
+// One header, one table. Index 0 is PAL_NONE. Then each loaded palette, in the
+// order it was loaded, and inside a palette the swatches in file order. That
+// global index is what Vert.color stores. A scene file stores the palette name
+// and the index inside that palette; the global number is
+//   1 + (colours of palettes loaded before this one) + index_in_palette
+// so the same files in the same order always produce the same numbers.
+function cEnumPart(s, fallback) {
+  let id = String(s || "").trim().replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase();
+  if (!id || /^[0-9]/.test(id)) id = fallback;
+  return id || fallback;
+}
+function takeEnum(used, stem) {
+  let id = stem, n = 2;
+  while (used.has(id)) id = stem + "_" + n++;
+  used.add(id);
+  return id;
+}
+function paletteEnums() {
+  const used = new Set(["PAL_NONE", "PAL_COUNT"]);
+  const pals = [];
+  let next = 1;
+  for (const p of allPalettes()) {
+    const pid = takeEnum(used, "PAL_" + cEnumPart(p.name, "PALETTE"));
+    const entries = [];
+    const first = next;
+    p.colors.forEach((rgb, i) => {
+      const cname = (p.names && p.names[i]) ? p.names[i] : "";
+      const tail = cname ? cEnumPart(cname, String(i)) : String(i);
+      entries.push({
+        enum: takeEnum(used, pid + "_" + tail),
+        i, rgb,
+        name: cname,
+        group: (p.groups && p.groups[i]) || "",
+      });
+      next++;
+    });
+    pals.push({ id: pid, name: p.name, first, count: p.colors.length, entries });
+  }
+  return { pals, next };
+}
+// Global index for a face. 0 = PAL_NONE. Same walk as Anim_palette[].
+function paletteColorSlot(cell) {
+  if (!cell || Array.isArray(cell) || cell.pal == null || !Number.isInteger(cell.i)) return 0;
+  let base = 1;
+  for (const p of allPalettes()) {
+    if (p.name === cell.pal) {
+      if (cell.i < 0 || cell.i >= p.colors.length) return 0;
+      return base + cell.i;
+    }
+    base += p.colors.length;
+  }
+  return 0;
+}
+function paletteColorTag(cell) {
+  if (!paletteColorSlot(cell)) return "PAL_NONE";
+  for (const p of paletteEnums().pals)
+    if (p.name === cell.pal && cell.i >= 0 && cell.i < p.entries.length) return p.entries[cell.i].enum;
+  return "PAL_NONE";
+}
+function rgbBytes(c) {
+  return colorRGB(c).slice(0, 3).map(v => Math.max(0, Math.min(255, Math.round(Math.min(1, Math.max(0, v)) * 255))));
+}
+function buildPalettesHeader() {
+  const table = paletteEnums();
+  const rows = [];
+  for (const p of table.pals) for (const e of p.entries) rows.push(e);
+  const L = [];
+  L.push(`#pragma once`);
+  L.push(`#include <stdint.h>`);
+  L.push(`// Vert.color (uint16 at byte 8) is an index into Anim_palette.`);
+  L.push(`// 0 is PAL_NONE (black, not a swatch). Real colours are 1 .. PAL_COUNT-1.`);
+  L.push(`// Order: palettes in the order they were loaded, and inside each palette`);
+  L.push(`// the swatches in file order. A scene stores { "pal": name, "i": n } where`);
+  L.push(`// n is 0-based inside that palette. The global index is`);
+  L.push(`//   1 + (colours in palettes loaded before this one) + n`);
+  L.push(`// The same files in the same order always get the same numbers.`);
+  L.push(`// RGB is unlit, 0..255. Light from the vertex normal.`);
+  L.push(`enum {`);
+  L.push(`    PAL_NONE = 0,          // reserved, black`);
+  rows.forEach((e, n) => {
+    const note = n === 0 ? " // one name per color; value is the index" : "";
+    L.push(`    ${e.enum} = ${n + 1},${note}`);
+  });
+  L.push(`    PAL_COUNT`);
+  L.push(`};`);
+  L.push(`static const uint8_t Anim_palette[][3] = {`);
+  L.push(`    { 0, 0, 0 },           // 0  PAL_NONE`);
+  rows.forEach((e, n) => {
+    const rgb = rgbBytes(e.rgb).join(", ");
+    const tail = n === 0 ? "   unlit RGB 0..255" : "";
+    L.push(`    { ${rgb} },           // ${n + 1}  ${e.enum}${tail}`);
+  });
+  L.push(`};`);
+  L.push(`static const int Anim_palette_count = PAL_COUNT;`);
+  L.push(``);
+  return L.join("\n");
+}
+
+//----- Palettes: Paste Import -----||
+// Still accepts the older one-palette C++ snippet ("<name>_palette[][3]"), a list of
+// hex codes, or r g b floats in 0..1. JSON is handled by paletteFromDoc before this.
 function parsePalette(text) {
   const src = String(text);
   const noComments = (t) => t.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
   const nameMatch = src.match(/([A-Za-z_][A-Za-z0-9_]*)_palette\s*\[/);
   let body = noComments(src), name = nameMatch ? nameMatch[1] : null;
   if (nameMatch) {
-    // The array's outer braces: first "{" after the name, to its matching "}".
     const clean = noComments(src.slice(nameMatch.index));
     const open = clean.indexOf("{");
     if (open < 0) throw new Error("found " + name + "_palette but no { ... } after it");
@@ -7940,8 +8263,7 @@ function parsePalette(text) {
     for (let i = 0; i < nums.length; i += 3) colors.push([nums[i], nums[i+1], nums[i+2]].map(round3));
   }
   if (!colors.length) throw new Error("no colours found");
-  if (colors.length > 256) throw new Error("more than 256 colours");
-  // Names from our own export's comments: "{r, g, b},   // #rrggbb Name [Group]".
+  if (colors.length > 4096) throw new Error("more than 4096 colours");
   const named = nameMatch ? [...src.matchAll(/\}\s*,?\s*\/\/\s*#[0-9a-fA-F]{6}[ \t]*([^\n\[]*?)[ \t]*(?:\[([^\]\n]*)\])?[ \t]*$/gm)] : [];
   if (named.length === colors.length && named.some(m => m[1])) {
     return { name, colors, names: named.map(m => m[1] || ""), groups: named.map(m => m[2] || "") };
@@ -7949,48 +8271,61 @@ function parsePalette(text) {
   return { name, colors };
 }
 
-
 //----- Palettes: UI -----||
-// Where it lives: Paint mode shows the palette bar above the toolbar.
-//   [palette icon] <name> ▾ : opens the Palettes manager (switch, New, Duplicate, Rename, Delete,
-//                 Export C++ with Copy, Import).
-//   ✎ Edit      : edit mode: tap a swatch to change/delete it, "+" adds one.
-//                 Long-press a swatch does the same without edit mode.
-// The built-in palette is read-only (Edit tells you to Duplicate it).
+// Paint mode shows the palette bar. With no palette loaded it says so, and painting
+// does nothing until a swatch is chosen.
+//   [palette icon] <name> ▾ : switch, New, Duplicate, Rename, Delete, load is on the
+//                            File menu, Export palettes.h copies the header.
+//   ✎ Edit : tap a swatch to change it, "+" adds one. Long-press edits too.
 let palRenderKey = "";
-let pickMode = false;       // Pick: the next face tap takes its colour instead of painting
-let faceRead = "";          // last face painted / picked / hovered, for the readout
-let hoverRead = "";         // swatch under the mouse
-// Readout under the palette head: the brush colour's name, and the face / swatch you touched.
+let pickMode = false;
+let faceRead = "";
+let hoverRead = "";
 function renderPalRead() {
   $("palReadChip").style.background = toHex(currentColor);
   $("palReadText").innerHTML = "";
   const b = document.createElement("b");
-  b.textContent = colorLabel(currentColor);
+  b.textContent = brushReady() ? colorLabel(currentColor) : (allPalettes().length ? "Pick a swatch" : "No palette");
   $("palReadText").append("Brush: ", b);
   $("palReadFace").textContent = pickMode ? "· tap a face to pick" : (hoverRead || faceRead) ? "· " + (hoverRead || faceRead) : "";
   $("palPick").classList.toggle("on", pickMode);
 }
-// Swatch text: dark on light colours, white on dark ones (by luminance).
 const inkFor = (c) => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) > 0.5 ? "#16171d" : "#ffffff";
 function renderPalette() {
   const p = activePalette();
   renderPalRead();
-  // updateUI runs on every drag step: only rebuild the swatch buttons when something changed.
-  const key = JSON.stringify([p.id, p.name, p.colors, p.names, p.groups, currentColor, palEditMode]);
+  const key = JSON.stringify(p ? [p.id, p.name, p.colors, p.names, p.groups, currentColor, palEditMode] : ["none", currentColor, palEditMode]);
   if (key === palRenderKey) return;
   palRenderKey = key;
-  $("palNameText").textContent = p.name;
-  $("palEdit").classList.toggle("on", palEditMode);
-  $("palette").classList.toggle("editing", palEditMode);
+  $("palNameText").textContent = p ? p.name : "No palettes";
+  $("palEdit").classList.toggle("on", !!(palEditMode && p));
+  $("palette").classList.toggle("editing", !!(palEditMode && p));
   const box = $("swatches");
   box.textContent = "";
+  if (!p || !p.colors.length) {
+    box.classList.remove("named");
+    box.classList.add("empty");
+    const note = document.createElement("div");
+    note.className = "palEmpty";
+    note.textContent = p
+      ? "This palette has no colours yet. Tap Edit, then +."
+      : "No palettes loaded. File menu → Load palette… (.json). Painting stays off until a swatch is chosen.";
+    box.appendChild(note);
+    if (p && palEditMode) {
+      const add = document.createElement("button");
+      add.className = "swatch add"; add.textContent = "+";
+      add.addEventListener("click", () => openSwatchEditor(-1));
+      box.appendChild(add);
+    }
+    return;
+  }
+  box.classList.remove("empty");
   const named = !!(p.names && p.names.some(Boolean));
   box.classList.toggle("named", named);
   let row = box, rowGroup = null;
   p.colors.forEach((c, i) => {
     const name = (p.names && p.names[i]) || "", group = (p.groups && p.groups[i]) || "";
-    if (named && (row === box || group !== rowGroup)) {     // one row per run of a group
+    if (named && (row === box || group !== rowGroup)) {
       row = document.createElement("div");
       row.className = "palRow";
       const g = document.createElement("span");
@@ -8000,7 +8335,8 @@ function renderPalette() {
       rowGroup = group;
     }
     const b = document.createElement("button");
-    b.className = "swatch" + (colorEq(c, currentColor, 0.0006) ? " on" : "");
+    const on = currentColor && currentColor.pal === p.name && currentColor.i === i;
+    b.className = "swatch" + (on ? " on" : "");
     b.dataset.i = i;
     b.style.background = toHex(c);
     b.title = (name ? name + (group ? " (" + group + ") " : " ") : "") + toHex(c);
@@ -8011,7 +8347,7 @@ function renderPalette() {
     attachSwatchPress(b, i);
     row.appendChild(b);
   });
-  if (palEditMode && !p.builtin) {
+  if (palEditMode) {
     const add = document.createElement("button");
     add.className = "swatch add"; add.textContent = "+";
     add.addEventListener("click", () => openSwatchEditor(-1));
@@ -8020,7 +8356,6 @@ function renderPalette() {
 }
 $("palPick").addEventListener("click", () => { pickMode = !pickMode; updateUI(); });
 $("palFill").addEventListener("click", paintFillSelected);
-// Mouse hover in Paint names the face under the pointer (touch has no hover: tap / Pick).
 let hoverT = 0;
 canvas.addEventListener("pointermove", (e) => {
   if (mode !== "paint" || e.pointerType !== "mouse" || e.buttons) return;
@@ -8032,7 +8367,6 @@ canvas.addEventListener("pointermove", (e) => {
   if (s !== faceRead) { faceRead = s; renderPalRead(); }
 });
 
-// Tap = pick the colour (or edit, in edit mode). Long-press (450 ms) = edit.
 function attachSwatchPress(b, i) {
   let timer = 0, longFired = false;
   b.addEventListener("pointerdown", () => {
@@ -8046,19 +8380,21 @@ function attachSwatchPress(b, i) {
   b.addEventListener("contextmenu", (e) => e.preventDefault());
   b.addEventListener("click", () => {
     if (longFired) return;
+    const p = activePalette();
+    if (!p) return;
     if (palEditMode) { openSwatchEditor(i); return; }
-    currentColor = activePalette().colors[i].slice();
+    currentColor = { pal: p.name, i, rgb: p.colors[i].slice() };
     pickMode = false;
     save(); updateUI();
   });
 }
 
-let swEditing = -1;   // swatch index being edited, -1 = adding a new one
+let swEditing = -1;
 function openSwatchEditor(i) {
   const p = activePalette();
-  if (p.builtin) { toast("The built-in palette is read-only: Duplicate it (palette name ▾) to edit"); return; }
+  if (!p) { toast("Load a palette first (File menu → Load palette…)"); return; }
   swEditing = i;
-  const c = i >= 0 ? p.colors[i] : currentColor;
+  const c = i >= 0 ? p.colors[i] : colorRGB(currentColor);
   $("swTitle").textContent = i >= 0 ? "Edit colour " + (i + 1) : "Add colour";
   $("swColor").value = toHex(c);
   $("swHex").value = toHex(c);
@@ -8073,102 +8409,145 @@ $("swSave").addEventListener("click", () => {
   const c = fromHex($("swHex").value);
   if (!c) { toast("Use a hex colour like #ff004d"); return; }
   const p = activePalette();
+  if (!p) return;
   const name = $("swName").value.trim();
-  if (name || p.names) {                         // keep names (and groups) lined up with colours
+  if (name || p.names) {
     p.names = p.names || p.colors.map(() => "");
     if (swEditing >= 0) p.names[swEditing] = name; else p.names.push(name);
   }
   if (p.groups && swEditing < 0) p.groups.push(p.groups[p.groups.length - 1] || "");
   if (swEditing >= 0) p.colors[swEditing] = c; else p.colors.push(c);
-  currentColor = c.slice();
-  palSave(); save();
+  currentColor = { pal: p.name, i: swEditing >= 0 ? swEditing : p.colors.length - 1, rgb: c.slice() };
+  palSave();
+  refreshSceneColors();
+  save();
   $("swModal").classList.remove("show");
   updateUI();
 });
 $("swDelete").addEventListener("click", () => {
   const p = activePalette();
-  if (swEditing >= 0) {
-    p.colors.splice(swEditing, 1);
-    if (p.names) p.names.splice(swEditing, 1);
-    if (p.groups) p.groups.splice(swEditing, 1);
-  }
+  if (!p || swEditing < 0) return;
+  const removed = swEditing;
+  p.colors.splice(removed, 1);
+  if (p.names) p.names.splice(removed, 1);
+  if (p.groups) p.groups.splice(removed, 1);
+  retargetRemovedSwatch(p.name, removed);
   palSave();
+  refreshSceneColors();
+  ensureBrush();
   $("swModal").classList.remove("show");
   updateUI();
 });
 
 $("palEdit").addEventListener("click", () => {
-  if (activePalette().builtin) { toast("The built-in palette is read-only: Duplicate it (palette name ▾) to edit"); palEditMode = false; }
+  if (!activePalette()) { toast("Load a palette first (File menu → Load palette…)"); palEditMode = false; }
   else palEditMode = !palEditMode;
   updateUI();
 });
 
-// --- Manager modal
 function renderPalList() {
   const list = $("palList");
   list.textContent = "";
+  if (!allPalettes().length) {
+    const note = document.createElement("div");
+    note.className = "note";
+    note.textContent = "No palettes yet. Load a .json, or New.";
+    list.appendChild(note);
+  }
   for (const p of allPalettes()) {
     const b = document.createElement("button");
-    b.className = "palItem" + (p.id === activePalette().id ? " on" : "");
+    b.className = "palItem" + (activePalette() && p.id === activePalette().id ? " on" : "");
     const label = document.createElement("span");
     label.textContent = `${p.name} · ${p.colors.length}`;
     const strip = document.createElement("span");
     strip.className = "strip";
     for (const c of p.colors.slice(0, 32)) { const i = document.createElement("i"); i.style.background = toHex(c); strip.appendChild(i); }
     b.append(label, strip);
-    b.addEventListener("click", () => { palStore.active = p.id; palEditMode = false; palSave(); renderPalList(); updateUI(); });
+    b.addEventListener("click", () => {
+      palStore.active = p.id; palEditMode = false;
+      currentColor = { pal: p.name, i: 0, rgb: p.colors[0].slice() };
+      palSave(); renderPalList(); updateUI();
+    });
     list.appendChild(b);
   }
-  $("pmRename").disabled = $("pmDelete").disabled = !!activePalette().builtin;
+  const none = !activePalette();
+  $("pmRename").disabled = $("pmDelete").disabled = none;
 }
 function showPalIO(kind) {
   $("palIO").classList.add("show");
-  $("palIOTitle").textContent = kind === "export" ? activePalette().name + " (C++)" : "Paste C++, hex codes, or r g b floats";
+  $("palIOTitle").textContent = kind === "export" ? "palettes.h (every loaded palette)" : "Paste JSON, C++, hex codes, or r g b floats";
   $("pioCopy").style.display = kind === "export" ? "" : "none";
   $("pioGo").style.display = kind === "import" ? "" : "none";
   $("palText").readOnly = kind === "export";
-  $("palText").value = kind === "export" ? buildPaletteExport(activePalette()) : "";
+  $("palText").value = kind === "export" ? buildPalettesHeader() : "";
   if (kind === "import") setTimeout(() => $("palText").focus(), 50);
 }
 function importPaletteText(text) {
-  let r;
-  try { r = parsePalette(text); } catch (e) { toast("Palette import failed: " + e.message); return null; }
-  const p = createPalette(r.name || "Imported palette", r.colors, r.names, r.groups);
-  toast(`Imported palette "${p.name}" (${p.colors.length} colours)`);
-  return p;
+  const t = String(text || "").trim();
+  if (!t) { toast("Nothing to import"); return null; }
+  if (t[0] === "{" || t[0] === "[") {
+    try {
+      const d = JSON.parse(t);
+      const doc = Array.isArray(d) ? { palettes: d } : d;
+      if (!isPaletteDoc(doc)) throw new Error("that JSON isn't a palette");
+      const r = ingestPaletteDocs([doc]);
+      toast(r.failed ? r.note : "Loaded " + r.note);
+      return r.failed ? null : r;
+    } catch (e) { toast("Palette import failed: " + e.message); return null; }
+  }
+  let parsed;
+  try { parsed = parsePalette(t); } catch (e) { toast("Palette import failed: " + e.message); return null; }
+  let added;
+  try { added = addLoadedPalette({ name: parsed.name || "Imported palette", colors: parsed.colors, names: parsed.names, groups: parsed.groups }); }
+  catch (e) { toast("Palette import failed: " + e.message); return null; }
+  palSave(); refreshSceneColors(); ensureBrush();
+  toast((added.updated ? "Updated" : "Imported") + ` palette "${added.palette.name}" (${added.palette.colors.length} colours)`);
+  return added.palette;
 }
 $("palName").addEventListener("click", () => { $("palIO").classList.remove("show"); renderPalList(); $("palModal").classList.add("show"); });
 $("pmClose").addEventListener("click", () => $("palModal").classList.remove("show"));
 $("pmNew").addEventListener("click", () => {
   const n = prompt("Name for the new palette:", uniqueName("My palette"));
   if (n === null) return;
-  createPalette(n.trim() || "My palette", [currentColor.slice()]);
+  const rgb = colorRGB(currentColor).slice();
+  const p = createPalette(n.trim() || "My palette", [rgb]);
+  currentColor = { pal: p.name, i: 0, rgb: p.colors[0].slice() };
   palEditMode = true; renderPalList(); updateUI();
 });
 $("pmDup").addEventListener("click", () => {
   const a = activePalette();
-  createPalette(a.builtin ? (a.names ? "My world palette" : "My palette") : a.name + " copy", a.colors, a.names, a.groups);
+  if (!a) { toast("Load or make a palette first"); return; }
+  const p = createPalette(a.name + " copy", a.colors, a.names, a.groups);
+  currentColor = { pal: p.name, i: 0, rgb: p.colors[0].slice() };
   renderPalList(); updateUI();
 });
 $("pmRename").addEventListener("click", () => {
   const a = activePalette();
-  if (a.builtin) return;
+  if (!a) return;
   const n = prompt("Rename palette:", a.name);
   if (n === null || !n.trim() || n.trim() === a.name) return;
-  a.name = uniqueName(n.trim()); palSave(); renderPalList(); updateUI();
+  const next = uniqueName(n.trim());
+  const prev = a.name;
+  a.name = next;
+  renamePaletteRefs(prev, next);
+  if (currentColor && currentColor.pal === prev) currentColor.pal = next;
+  palSave(); renderPalList(); updateUI();
 });
 $("pmDelete").addEventListener("click", () => {
   const a = activePalette();
-  if (a.builtin) return;
-  if (!confirm(`Delete palette "${a.name}"? (Models keep their colours.)`)) return;
+  if (!a) return;
+  if (!confirm(`Delete palette "${a.name}"? Faces that used it keep their last colour for drawing, and export as index 0.`)) return;
   palStore.list = palStore.list.filter(p => p.id !== a.id);
-  palStore.active = "world"; palEditMode = false;
-  palSave(); renderPalList(); updateUI();
+  palStore.active = palStore.list.length ? palStore.list[0].id : null;
+  palEditMode = false;
+  palSave();
+  ensureBrush();
+  renderPalList(); updateUI();
 });
 $("pmExport").addEventListener("click", async () => {
   showPalIO("export");
   const ok = await copyText($("palText").value);
-  toast(ok ? "Palette copied to clipboard" : "Tap Copy, or select the text");
+  toast(ok ? "palettes.h copied" : "Tap Copy, or select the text");
 });
 $("pmImport").addEventListener("click", () => showPalIO("import"));
 $("pioCopy").addEventListener("click", async () => {
@@ -8177,6 +8556,18 @@ $("pioCopy").addEventListener("click", async () => {
 });
 $("pioGo").addEventListener("click", () => {
   if (importPaletteText($("palText").value)) { $("palIO").classList.remove("show"); renderPalList(); updateUI(); }
+});
+$("scPal").addEventListener("click", () => { $("palFile").click(); });
+$("scPalExport").addEventListener("click", () => {
+  const text = buildPalettesHeader();
+  downloadText("palettes.h", text);
+  const n = allPalettes().length;
+  toast(n ? "Downloading palettes.h (" + n + " palette" + (n === 1 ? "" : "s") + ")" : "Downloading palettes.h (no palettes loaded)");
+});
+$("palFile").addEventListener("change", async () => {
+  const files = [...$("palFile").files];
+  $("palFile").value = "";
+  if (files.length) await loadPaletteFiles(files);
 });
 
 
@@ -8459,6 +8850,7 @@ function drawGizmo() {
 newScene("x");   // default: one cube, mirror X on
 palLoad();
 load();
+ensureBrush();
 if (snapPositionsToExportGrid()) save();       // older saves land on the same grid the game uses
 loadSun();
 loadLight();
